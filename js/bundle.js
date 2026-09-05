@@ -574,7 +574,7 @@ class KitchenCorpusGenerator {
                 enabled: true,
                 width: 80,          // Léc szélessége
                 orientation: 'flat', // 'flat' (fekvő) vagy 'vertical' (élre állított)
-                insetFront: 15       // Mennyivel van beljebb a korpusz első síkjától (mm)
+                insetFront: 0        // Mennyivel van beljebb a korpusz első síkjától (mm) - alapértelmezett: 0
             },
 
             // Hátsó összekötő léc
@@ -582,7 +582,7 @@ class KitchenCorpusGenerator {
                 enabled: true,
                 width: 80,
                 orientation: 'flat', // 'flat' vagy 'vertical'
-                insetBack: 10        // Mennyivel van beljebb a korpusz hátsó síkjától (mm)
+                insetBack: 0         // Mennyivel van beljebb a korpusz hátsó síkjától (mm) - alapértelmezett: 0
             },
 
             // Teljes tetőlap
@@ -594,7 +594,10 @@ class KitchenCorpusGenerator {
             backPanel: {
                 enabled: true,
                 thickness: 3,         // 3mm HDF vagy 18mm bútorlap
-                type: 'groove',       // 'groove' (nútba ültetett), 'rabbet' (falcolt), 'surface' (rászegelt kívülről)
+                type: 'surface',      // 'surface' (rászegelt kívülről), 'groove' (nútba ültetett), 'rabbet' (falcolt)
+                gap: 2.5,             // 2.5 mm réshézag / peremvisszaállás
+                height: null,         // Opcionális egyedi magasság (ha null, akkor H - 2*gap)
+                offsetY: 0,           // Függőleges eltolás (mm)
                 insetBack: 20,        // Hátfal bemélyesztése (nútosnál), felületi rászegelésnél a korpusz mögé kerül (-3mm)
                 textureKey: 'white_matte'
             },
@@ -628,7 +631,14 @@ class KitchenCorpusGenerator {
                 overhangLeft: 0,
                 overhangRight: 0,
                 edgeRadius: 3,        // 38mm-es munkalap 3mm lekerekítéssel
-                textureKey: 'concrete'
+                textureKey: 'concrete',
+                // Munkalap hátfal (fali panel / csempepótló)
+                splashback: {
+                    enabled: false,   // Bekapcsolható a varázslóban
+                    height: 600,      // 60 cm (600 mm)
+                    thickness: 5,     // 0.5 cm (5 mm mélység/vastagság)
+                    textureKey: 'concrete'
+                }
             },
 
             // 8. Belső Polcok
@@ -808,34 +818,37 @@ class KitchenCorpusGenerator {
         // ----------------------------------------------------
         if (cfg.backPanel && cfg.backPanel.enabled) {
             const backTh = Number(cfg.backPanel.thickness) || 3;
-            const backType = cfg.backPanel.type || 'groove';
+            const backType = cfg.backPanel.type || 'surface';
             const insetBack = Number(cfg.backPanel.insetBack) || 20;
+            const gap = cfg.backPanel.gap !== undefined && cfg.backPanel.gap !== null ? Number(cfg.backPanel.gap) : 2.5;
+            const customH = (cfg.backPanel.height !== undefined && cfg.backPanel.height !== null && cfg.backPanel.height !== '') ? Number(cfg.backPanel.height) : null;
+            const offsetY = Number(cfg.backPanel.offsetY) || 0;
 
             let backW = innerW;
-            let backH = H;
+            let backH = (customH && customH > 0) ? customH : H;
             let backZ = 0;
 
             if (backType === 'surface') {
-                // RÁSZÖGELT: A korpusz hátfalára fekszik fel (3mm-rel a korpusz oldallapjai mögé kerül)
-                backW = W;
-                backH = H;
+                // RÁSZÖGELT / RÁSZÉGELT: A korpusz hátfalára fekszik fel 2.5mm peremhézaggal
+                backW = W - (2 * gap);
+                backH = (customH && customH > 0) ? customH : (H - (2 * gap));
                 backZ = (-D / 2) - (backTh / 2);
             } else if (backType === 'groove') {
                 // NÚTBA ÜLTETETT: A korpusz belsejében fut, insetBack mm-re a hátuljától
                 backW = innerW + 16; // 8mm nút mindkét oldalon
-                backH = H - (2 * Th) + 16;
+                backH = (customH && customH > 0) ? customH : (H - (2 * Th) + 16);
                 backZ = (-D / 2) + insetBack + (backTh / 2);
             } else if (backType === 'rabbet') {
                 // FALCOLT: Szintben a hátfal élével
                 backW = innerW + 16;
-                backH = H - (2 * Th) + 16;
+                backH = (customH && customH > 0) ? customH : (H - (2 * Th) + 16);
                 backZ = (-D / 2) + (backTh / 2);
             }
 
-            const backY = corpusBaseY + H / 2;
+            const backY = corpusBaseY + H / 2 + offsetY;
 
             boards.push({
-                name: `Hátfal (${backTh}mm ${backType === 'surface' ? 'rászegelt' : 'nútos'})`,
+                name: `Hátfal (${backTh}mm ${backType === 'surface' ? 'rászegelt' : (backType === 'rabbet' ? 'falcolt' : 'nútos')})`,
                 width: Math.round(backW),
                 height: Math.round(backH),
                 depth: backTh,
@@ -843,7 +856,7 @@ class KitchenCorpusGenerator {
                 type: 'back',
                 textureKey: cfg.backPanel.textureKey || 'white_matte',
                 x: 0,
-                y: backY,
+                y: Math.round(backY),
                 z: backZ,
                 edgeBanding: 'Nincs élzárás'
             });
@@ -948,7 +961,7 @@ class KitchenCorpusGenerator {
         }
 
         // ----------------------------------------------------
-        // 8. KONYHAI MUNKALAP
+        // 8. KONYHAI MUNKALAP & MUNKALAP HÁTFAL
         // ----------------------------------------------------
         if (cfg.worktop && cfg.worktop.enabled) {
             const wtTh = Number(cfg.worktop.thickness) || 38;
@@ -965,6 +978,7 @@ class KitchenCorpusGenerator {
             
             // Z pozíció: a korpusz elöl +D/2, hátul -D/2.
             const wtZ = (overhangF - overhangB) / 2;
+            const wtTex = cfg.worktop.textureKey || 'concrete';
 
             boards.push({
                 name: `Munkalap (${wtTh}mm, ${wtW}×${wtD})`,
@@ -975,12 +989,37 @@ class KitchenCorpusGenerator {
                 thickness: wtTh,
                 edgeRadius: wtRadius,
                 type: 'worktop',
-                textureKey: cfg.worktop.textureKey || 'concrete',
+                textureKey: wtTex,
                 x: (overhangR - overhangL) / 2,
                 y: wtY,
                 z: wtZ,
                 edgeBanding: '2.0mm ABS'
             });
+
+            // Munkalap Hátfal (Fali panel / Csempepótló)
+            if (cfg.worktop.splashback && cfg.worktop.splashback.enabled) {
+                const sbH = Number(cfg.worktop.splashback.height) || 600; // 60cm
+                const sbTh = Number(cfg.worktop.splashback.thickness !== undefined ? cfg.worktop.splashback.thickness : 5); // 0.5cm (5mm)
+                // A munkalap tetejére ül fel, a munkalap hátuljának síkjában (egész szélességben végigér a munkalap hátulján)
+                const sbY = corpusBaseY + H + wtTh + (sbH / 2);
+                const sbZ = (-D / 2 - overhangB) + (sbTh / 2);
+                const sbTex = cfg.worktop.splashback.textureKey || wtTex;
+
+                boards.push({
+                    name: `Munkalap Hátfalpanel (${sbH}×${wtW}×${sbTh}mm)`,
+                    isSplashback: true,
+                    width: wtW,
+                    height: sbH,
+                    depth: sbTh,
+                    thickness: sbTh,
+                    type: 'back',
+                    textureKey: sbTex,
+                    x: (overhangR - overhangL) / 2,
+                    y: sbY,
+                    z: sbZ,
+                    edgeBanding: '0.4mm ABS'
+                });
+            }
         }
 
         // ----------------------------------------------------
@@ -5988,14 +6027,41 @@ class FurnitureApp {
         });
 
         // Hátfal típus váltás (rászegelt vs nútba süllyesztett)
-        document.getElementById('kc-back-type').addEventListener('change', (e) => {
-            const isSurface = e.target.value === 'surface';
+        const updateBackPanelVisibility = () => {
+            const backType = document.getElementById('kc-back-type').value;
+            const isSurface = backType === 'surface';
+            const gapContainer = document.getElementById('kc-back-gap-container');
             const insetContainer = document.getElementById('kc-back-inset-container');
             const surfaceNotice = document.getElementById('kc-back-surface-notice');
+            if (gapContainer) gapContainer.style.display = isSurface ? 'block' : 'none';
             if (insetContainer) insetContainer.style.display = isSurface ? 'none' : 'block';
             if (surfaceNotice) surfaceNotice.style.display = isSurface ? 'block' : 'none';
+        };
+
+        document.getElementById('kc-back-type').addEventListener('change', () => {
+            updateBackPanelVisibility();
             this.updateKitchenLivePreview();
         });
+
+        // Hátfal magasság auto-szinkronizálás korpusz magasság változásakor
+        document.getElementById('kc-height').addEventListener('input', () => {
+            const corpusH = Number(document.getElementById('kc-height').value) || 720;
+            const gap = Number(document.getElementById('kc-back-gap')?.value) || 2.5;
+            const backHInput = document.getElementById('kc-back-height');
+            if (backHInput) {
+                backHInput.value = Math.max(10, corpusH - (2 * gap));
+            }
+        });
+
+        // Munkalap hátfal bekapcsolása / kikapcsolása
+        const splashbackCheckbox = document.getElementById('kc-worktop-splashback-enabled');
+        if (splashbackCheckbox) {
+            splashbackCheckbox.addEventListener('change', (e) => {
+                const settingsDiv = document.getElementById('kc-worktop-splashback-settings');
+                if (settingsDiv) settingsDiv.style.display = e.target.checked ? 'grid' : 'none';
+                this.updateKitchenLivePreview();
+            });
+        }
 
         // Munkalap mélység & túllógás változások
         document.getElementById('kc-worktop-depth').addEventListener('input', () => {
@@ -6476,14 +6542,25 @@ class FurnitureApp {
 
         if (config.backPanel) {
             document.getElementById('kc-back-enabled').checked = !!config.backPanel.enabled;
-            if (config.backPanel.type !== undefined) {
-                document.getElementById('kc-back-type').value = config.backPanel.type;
-                const isSurface = config.backPanel.type === 'surface';
-                const insetContainer = document.getElementById('kc-back-inset-container');
-                const surfaceNotice = document.getElementById('kc-back-surface-notice');
-                if (insetContainer) insetContainer.style.display = isSurface ? 'none' : 'block';
-                if (surfaceNotice) surfaceNotice.style.display = isSurface ? 'block' : 'none';
+            const bType = config.backPanel.type || 'surface';
+            document.getElementById('kc-back-type').value = bType;
+            const isSurface = bType === 'surface';
+            const gapContainer = document.getElementById('kc-back-gap-container');
+            const insetContainer = document.getElementById('kc-back-inset-container');
+            const surfaceNotice = document.getElementById('kc-back-surface-notice');
+            if (gapContainer) gapContainer.style.display = isSurface ? 'block' : 'none';
+            if (insetContainer) insetContainer.style.display = isSurface ? 'none' : 'block';
+            if (surfaceNotice) surfaceNotice.style.display = isSurface ? 'block' : 'none';
+
+            if (config.backPanel.gap !== undefined) document.getElementById('kc-back-gap').value = config.backPanel.gap;
+            if (config.backPanel.height !== undefined && config.backPanel.height !== null && config.backPanel.height > 0) {
+                document.getElementById('kc-back-height').value = config.backPanel.height;
+            } else {
+                const corpusH = config.height || 720;
+                const gap = config.backPanel.gap !== undefined ? Number(config.backPanel.gap) : 2.5;
+                document.getElementById('kc-back-height').value = Math.max(10, corpusH - (2 * gap));
             }
+            if (config.backPanel.offsetY !== undefined) document.getElementById('kc-back-offset-y').value = config.backPanel.offsetY;
             if (config.backPanel.thickness !== undefined) document.getElementById('kc-back-th').value = config.backPanel.thickness;
             if (config.backPanel.insetBack !== undefined) document.getElementById('kc-back-inset').value = config.backPanel.insetBack;
         }
@@ -6505,6 +6582,19 @@ class FurnitureApp {
             if (config.worktop.edgeRadius !== undefined) document.getElementById('kc-worktop-edge-radius').value = config.worktop.edgeRadius;
             if (config.worktop.overhangFront !== undefined) document.getElementById('kc-worktop-overhang-front').value = config.worktop.overhangFront;
             if (config.worktop.overhangBack !== undefined) document.getElementById('kc-worktop-overhang-back').value = config.worktop.overhangBack;
+
+            // Munkalap hátfal (splashback)
+            const hasSplashback = !!(config.worktop.splashback && config.worktop.splashback.enabled);
+            const sbCheck = document.getElementById('kc-worktop-splashback-enabled');
+            if (sbCheck) sbCheck.checked = hasSplashback;
+            const sbSettings = document.getElementById('kc-worktop-splashback-settings');
+            if (sbSettings) sbSettings.style.display = hasSplashback ? 'grid' : 'none';
+            if (config.worktop.splashback?.height !== undefined) {
+                document.getElementById('kc-worktop-splashback-height').value = config.worktop.splashback.height;
+            }
+            if (config.worktop.splashback?.thickness !== undefined) {
+                document.getElementById('kc-worktop-splashback-depth').value = config.worktop.splashback.thickness;
+            }
         }
 
         if (config.shelves) {
@@ -7269,9 +7359,19 @@ class FurnitureApp {
             document.getElementById('kc-top-type').value = 'stretchers';
             document.getElementById('kc-stretchers-settings').style.display = 'block';
             document.getElementById('kc-fs-enabled').checked = true;
-            document.getElementById('kc-fs-inset').value = 15;
+            document.getElementById('kc-fs-inset').value = 0;
             document.getElementById('kc-bs-enabled').checked = true;
-            document.getElementById('kc-bs-inset').value = 10;
+            document.getElementById('kc-bs-inset').value = 0;
+            document.getElementById('kc-back-type').value = 'surface';
+            if (document.getElementById('kc-back-gap')) document.getElementById('kc-back-gap').value = 2.5;
+            if (document.getElementById('kc-back-height')) document.getElementById('kc-back-height').value = 715;
+            if (document.getElementById('kc-back-offset-y')) document.getElementById('kc-back-offset-y').value = 0;
+            const gapContainer = document.getElementById('kc-back-gap-container');
+            const insetContainer = document.getElementById('kc-back-inset-container');
+            const surfaceNotice = document.getElementById('kc-back-surface-notice');
+            if (gapContainer) gapContainer.style.display = 'block';
+            if (insetContainer) insetContainer.style.display = 'none';
+            if (surfaceNotice) surfaceNotice.style.display = 'block';
             document.getElementById('kc-legs-enabled').checked = true;
             document.getElementById('kc-legs-height').value = 100;
             document.getElementById('kc-plinth-enabled').checked = true;
@@ -7281,6 +7381,13 @@ class FurnitureApp {
             if (document.getElementById('kc-worktop-edge-radius')) document.getElementById('kc-worktop-edge-radius').value = 3;
             document.getElementById('kc-worktop-overhang-front').value = 25;
             document.getElementById('kc-worktop-overhang-back').value = 15;
+            if (document.getElementById('kc-worktop-splashback-enabled')) {
+                document.getElementById('kc-worktop-splashback-enabled').checked = false;
+                const sbSettings = document.getElementById('kc-worktop-splashback-settings');
+                if (sbSettings) sbSettings.style.display = 'none';
+                document.getElementById('kc-worktop-splashback-height').value = 600;
+                document.getElementById('kc-worktop-splashback-depth').value = 5;
+            }
             document.getElementById('kc-shelves-count').value = '1';
         } else if (type === 'wall') {
             document.getElementById('kc-width').value = 600;
@@ -7289,6 +7396,10 @@ class FurnitureApp {
             if (document.getElementById('kc-edge-radius')) document.getElementById('kc-edge-radius').value = 1;
             document.getElementById('kc-top-type').value = 'full_top';
             document.getElementById('kc-stretchers-settings').style.display = 'none';
+            document.getElementById('kc-back-type').value = 'surface';
+            if (document.getElementById('kc-back-gap')) document.getElementById('kc-back-gap').value = 2.5;
+            if (document.getElementById('kc-back-height')) document.getElementById('kc-back-height').value = 715;
+            if (document.getElementById('kc-back-offset-y')) document.getElementById('kc-back-offset-y').value = 0;
             document.getElementById('kc-legs-enabled').checked = false;
             document.getElementById('kc-plinth-enabled').checked = false;
             document.getElementById('kc-worktop-enabled').checked = false;
@@ -7301,6 +7412,10 @@ class FurnitureApp {
             if (document.getElementById('kc-edge-radius')) document.getElementById('kc-edge-radius').value = 1;
             document.getElementById('kc-top-type').value = 'full_top';
             document.getElementById('kc-stretchers-settings').style.display = 'none';
+            document.getElementById('kc-back-type').value = 'surface';
+            if (document.getElementById('kc-back-gap')) document.getElementById('kc-back-gap').value = 2.5;
+            if (document.getElementById('kc-back-height')) document.getElementById('kc-back-height').value = 1995;
+            if (document.getElementById('kc-back-offset-y')) document.getElementById('kc-back-offset-y').value = 0;
             document.getElementById('kc-legs-enabled').checked = true;
             document.getElementById('kc-legs-height').value = 100;
             document.getElementById('kc-plinth-enabled').checked = true;
@@ -7354,6 +7469,9 @@ class FurnitureApp {
 
     getKitchenConfigFromUI() {
         const texKey = document.getElementById('kc-texture').value || 'white_matte';
+        const backHInput = document.getElementById('kc-back-height')?.value;
+        const customBackH = (backHInput !== undefined && backHInput !== null && backHInput !== '') ? Number(backHInput) : null;
+
         return {
             width: Number(document.getElementById('kc-width').value) || 600,
             height: Number(document.getElementById('kc-height').value) || 720,
@@ -7380,7 +7498,7 @@ class FurnitureApp {
                 enabled: document.getElementById('kc-fs-enabled').checked,
                 width: Number(document.getElementById('kc-fs-width').value) || 80,
                 orientation: document.getElementById('kc-fs-orient').value || 'flat',
-                insetFront: Number(document.getElementById('kc-fs-inset').value) || 0,
+                insetFront: Number(document.getElementById('kc-fs-inset')?.value !== undefined ? document.getElementById('kc-fs-inset').value : 0),
                 textureKey: texKey
             },
 
@@ -7388,15 +7506,18 @@ class FurnitureApp {
                 enabled: document.getElementById('kc-bs-enabled').checked,
                 width: Number(document.getElementById('kc-bs-width').value) || 80,
                 orientation: document.getElementById('kc-bs-orient').value || 'flat',
-                insetBack: Number(document.getElementById('kc-bs-inset').value) || 0,
+                insetBack: Number(document.getElementById('kc-bs-inset')?.value !== undefined ? document.getElementById('kc-bs-inset').value : 0),
                 textureKey: texKey
             },
 
             backPanel: {
                 enabled: document.getElementById('kc-back-enabled').checked,
-                type: document.getElementById('kc-back-type').value || 'groove',
+                type: document.getElementById('kc-back-type').value || 'surface',
                 thickness: Number(document.getElementById('kc-back-th').value) || 3,
-                insetBack: Number(document.getElementById('kc-back-inset').value) || 20,
+                gap: Number(document.getElementById('kc-back-gap')?.value !== undefined ? document.getElementById('kc-back-gap').value : 2.5),
+                height: customBackH,
+                offsetY: Number(document.getElementById('kc-back-offset-y')?.value || 0),
+                insetBack: Number(document.getElementById('kc-back-inset')?.value || 20),
                 textureKey: Number(document.getElementById('kc-back-th').value) === 18 ? texKey : 'white_matte'
             },
 
@@ -7423,7 +7544,13 @@ class FurnitureApp {
                 edgeRadius: Number(document.getElementById('kc-worktop-edge-radius')?.value) !== undefined ? Number(document.getElementById('kc-worktop-edge-radius').value) : 3,
                 overhangFront: Number(document.getElementById('kc-worktop-overhang-front').value) || 25,
                 overhangBack: Number(document.getElementById('kc-worktop-overhang-back').value) || 15,
-                textureKey: 'concrete'
+                textureKey: 'concrete',
+                splashback: {
+                    enabled: document.getElementById('kc-worktop-splashback-enabled') ? document.getElementById('kc-worktop-splashback-enabled').checked : false,
+                    height: Number(document.getElementById('kc-worktop-splashback-height')?.value) || 600,
+                    thickness: Number(document.getElementById('kc-worktop-splashback-depth')?.value !== undefined ? document.getElementById('kc-worktop-splashback-depth').value : 5),
+                    textureKey: 'concrete'
+                }
             },
 
             shelves: {
@@ -7760,22 +7887,5 @@ if (document.readyState === 'loading') {
     startFurnitureApp();
 }
 
-
-// Alkalmazás indítása a DOM betöltődése után
-function startFurnitureApp() {
-    if (!window.app) {
-        try {
-            window.app = new FurnitureApp();
-        } catch (e) {
-            console.error('Hiba az alkalmazás indításakor:', e);
-        }
-    }
-}
-
-if (document.readyState === 'loading') {
-    window.addEventListener('DOMContentLoaded', startFurnitureApp);
-} else {
-    startFurnitureApp();
-}
 
 })();

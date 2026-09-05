@@ -999,10 +999,10 @@
                                     </div>
                                     <div>
                                         <label class="form-label" style="font-size:11px; color:#f59e0b; font-weight:700;">
-                                            ⚡ Eltolás elölről (Mennyivel beljebb?):
+                                            ⚡ Eltolás elölről:
                                         </label>
                                         <div class="input-with-unit">
-                                            <input type="number" id="kc-fs-inset" class="form-control" value="15" step="1" title="Mennyivel legyen beljebb a korpusz első síkjától (mm)">
+                                            <input type="number" id="kc-fs-inset" class="form-control" value="0" step="1" title="Mennyivel legyen beljebb a korpusz első síkjától (alapértelmezett: 0 mm)">
                                             <span class="input-unit">mm</span>
                                         </div>
                                     </div>
@@ -1030,10 +1030,10 @@
                                     </div>
                                     <div>
                                         <label class="form-label" style="font-size:11px; color:#f59e0b; font-weight:700;">
-                                            ⚡ Eltolás hátulról (Mennyivel beljebb?):
+                                            ⚡ Eltolás hátulról:
                                         </label>
                                         <div class="input-with-unit">
-                                            <input type="number" id="kc-bs-inset" class="form-control" value="10" step="1" title="Mennyivel legyen beljebb a korpusz hátsó síkjától (mm)">
+                                            <input type="number" id="kc-bs-inset" class="form-control" value="0" step="1" title="Mennyivel legyen beljebb a korpusz hátsó síkjától (alapértelmezett: 0 mm)">
                                             <span class="input-unit">mm</span>
                                         </div>
                                     </div>
@@ -1042,10 +1042,10 @@
                         </div>
                     </div>
 
-                    <!-- 3. HÁTFAL (HDF / BÚTORLAP) ÉS BEMÉLYESZTÉS -->
+                    <!-- 3. HÁTFAL (HDF / BÚTORLAP) ÉS RÖGZÍTÉS -->
                     <div style="background:rgba(255,255,255,0.02); border:1px solid var(--border-color); border-radius:var(--radius-sm); padding:12px; margin-bottom:12px;">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                            <span style="font-size:13px; font-weight:700; color:var(--accent);">3. Hátfal Rögzítés & Fali Hézag</span>
+                            <span style="font-size:13px; font-weight:700; color:var(--accent);">3. Hátfal Rögzítés & Eltolások</span>
                             <label style="font-size:12px; display:flex; align-items:center; gap:6px;">
                                 <input type="checkbox" id="kc-back-enabled" checked> Hátfal bekapcsolva
                             </label>
@@ -1055,8 +1055,8 @@
                             <div>
                                 <label class="form-label">Hátfal Rögzítési Típusa</label>
                                 <select id="kc-back-type" class="form-control">
-                                    <option value="surface">Rászegelt (3mm a korpusz mögé kerül)</option>
-                                    <option value="groove" selected>Nútba ültetett (süllyesztett belső horony)</option>
+                                    <option value="surface" selected>Rászegelt (hátulról rögzítve)</option>
+                                    <option value="groove">Nútba ültetett (süllyesztett belső horony)</option>
                                     <option value="rabbet">Falcolt (korpusz élébe süllyesztve)</option>
                                 </select>
                             </div>
@@ -1067,16 +1067,41 @@
                                     <option value="18">18 mm Bútorlap merevítés</option>
                                 </select>
                             </div>
-                            <div id="kc-back-inset-container">
-                                <label class="form-label" style="color:#f59e0b; font-weight:700;">⚡ Hátfal Bemélyesztése</label>
+                            <div id="kc-back-gap-container">
+                                <label class="form-label" style="color:#f59e0b; font-weight:700;">⚡ Réshézag körben</label>
+                                <div class="input-with-unit">
+                                    <input type="number" id="kc-back-gap" class="form-control" value="2.5" step="0.5" min="0" title="Körkörös peremvisszaállás / réshézag a korpusz széleitől (alapértelmezett: 2.5 mm)">
+                                    <span class="input-unit">mm</span>
+                                </div>
+                            </div>
+                            <div id="kc-back-inset-container" style="display:none;">
+                                <label class="form-label" style="color:#f59e0b; font-weight:700;">⚡ Hátfal Bemélyesztése (Z)</label>
                                 <div class="input-with-unit">
                                     <input type="number" id="kc-back-inset" class="form-control" value="20" step="1" title="Vezetékek, csövek és fali egyenetlenségek miatti hézag a hátfal mögött">
                                     <span class="input-unit">mm</span>
                                 </div>
                             </div>
                         </div>
-                        <div id="kc-back-surface-notice" style="display:none; font-size:11px; color:#38bdf8; margin-top:6px;">
-                            ℹ️ Rászegelés esetén a hátfal közvetlenül a korpusz oldalfalainak és fenekének hátsó élére rögzül (+3 mm-rel a korpusz mögé nyúlva).
+
+                        <div class="grid-2-col" style="margin-top:8px;">
+                            <div>
+                                <label class="form-label" style="font-size:11px;">Hátfal Magassága</label>
+                                <div class="input-with-unit">
+                                    <input type="number" id="kc-back-height" class="form-control" value="715" step="5" title="Egyedi hátfal magasság mm-ben (alapértelmezetten korpusz magasság - 2×réshézag)">
+                                    <span class="input-unit">mm</span>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="form-label" style="font-size:11px; color:#f59e0b; font-weight:700;">⚡ Függőleges Eltolás (Y)</label>
+                                <div class="input-with-unit">
+                                    <input type="number" id="kc-back-offset-y" class="form-control" value="0" step="1" title="Hátfal függőleges pozíciójának finomhangolása mm-ben">
+                                    <span class="input-unit">mm</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="kc-back-surface-notice" style="font-size:11px; color:#38bdf8; margin-top:6px;">
+                            ℹ️ Rászegelés esetén a hátfal 2.5 mm réshézaggal fekszik fel a korpusz hátuljára.
                         </div>
                     </div>
 
@@ -1163,6 +1188,31 @@
                                 </div>
                                 <div id="kc-worktop-math-info" style="font-size:10px; color:var(--text-muted); margin-top:4px;">
                                     📏 Korpusz: 560 mm + Elöl: 25 mm + Hátul: 15 mm = 600 mm munkalap
+                                </div>
+
+                                <!-- Munkalap Hátfal (Csempepótló fali panel) -->
+                                <div style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:var(--radius-sm); padding:8px; margin-top:8px;">
+                                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                                        <label style="font-size:11px; font-weight:700; color:var(--text-primary); display:flex; align-items:center; gap:6px;">
+                                            <input type="checkbox" id="kc-worktop-splashback-enabled"> 🧱 Munkalap Hátfal (Fali panel)
+                                        </label>
+                                    </div>
+                                    <div id="kc-worktop-splashback-settings" class="grid-2-col" style="display:none; gap:6px; margin-top:6px;">
+                                        <div>
+                                            <label class="form-label" style="font-size:10px;">Hátfal Magasság (Y)</label>
+                                            <div class="input-with-unit">
+                                                <input type="number" id="kc-worktop-splashback-height" class="form-control" value="600" step="10" style="font-size:11px;" title="Munkalap hátfal magassága mm-ben (alapértelmezett: 600 mm / 60 cm)">
+                                                <span class="input-unit">mm</span>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label class="form-label" style="font-size:10px;">Mélység / Vastagság</label>
+                                            <div class="input-with-unit">
+                                                <input type="number" id="kc-worktop-splashback-depth" class="form-control" value="5" step="1" style="font-size:11px;" title="Munkalap hátfal vastagsága/mélysége mm-ben (alapértelmezett: 5 mm / 0.5 cm)">
+                                                <span class="input-unit">mm</span>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
 

@@ -41,7 +41,7 @@ export class KitchenCorpusGenerator {
                 enabled: true,
                 width: 80,          // Léc szélessége
                 orientation: 'flat', // 'flat' (fekvő) vagy 'vertical' (élre állított)
-                insetFront: 15       // Mennyivel van beljebb a korpusz első síkjától (mm)
+                insetFront: 0        // Mennyivel van beljebb a korpusz első síkjától (mm) - alapértelmezett: 0
             },
 
             // Hátsó összekötő léc
@@ -49,7 +49,7 @@ export class KitchenCorpusGenerator {
                 enabled: true,
                 width: 80,
                 orientation: 'flat', // 'flat' vagy 'vertical'
-                insetBack: 10        // Mennyivel van beljebb a korpusz hátsó síkjától (mm)
+                insetBack: 0         // Mennyivel van beljebb a korpusz hátsó síkjától (mm) - alapértelmezett: 0
             },
 
             // Teljes tetőlap
@@ -61,7 +61,10 @@ export class KitchenCorpusGenerator {
             backPanel: {
                 enabled: true,
                 thickness: 3,         // 3mm HDF vagy 18mm bútorlap
-                type: 'groove',       // 'groove' (nútba ültetett), 'rabbet' (falcolt), 'surface' (rászegelt kívülről)
+                type: 'surface',      // 'surface' (rászegelt kívülről), 'groove' (nútba ültetett), 'rabbet' (falcolt)
+                gap: 2.5,             // 2.5 mm réshézag / peremvisszaállás
+                height: null,         // Opcionális egyedi magasság (ha null, akkor H - 2*gap)
+                offsetY: 0,           // Függőleges eltolás (mm)
                 insetBack: 20,        // Hátfal bemélyesztése (nútosnál), felületi rászegelésnél a korpusz mögé kerül (-3mm)
                 textureKey: 'white_matte'
             },
@@ -95,7 +98,14 @@ export class KitchenCorpusGenerator {
                 overhangLeft: 0,
                 overhangRight: 0,
                 edgeRadius: 3,        // 38mm-es munkalap 3mm lekerekítéssel
-                textureKey: 'concrete'
+                textureKey: 'concrete',
+                // Munkalap hátfal (fali panel / csempepótló)
+                splashback: {
+                    enabled: false,   // Bekapcsolható a varázslóban
+                    height: 600,      // 60 cm (600 mm)
+                    thickness: 5,     // 0.5 cm (5 mm mélység/vastagság)
+                    textureKey: 'concrete'
+                }
             },
 
             // 8. Belső Polcok
@@ -275,34 +285,37 @@ export class KitchenCorpusGenerator {
         // ----------------------------------------------------
         if (cfg.backPanel && cfg.backPanel.enabled) {
             const backTh = Number(cfg.backPanel.thickness) || 3;
-            const backType = cfg.backPanel.type || 'groove';
+            const backType = cfg.backPanel.type || 'surface';
             const insetBack = Number(cfg.backPanel.insetBack) || 20;
+            const gap = cfg.backPanel.gap !== undefined && cfg.backPanel.gap !== null ? Number(cfg.backPanel.gap) : 2.5;
+            const customH = (cfg.backPanel.height !== undefined && cfg.backPanel.height !== null && cfg.backPanel.height !== '') ? Number(cfg.backPanel.height) : null;
+            const offsetY = Number(cfg.backPanel.offsetY) || 0;
 
             let backW = innerW;
-            let backH = H;
+            let backH = (customH && customH > 0) ? customH : H;
             let backZ = 0;
 
             if (backType === 'surface') {
-                // RÁSZÖGELT: A korpusz hátfalára fekszik fel (3mm-rel a korpusz oldallapjai mögé kerül)
-                backW = W;
-                backH = H;
+                // RÁSZÖGELT / RÁSZÉGELT: A korpusz hátfalára fekszik fel 2.5mm peremhézaggal
+                backW = W - (2 * gap);
+                backH = (customH && customH > 0) ? customH : (H - (2 * gap));
                 backZ = (-D / 2) - (backTh / 2);
             } else if (backType === 'groove') {
                 // NÚTBA ÜLTETETT: A korpusz belsejében fut, insetBack mm-re a hátuljától
                 backW = innerW + 16; // 8mm nút mindkét oldalon
-                backH = H - (2 * Th) + 16;
+                backH = (customH && customH > 0) ? customH : (H - (2 * Th) + 16);
                 backZ = (-D / 2) + insetBack + (backTh / 2);
             } else if (backType === 'rabbet') {
                 // FALCOLT: Szintben a hátfal élével
                 backW = innerW + 16;
-                backH = H - (2 * Th) + 16;
+                backH = (customH && customH > 0) ? customH : (H - (2 * Th) + 16);
                 backZ = (-D / 2) + (backTh / 2);
             }
 
-            const backY = corpusBaseY + H / 2;
+            const backY = corpusBaseY + H / 2 + offsetY;
 
             boards.push({
-                name: `Hátfal (${backTh}mm ${backType === 'surface' ? 'rászegelt' : 'nútos'})`,
+                name: `Hátfal (${backTh}mm ${backType === 'surface' ? 'rászegelt' : (backType === 'rabbet' ? 'falcolt' : 'nútos')})`,
                 width: Math.round(backW),
                 height: Math.round(backH),
                 depth: backTh,
@@ -310,7 +323,7 @@ export class KitchenCorpusGenerator {
                 type: 'back',
                 textureKey: cfg.backPanel.textureKey || 'white_matte',
                 x: 0,
-                y: backY,
+                y: Math.round(backY),
                 z: backZ,
                 edgeBanding: 'Nincs élzárás'
             });
@@ -415,7 +428,7 @@ export class KitchenCorpusGenerator {
         }
 
         // ----------------------------------------------------
-        // 8. KONYHAI MUNKALAP
+        // 8. KONYHAI MUNKALAP & MUNKALAP HÁTFAL
         // ----------------------------------------------------
         if (cfg.worktop && cfg.worktop.enabled) {
             const wtTh = Number(cfg.worktop.thickness) || 38;
@@ -432,6 +445,7 @@ export class KitchenCorpusGenerator {
             
             // Z pozíció: a korpusz elöl +D/2, hátul -D/2.
             const wtZ = (overhangF - overhangB) / 2;
+            const wtTex = cfg.worktop.textureKey || 'concrete';
 
             boards.push({
                 name: `Munkalap (${wtTh}mm, ${wtW}×${wtD})`,
@@ -442,12 +456,37 @@ export class KitchenCorpusGenerator {
                 thickness: wtTh,
                 edgeRadius: wtRadius,
                 type: 'worktop',
-                textureKey: cfg.worktop.textureKey || 'concrete',
+                textureKey: wtTex,
                 x: (overhangR - overhangL) / 2,
                 y: wtY,
                 z: wtZ,
                 edgeBanding: '2.0mm ABS'
             });
+
+            // Munkalap Hátfal (Fali panel / Csempepótló)
+            if (cfg.worktop.splashback && cfg.worktop.splashback.enabled) {
+                const sbH = Number(cfg.worktop.splashback.height) || 600; // 60cm
+                const sbTh = Number(cfg.worktop.splashback.thickness !== undefined ? cfg.worktop.splashback.thickness : 5); // 0.5cm (5mm)
+                // A munkalap tetejére ül fel, a munkalap hátuljának síkjában (egész szélességben végigér a munkalap hátulján)
+                const sbY = corpusBaseY + H + wtTh + (sbH / 2);
+                const sbZ = (-D / 2 - overhangB) + (sbTh / 2);
+                const sbTex = cfg.worktop.splashback.textureKey || wtTex;
+
+                boards.push({
+                    name: `Munkalap Hátfalpanel (${sbH}×${wtW}×${sbTh}mm)`,
+                    isSplashback: true,
+                    width: wtW,
+                    height: sbH,
+                    depth: sbTh,
+                    thickness: sbTh,
+                    type: 'back',
+                    textureKey: sbTex,
+                    x: (overhangR - overhangL) / 2,
+                    y: sbY,
+                    z: sbZ,
+                    edgeBanding: '0.4mm ABS'
+                });
+            }
         }
 
         // ----------------------------------------------------
