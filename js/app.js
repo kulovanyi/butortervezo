@@ -253,7 +253,7 @@ class FurnitureApp {
         this.applyTextureTarget = 'selected'; // 'selected' vagy 'all'
         this.activeTextureCategory = 'front'; // 'front', 'worktop' vagy 'all'
         this.kitchenElements = [];
-        this.expandedCategories = new Set();
+        this.expandedCategories = new Set(['cat_kitchen']);
         this.lastSelectedBaseCorpus = null;
 
         this.init();
