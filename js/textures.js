@@ -15,129 +15,239 @@ export const MaterialManager = {
      * Procedurális textúrák létrehozása HTML5 Canvas segítségével
      */
     generateDefaultTextures() {
-        // 1. Natúr Tölgy (Natural Oak)
+        // --- 1. FRONT / BÚTORLAP TEXTÚRÁK (textures/front/) ---
+        const frontFiles = [
+            { id: 'front_3025', name: 'Front 3025', file: '3025.jpg' },
+            { id: 'front_a865', name: 'Front A865', file: 'A865.jpg' },
+            { id: 'front_k001', name: 'Front K001', file: 'K001.jpg' },
+            { id: 'front_k002', name: 'Front K002', file: 'K002.jpg' },
+            { id: 'front_k003', name: 'Front K003', file: 'K003.jpg' },
+            { id: 'front_k004', name: 'Front K004', file: 'K004.jpg' },
+            { id: 'front_k536', name: 'Front K536', file: 'K536.jpg' }
+        ];
+
+        frontFiles.forEach(f => {
+            this.textures[f.id] = this.createFileTexture({
+                id: f.id,
+                name: f.name,
+                path: `textures/front/${f.file}`,
+                category: 'front',
+                type: 'wood',
+                roughness: 0.65,
+                metalness: 0.05
+            });
+        });
+
+        // --- 2. MUNKALAP TEXTÚRÁK (textures/worktop/) ---
+        const worktopFiles = [
+            { id: 'wt_3025', name: 'Munkalap 3025', file: '3025.jpg' },
+            { id: 'wt_4299', name: 'Munkalap 4299', file: '4299.jpg' },
+            { id: 'wt_k002', name: 'Munkalap K002', file: 'K002.jpg' },
+            { id: 'wt_k003', name: 'Munkalap K003', file: 'K003.jpg' },
+            { id: 'wt_k092', name: 'Munkalap K092', file: 'K092.jpg' },
+            { id: 'wt_k2738', name: 'Munkalap K2738', file: 'K2738.jpg' },
+            { id: 'wt_k367', name: 'Munkalap K367', file: 'K367.jpg' },
+            { id: 'wt_k536', name: 'Munkalap K536', file: 'K536.jpg' },
+            { id: 'wt_k551', name: 'Munkalap K551', file: 'K551.jpg' },
+            { id: 'wt_k552', name: 'Munkalap K552', file: 'K552.jpg' },
+            { id: 'wt_k553', name: 'Munkalap K553', file: 'K553.jpg' },
+            { id: 'wt_k756', name: 'Munkalap K756', file: 'K756.jpg' },
+            { id: 'wt_k758', name: 'Munkalap K758', file: 'K758.jpg' },
+            { id: 'wt_k820', name: 'Munkalap K820', file: 'K820.jpg' }
+        ];
+
+        worktopFiles.forEach(w => {
+            this.textures[w.id] = this.createFileTexture({
+                id: w.id,
+                name: w.name,
+                path: `textures/worktop/${w.file}`,
+                category: 'worktop',
+                type: 'stone',
+                roughness: 0.6,
+                metalness: 0.05
+            });
+        });
+
+        // --- 3. ALAPÉRTELMEZETT PROCEDURÁLIS TEXTÚRÁK ---
+        // Natúr Tölgy (Natural Oak)
         this.textures['oak_natural'] = this.createWoodTexture({
             baseColor: '#c8a165',
             grainColor: '#8a6234',
             ringColor: '#6e4c23',
             name: 'Natúr Tölgy',
-            type: 'wood'
+            type: 'wood',
+            category: 'front'
         });
 
-        // 2. Sonoma Tölgy (Sonoma Oak)
+        // Sonoma Tölgy (Sonoma Oak)
         this.textures['oak_sonoma'] = this.createWoodTexture({
             baseColor: '#d6c4a8',
             grainColor: '#a89476',
             ringColor: '#806e53',
             name: 'Sonoma Tölgy',
-            type: 'wood'
+            type: 'wood',
+            category: 'front'
         });
 
-        // 3. Sötét Dió (Dark Walnut)
+        // Sötét Dió (Dark Walnut)
         this.textures['walnut_dark'] = this.createWoodTexture({
             baseColor: '#533827',
             grainColor: '#342114',
             ringColor: '#22140a',
             name: 'Sötét Dió',
-            type: 'wood'
+            type: 'wood',
+            category: 'front'
         });
 
-        // 4. Meleg Bükk (Beech)
+        // Meleg Bükk (Beech)
         this.textures['beech_warm'] = this.createWoodTexture({
             baseColor: '#d99f6c',
             grainColor: '#b06f3b',
             ringColor: '#8c5021',
             name: 'Meleg Bükk',
-            type: 'wood'
+            type: 'wood',
+            category: 'front'
         });
 
-        // 5. Fenyő (Pine Wood)
+        // Fenyő (Pine Wood)
         this.textures['pine_light'] = this.createWoodTexture({
             baseColor: '#edd09e',
             grainColor: '#c79c5a',
             ringColor: '#9e6d2c',
             name: 'Skandináv Fenyő',
-            type: 'wood'
+            type: 'wood',
+            category: 'front'
         });
 
-        // 6. Fehér Selyemfényű / Kasmír (White Matte)
+        // Fehér Selyemfényű / Kasmír (White Matte) - MINDIG ALAPÉRTELMEZETT A HÁTFALHOZ IS
         this.textures['white_matte'] = this.createSolidTexture({
             color: '#f8f9fa',
             noiseAmount: 3,
             name: 'Prémium Fehér (Matt)',
-            type: 'solid'
+            type: 'solid',
+            category: 'front'
         });
 
-        // 7. Kasmír Szürke (Cashmere Grey)
+        // Kasmír Szürke (Cashmere Grey)
         this.textures['cashmere'] = this.createSolidTexture({
             color: '#dcd5cc',
             noiseAmount: 4,
             name: 'Kasmír Bézs',
-            type: 'solid'
+            type: 'solid',
+            category: 'front'
         });
 
-        // 8. Antracit Szürke (Anthracite)
+        // Antracit Szürke (Anthracite)
         this.textures['anthracite'] = this.createSolidTexture({
             color: '#383b40',
             noiseAmount: 5,
             name: 'Antracit Szürke',
-            type: 'solid'
+            type: 'solid',
+            category: 'front'
         });
 
-        // 9. Fekete Matt (Black Matte)
+        // Fekete Matt (Black Matte)
         this.textures['black_matte'] = this.createSolidTexture({
             color: '#1a1a1a',
             noiseAmount: 6,
             name: 'Matt Fekete',
-            type: 'solid'
+            type: 'solid',
+            category: 'front'
         });
 
-        // 10. Loft Beton Hatás (Concrete Loft)
+        // Loft Beton Hatás (Concrete Loft)
         this.textures['concrete'] = this.createConcreteTexture({
             baseColor: '#8a8d91',
             name: 'Loft Beton',
-            type: 'stone'
+            type: 'stone',
+            category: 'worktop'
         });
 
-        // 11. Rozsdamentes Acél (Stainless Steel)
+        // Rozsdamentes Acél (Stainless Steel)
         this.textures['stainless_steel'] = this.createSolidTexture({
             color: '#a8b0b8',
             noiseAmount: 3,
             name: 'Rozsdamentes Acél',
             type: 'metal',
             metalness: 0.85,
-            roughness: 0.25
+            roughness: 0.25,
+            category: 'appliance'
         });
 
-        // 12. Fekete Sütő Üveg (Oven Black Glass)
+        // Fekete Sütő Üveg (Oven Black Glass)
         this.textures['oven_black_glass'] = this.createSolidTexture({
             color: '#111317',
             noiseAmount: 1,
             name: 'Fekete Üveg Sütőfront',
             type: 'glass',
             metalness: 0.1,
-            roughness: 0.1
+            roughness: 0.1,
+            category: 'appliance'
         });
 
-        // 13. Indukciós Főzőlap Üveg (Cooktop Glass)
+        // Indukciós Főzőlap Üveg (Cooktop Glass)
         this.textures['cooktop_glass'] = this.createSolidTexture({
             color: '#0a0d12',
             noiseAmount: 1,
             name: 'Indukciós Főzőlap',
             type: 'glass',
             metalness: 0.2,
-            roughness: 0.1
+            roughness: 0.1,
+            category: 'appliance'
         });
 
-        // 14. Króm Fém Fogantyú (Chrome / Silver)
+        // Króm Fém Fogantyú (Chrome / Silver)
         this.textures['metal_chrome'] = this.createSolidTexture({
             color: '#d1d5db',
             noiseAmount: 2,
             name: 'Króm Fém',
             type: 'metal',
             metalness: 0.95,
-            roughness: 0.15
+            roughness: 0.15,
+            category: 'appliance'
         });
+    },
+
+    /**
+     * Képfájl (JPG/PNG/WEBP) textúra létrehozása Three.js-hez
+     */
+    createFileTexture(options) {
+        const loader = new THREE.TextureLoader();
+        const texture = loader.load(options.path, (tex) => {
+            tex.wrapS = THREE.RepeatWrapping;
+            tex.wrapT = THREE.RepeatWrapping;
+            tex.generateMipmaps = true;
+            tex.minFilter = THREE.LinearMipmapLinearFilter;
+            tex.magFilter = THREE.LinearFilter;
+            tex.needsUpdate = true;
+        });
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.wrapT = THREE.RepeatWrapping;
+
+        return {
+            id: options.id,
+            name: options.name,
+            texture: texture,
+            dataUrl: options.path,
+            roughness: options.roughness !== undefined ? options.roughness : 0.65,
+            metalness: options.metalness !== undefined ? options.metalness : 0.05,
+            category: options.category || 'front',
+            type: options.type || 'wood'
+        };
+    },
+
+    /**
+     * Textúrák szűrése kategória alapján ('front' vagy 'worktop')
+     */
+    getTexturesByCategory(category = 'front') {
+        const result = {};
+        Object.keys(this.textures).forEach(k => {
+            const t = this.textures[k];
+            if (category === 'all' || t.category === category) {
+                result[k] = t;
+            }
+        });
+        return result;
     },
 
     /**

@@ -1061,21 +1061,58 @@ export class BoardManager {
             }
         }
 
-        if (newParams.textureKey !== undefined && newParams.textureKey !== board.textureKey) {
-            board.textureKey = newParams.textureKey;
-            MaterialManager.applyTextureToMesh(board.mesh, board.textureKey);
+        if (newParams.textureKey !== undefined) {
+            const isWorktop = board.isWorktop || board.type === 'worktop' || (board.name && board.name.includes('Munkalap'));
+            const isSplashback = board.isSplashback || (board.name && board.name.includes('Hátfalpanel'));
+            const isBackPanel = !isSplashback && (board.type === 'back' || (board.name && board.name.includes('Hátfal')));
+
+            if (isBackPanel) {
+                // A korpusz hátfal MINDIG fehér
+                board.textureKey = 'white_matte';
+                MaterialManager.applyTextureToMesh(board.mesh, 'white_matte');
+            } else {
+                board.textureKey = newParams.textureKey;
+                MaterialManager.applyTextureToMesh(board.mesh, board.textureKey);
+            }
         }
 
         this.scene3D.updateDimensionVisualizer();
+        this.updateKitchenContinuity();
         return board;
     }
 
     applyTextureToAll(textureKey) {
         this.activeTextureKey = textureKey;
+        const texInfo = MaterialManager.textures[textureKey] || MaterialManager.textures['white_matte'];
+        const isWorktopTex = texInfo && texInfo.category === 'worktop';
+
         this.boards.forEach(board => {
-            board.textureKey = textureKey;
-            MaterialManager.applyTextureToMesh(board.mesh, textureKey);
+            const isWorktop = board.isWorktop || board.type === 'worktop' || (board.name && board.name.includes('Munkalap'));
+            const isSplashback = board.isSplashback || (board.name && board.name.includes('Hátfalpanel'));
+            const isBackPanel = !isSplashback && (board.type === 'back' || (board.name && board.name.includes('Hátfal')));
+
+            // 1. A korpusz hátfal MINDIG fehér marad!
+            if (isBackPanel) {
+                board.textureKey = 'white_matte';
+                MaterialManager.applyTextureToMesh(board.mesh, 'white_matte');
+                return;
+            }
+
+            // 2. Munkalap textúra csak munkalapra/hátfalpanelre, front textúra csak bútorlapra kerül
+            if (isWorktop || isSplashback) {
+                if (isWorktopTex) {
+                    board.textureKey = textureKey;
+                    MaterialManager.applyTextureToMesh(board.mesh, textureKey);
+                }
+            } else {
+                if (!isWorktopTex) {
+                    board.textureKey = textureKey;
+                    MaterialManager.applyTextureToMesh(board.mesh, textureKey);
+                }
+            }
         });
+
+        this.updateKitchenContinuity();
     }
 
     duplicateBoard(id) {

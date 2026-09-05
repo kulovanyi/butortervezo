@@ -562,6 +562,13 @@
                             </button>
                         </div>
 
+                        <!-- Kategória szűrő fülek (Frontok vs Munkalapok) -->
+                        <div id="tex-category-filter-bar" style="display:flex; gap:4px; margin-bottom:10px; background:rgba(0,0,0,0.25); padding:3px; border-radius:var(--radius-sm); border:1px solid var(--border-color);">
+                            <button class="btn btn-sm btn-tex-cat active" data-cat="front" style="flex:1; padding:3px 6px; font-size:11px;">🚪 Frontok</button>
+                            <button class="btn btn-sm btn-tex-cat" data-cat="worktop" style="flex:1; padding:3px 6px; font-size:11px;">🪵 Munkalapok</button>
+                            <button class="btn btn-sm btn-tex-cat" data-cat="all" style="padding:3px 6px; font-size:11px;">✨ Mind</button>
+                        </div>
+
                         <!-- Textúra választó rács -->
                         <div class="texture-grid" id="texture-picker-grid">
                             <!-- Dinamikusan feltöltve JavaScriptből -->
@@ -946,15 +953,28 @@
                                 </select>
                             </div>
                             <div>
-                                <label class="form-label">Korpusz Szín / Textúra</label>
+                                <label class="form-label">Korpusz & Front Textúra</label>
                                 <select id="kc-texture" class="form-control">
-                                    <option value="white_matte" selected>Prémium Fehér Matt</option>
-                                    <option value="cashmere">Kasmír Bézs</option>
-                                    <option value="anthracite">Antracit Szürke</option>
-                                    <option value="black_matte">Matt Fekete</option>
-                                    <option value="oak_natural">Natúr Tölgy</option>
-                                    <option value="oak_sonoma">Sonoma Tölgy</option>
-                                    <option value="walnut_dark">Sötét Dió</option>
+                                    <optgroup label="Front & Bútorlap Textúrák">
+                                        <option value="front_k001">Front K001</option>
+                                        <option value="front_k002">Front K002</option>
+                                        <option value="front_k003">Front K003</option>
+                                        <option value="front_k004">Front K004</option>
+                                        <option value="front_k536">Front K536</option>
+                                        <option value="front_3025">Front 3025</option>
+                                        <option value="front_a865">Front A865</option>
+                                    </optgroup>
+                                    <optgroup label="Egyszínű & Faerezet">
+                                        <option value="white_matte" selected>Prémium Fehér (Matt)</option>
+                                        <option value="cashmere">Kasmír Bézs</option>
+                                        <option value="anthracite">Antracit Szürke</option>
+                                        <option value="black_matte">Matt Fekete</option>
+                                        <option value="oak_natural">Natúr Tölgy</option>
+                                        <option value="oak_sonoma">Sonoma Tölgy</option>
+                                        <option value="walnut_dark">Sötét Dió</option>
+                                        <option value="beech_warm">Meleg Bükk</option>
+                                        <option value="pine_light">Skandináv Fenyő</option>
+                                    </optgroup>
                                 </select>
                             </div>
                             <div>
@@ -1188,6 +1208,30 @@
                                 </div>
                                 <div id="kc-worktop-math-info" style="font-size:10px; color:var(--text-muted); margin-top:4px;">
                                     📏 Korpusz: 560 mm + Elöl: 25 mm + Hátul: 15 mm = 600 mm munkalap
+                                </div>
+
+                                <!-- Munkalap Textúra Választó -->
+                                <div style="margin-top:8px;">
+                                    <label class="form-label" style="font-size:10px; font-weight:700; color:#38bdf8;">🪵 Munkalap & Hátfalpanel Textúra</label>
+                                    <select id="kc-worktop-texture" class="form-control" style="font-size:11px;">
+                                        <optgroup label="Munkalap Textúrák">
+                                            <option value="wt_3025">Munkalap 3025</option>
+                                            <option value="wt_4299">Munkalap 4299</option>
+                                            <option value="wt_k002" selected>Munkalap K002</option>
+                                            <option value="wt_k003">Munkalap K003</option>
+                                            <option value="wt_k092">Munkalap K092</option>
+                                            <option value="wt_k2738">Munkalap K2738</option>
+                                            <option value="wt_k367">Munkalap K367</option>
+                                            <option value="wt_k536">Munkalap K536</option>
+                                            <option value="wt_k551">Munkalap K551</option>
+                                            <option value="wt_k552">Munkalap K552</option>
+                                            <option value="wt_k553">Munkalap K553</option>
+                                            <option value="wt_k756">Munkalap K756</option>
+                                            <option value="wt_k758">Munkalap K758</option>
+                                            <option value="wt_k820">Munkalap K820</option>
+                                            <option value="concrete">Loft Beton</option>
+                                        </optgroup>
+                                    </select>
                                 </div>
 
                                 <!-- Munkalap Hátfal (Csempepótló fali panel) -->

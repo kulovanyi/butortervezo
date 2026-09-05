@@ -217,6 +217,7 @@ class FurnitureApp {
         this.kitchenBackupBoards = null;
         this.savingTarget = null;
         this.applyTextureTarget = 'selected'; // 'selected' vagy 'all'
+        this.activeTextureCategory = 'front'; // 'front', 'worktop' vagy 'all'
         this.kitchenElements = [];
         this.expandedCategories = new Set();
         this.lastSelectedBaseCorpus = null;
@@ -1003,6 +1004,22 @@ class FurnitureApp {
             document.getElementById('btn-apply-tex-selected').classList.remove('btn-primary');
         });
 
+        // --- Textúra Kategória Szűrő Gombok (Front vs Munkalap) ---
+        document.querySelectorAll('.btn-tex-cat').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const cat = btn.getAttribute('data-cat') || 'front';
+                this.renderTextureGrid(cat);
+            });
+        });
+
+        // Konyha varázsló munkalap textúra módosítás
+        const kcWtTex = document.getElementById('kc-worktop-texture');
+        if (kcWtTex) {
+            kcWtTex.addEventListener('change', () => {
+                this.updateKitchenLivePreview();
+            });
+        }
+
         // Egyéni textúra fájl feltöltése
         document.getElementById('input-custom-texture').addEventListener('change', (e) => {
             const file = e.target.files[0];
@@ -1760,6 +1777,9 @@ class FurnitureApp {
             if (config.worktop.edgeRadius !== undefined) document.getElementById('kc-worktop-edge-radius').value = config.worktop.edgeRadius;
             if (config.worktop.overhangFront !== undefined) document.getElementById('kc-worktop-overhang-front').value = config.worktop.overhangFront;
             if (config.worktop.overhangBack !== undefined) document.getElementById('kc-worktop-overhang-back').value = config.worktop.overhangBack;
+            if (config.worktop.textureKey && document.getElementById('kc-worktop-texture')) {
+                document.getElementById('kc-worktop-texture').value = config.worktop.textureKey;
+            }
 
             // Munkalap hátfal (splashback)
             const hasSplashback = !!(config.worktop.splashback && config.worktop.splashback.enabled);
@@ -1871,19 +1891,47 @@ class FurnitureApp {
     // TEXTÚRA ÉS ANYAG KEZELÉS
     // ==========================================
 
-    renderTextureGrid() {
+    renderTextureGrid(categoryFilter = null) {
         const grid = document.getElementById('texture-picker-grid');
+        if (!grid) return;
         grid.innerHTML = '';
+
+        if (categoryFilter) {
+            this.activeTextureCategory = categoryFilter;
+        } else if (!this.activeTextureCategory) {
+            this.activeTextureCategory = 'front';
+        }
+
+        const cat = this.activeTextureCategory;
+
+        // Kategória fül gombok aktív állapotának frissítése
+        document.querySelectorAll('.btn-tex-cat').forEach(btn => {
+            const btnCat = btn.getAttribute('data-cat') || 'front';
+            btn.classList.toggle('active', btnCat === cat);
+            btn.classList.toggle('btn-primary', btnCat === cat);
+        });
+
+        const isTargetWorktop = this.selectedBoard && (this.selectedBoard.isWorktop || this.selectedBoard.type === 'worktop' || this.selectedBoard.isSplashback);
 
         Object.keys(MaterialManager.textures).forEach(key => {
             const tex = MaterialManager.textures[key];
+            if (cat !== 'all' && tex.category && tex.category !== cat) {
+                return;
+            }
+
             const item = document.createElement('div');
             item.className = 'texture-item';
+            item.style.position = 'relative';
             if (this.selectedBoard && this.selectedBoard.textureKey === key) {
                 item.classList.add('active');
             }
 
+            const catBadge = tex.category === 'worktop' 
+                ? `<span style="position:absolute; top:2px; right:2px; font-size:8px; background:rgba(2,132,199,0.9); color:#fff; padding:1px 4px; border-radius:3px; font-weight:600;">Munkalap</span>`
+                : (tex.category === 'front' ? `<span style="position:absolute; top:2px; right:2px; font-size:8px; background:rgba(16,185,129,0.9); color:#fff; padding:1px 4px; border-radius:3px; font-weight:600;">Front</span>` : '');
+
             item.innerHTML = `
+                ${catBadge}
                 <img src="${tex.dataUrl}" class="texture-thumb" alt="${tex.name}">
                 <div class="texture-name" title="${tex.name}">${tex.name}</div>
             `;
@@ -1899,23 +1947,61 @@ class FurnitureApp {
     }
 
     applyTexture(textureKey) {
+        const texInfo = MaterialManager.textures[textureKey] || MaterialManager.textures['white_matte'];
+        const isWorktopTex = texInfo && texInfo.category === 'worktop';
+
         if (this.applyTextureTarget === 'all') {
             this.boardManager.applyTextureToAll(textureKey);
-        } else {
-            if (this.selectedCustomGroup) {
+            this.updateDimensionsBadge();
+            return;
+        }
+
+        if (this.selectedCustomGroup) {
+            if (!isWorktopTex) {
                 this.boardManager.updateGroup(this.selectedCustomGroup.userData.id, { textureKey: textureKey });
-            } else if (this.scene3D.selectedTargets && this.scene3D.selectedTargets.length > 1) {
-                this.scene3D.selectedTargets.forEach(t => {
-                    if (t.userData && t.userData.isCustomGroup) {
-                        this.boardManager.updateGroup(t.userData.id, { textureKey: textureKey });
-                    } else {
-                        const b = this.boardManager.boards.find(x => x.mesh === t);
-                        if (b) this.boardManager.updateBoard(b.id, { textureKey: textureKey });
-                    }
-                });
-            } else if (this.selectedBoard) {
-                this.boardManager.updateBoard(this.selectedBoard.id, { textureKey: textureKey });
             } else {
+                alert('A munkalap textúrák csak konyhai munkalapokra alkalmazhatók!');
+            }
+        } else if (this.scene3D.selectedTargets && this.scene3D.selectedTargets.length > 1) {
+            this.scene3D.selectedTargets.forEach(t => {
+                if (t.userData && t.userData.isCustomGroup) {
+                    if (!isWorktopTex) this.boardManager.updateGroup(t.userData.id, { textureKey: textureKey });
+                } else {
+                    const b = this.boardManager.boards.find(x => x.mesh === t);
+                    if (b) {
+                        const isWorktop = b.isWorktop || b.type === 'worktop' || b.isSplashback;
+                        const isBack = !b.isSplashback && (b.type === 'back' || (b.name && b.name.includes('Hátfal')));
+                        if (isBack) return; // Hátfal mindig fehér marad!
+                        if (isWorktop && isWorktopTex) {
+                            this.boardManager.updateBoard(b.id, { textureKey: textureKey });
+                        } else if (!isWorktop && !isWorktopTex) {
+                            this.boardManager.updateBoard(b.id, { textureKey: textureKey });
+                        }
+                    }
+                }
+            });
+        } else if (this.selectedBoard) {
+            const isWorktop = this.selectedBoard.isWorktop || this.selectedBoard.type === 'worktop' || this.selectedBoard.isSplashback;
+            const isBack = !this.selectedBoard.isSplashback && (this.selectedBoard.type === 'back' || (this.selectedBoard.name && this.selectedBoard.name.includes('Hátfal')));
+
+            if (isBack) {
+                alert('A korpusz hátfal rögzítetten fehér anyagú.');
+                return;
+            }
+
+            if (isWorktop && !isWorktopTex) {
+                alert('Munkalapra csak munkalap textúra választható ki!');
+                return;
+            }
+
+            if (!isWorktop && isWorktopTex) {
+                alert('A munkalap textúrák csak konyhai munkalapokra alkalmazhatók! Bútorlapokhoz és frontokhoz válassz a Front textúrák közül.');
+                return;
+            }
+
+            this.boardManager.updateBoard(this.selectedBoard.id, { textureKey: textureKey });
+        } else {
+            if (!isWorktopTex) {
                 this.boardManager.activeTextureKey = textureKey;
             }
         }
@@ -2826,7 +2912,7 @@ class FurnitureApp {
                 height: customBackH,
                 offsetY: Number(document.getElementById('kc-back-offset-y')?.value || 0),
                 insetBack: Number(document.getElementById('kc-back-inset')?.value || 20),
-                textureKey: Number(document.getElementById('kc-back-th').value) === 18 ? texKey : 'white_matte'
+                textureKey: 'white_matte' // A hátfal MINDIG fehér!
             },
 
             legs: {
@@ -2852,12 +2938,12 @@ class FurnitureApp {
                 edgeRadius: Number(document.getElementById('kc-worktop-edge-radius')?.value) !== undefined ? Number(document.getElementById('kc-worktop-edge-radius').value) : 3,
                 overhangFront: Number(document.getElementById('kc-worktop-overhang-front').value) || 25,
                 overhangBack: Number(document.getElementById('kc-worktop-overhang-back').value) || 15,
-                textureKey: 'concrete',
+                textureKey: document.getElementById('kc-worktop-texture')?.value || 'wt_k002',
                 splashback: {
                     enabled: document.getElementById('kc-worktop-splashback-enabled') ? document.getElementById('kc-worktop-splashback-enabled').checked : false,
                     height: Number(document.getElementById('kc-worktop-splashback-height')?.value) || 600,
                     thickness: Number(document.getElementById('kc-worktop-splashback-depth')?.value !== undefined ? document.getElementById('kc-worktop-splashback-depth').value : 5),
-                    textureKey: 'concrete'
+                    textureKey: document.getElementById('kc-worktop-texture')?.value || 'wt_k002'
                 }
             },
 
