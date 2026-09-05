@@ -219,6 +219,7 @@ class FurnitureApp {
         this.applyTextureTarget = 'selected'; // 'selected' vagy 'all'
         this.kitchenElements = [];
         this.expandedCategories = new Set();
+        this.lastSelectedBaseCorpus = null;
 
         this.init();
     }
@@ -689,7 +690,11 @@ class FurnitureApp {
         if (btnDelCorpus) {
             btnDelCorpus.addEventListener('click', () => {
                 if (this.selectedCorpus) {
-                    this.boardManager.deleteCorpus(this.selectedCorpus.userData.id);
+                    const deletedId = this.selectedCorpus.userData.id;
+                    if (this.lastSelectedBaseCorpus && this.lastSelectedBaseCorpus.userData.id === deletedId) {
+                        this.lastSelectedBaseCorpus = null;
+                    }
+                    this.boardManager.deleteCorpus(deletedId);
                     this.onBoardSelected(null);
                     this.updateDimensionsBadge();
                     this.renderHierarchyTree();
@@ -1047,6 +1052,8 @@ class FurnitureApp {
             const currentBounds = this.boardManager.getFurnitureBoundingBox();
             const initialW = Number(document.getElementById('kc-width').value) || 600;
             this.newCorpusOffsetX = currentBounds.width > 0 ? (currentBounds.width / 2 + initialW / 2 + 80) : 0;
+            this.newCorpusOffsetY = 0;
+            this.newCorpusOffsetZ = 0;
 
             const modalTitle = document.querySelector('#modal-kitchen-generator .modal-title');
             if (modalTitle) modalTitle.innerHTML = '🍳 Konyha Elem Tervező Varázsló';
@@ -1059,7 +1066,13 @@ class FurnitureApp {
 
             // Új előnézeti korpusz azonnali létrehozása a jelenetben
             const config = this.getKitchenConfigFromUI();
-            this.previewCorpus = this.boardManager.createCorpus(config, this.newCorpusOffsetX, 0, 0);
+            if (config.type === 'wall') {
+                const placement = this.getWallCabinetPlacement(config);
+                this.newCorpusOffsetX = placement.x;
+                this.newCorpusOffsetY = placement.y;
+                this.newCorpusOffsetZ = placement.z;
+            }
+            this.previewCorpus = this.boardManager.createCorpus(config, this.newCorpusOffsetX, this.newCorpusOffsetY || 0, this.newCorpusOffsetZ || 0);
             this.scene3D.selectBoard(this.previewCorpus);
             this.updateDimensionsBadge();
             this.renderHierarchyTree();
@@ -1369,6 +1382,19 @@ class FurnitureApp {
             this.selectedCorpus = null;
             this.selectedCustomGroup = null;
 
+            // Kijelölt alsó korpusz keresése
+            for (const t of selectedTargets) {
+                if (t.userData && t.userData.isCorpus) {
+                    const cfg = t.userData.config;
+                    const tp = cfg?.type;
+                    const isBase = tp === 'base' || (!tp && (Number(t.userData.height) || 720) < 1000 && t.position.y < 500);
+                    if (isBase) {
+                        this.lastSelectedBaseCorpus = t;
+                        break;
+                    }
+                }
+            }
+
             if (contextTabsBar) contextTabsBar.style.display = 'flex';
             if (contextTabContainer) contextTabContainer.style.display = 'flex';
 
@@ -1489,6 +1515,14 @@ class FurnitureApp {
             this.selectedCorpus = target;
             this.selectedCustomGroup = null;
 
+            // Alsó elem megjegyzése felső elemek igazításához
+            const cfg = target.userData.config;
+            const t = cfg?.type;
+            const isBase = t === 'base' || (!t && (Number(target.userData.height) || 720) < 1000 && target.position.y < 500);
+            if (isBase) {
+                this.lastSelectedBaseCorpus = target;
+            }
+
             if (btnTabDims) btnTabDims.style.display = 'flex';
             if (btnTabSnap) btnTabSnap.style.display = 'none';
             if (btnTabGroup) btnTabGroup.style.display = 'none';
@@ -1521,6 +1555,18 @@ class FurnitureApp {
             this.selectedBoard = board;
             this.selectedCorpus = null;
             this.selectedCustomGroup = null;
+
+            if (board.corpusId) {
+                const parentCorpus = this.boardManager.corpora.find(c => c.userData.id === board.corpusId);
+                if (parentCorpus) {
+                    const cfg = parentCorpus.userData.config;
+                    const t = cfg?.type;
+                    const isBase = t === 'base' || (!t && (Number(parentCorpus.userData.height) || 720) < 1000 && parentCorpus.position.y < 500);
+                    if (isBase) {
+                        this.lastSelectedBaseCorpus = parentCorpus;
+                    }
+                }
+            }
 
             if (btnTabDims) btnTabDims.style.display = 'flex';
             if (btnTabSnap) btnTabSnap.style.display = 'flex';
@@ -2058,6 +2104,9 @@ class FurnitureApp {
 
             item.addEventListener('click', (e) => {
                 if (e.target.closest('.btn-tree-delete')) {
+                    if (this.lastSelectedBaseCorpus && this.lastSelectedBaseCorpus.userData.id === c.userData.id) {
+                        this.lastSelectedBaseCorpus = null;
+                    }
                     this.boardManager.deleteCorpus(c.userData.id);
                     this.onBoardSelected(null);
                     this.updateDimensionsBadge();
@@ -2620,39 +2669,54 @@ class FurnitureApp {
                 return t === 'wall' || (!t && c.position.y >= 1000);
             });
 
-            // 1. Keresünk olyan alsó elemet, ami felett még nincs felsőszekrény
             let targetBase = null;
-            for (const base of baseCorpora) {
-                const hasWallAbove = wallCorpora.some(w => Math.abs(w.position.x - base.position.x) < 50);
-                if (!hasWallAbove) {
-                    targetBase = base;
-                    break;
+
+            // 1. Mindig az utoljára kijelölt alsó elemhez pattanjon, ha az érvényes
+            if (this.lastSelectedBaseCorpus && baseCorpora.includes(this.lastSelectedBaseCorpus)) {
+                targetBase = this.lastSelectedBaseCorpus;
+            } else {
+                const selected = this.selectedCorpus || (this.scene3D && this.scene3D.selectedTarget);
+                if (selected && baseCorpora.includes(selected)) {
+                    targetBase = selected;
                 }
             }
 
-            // 2. Ha mindegyik felett van vagy van aktív kijelölt alsószekrény, azt használjuk
+            // 2. Ha nincs kifejezetten kijelölt alsó elem, keresünk olyat, ami felett még nincs felsőszekrény
             if (!targetBase) {
-                const selected = this.scene3D.selectedTarget;
-                if (selected && baseCorpora.includes(selected)) {
-                    targetBase = selected;
-                } else {
-                    targetBase = baseCorpora[baseCorpora.length - 1];
+                for (const base of baseCorpora) {
+                    const hasWallAbove = wallCorpora.some(w => Math.abs(w.position.x - base.position.x) < 50);
+                    if (!hasWallAbove) {
+                        targetBase = base;
+                        break;
+                    }
                 }
+            }
+
+            // 3. Fallback: legutoljára létrehozott alsószekrény
+            if (!targetBase) {
+                targetBase = baseCorpora[baseCorpora.length - 1];
             }
 
             const baseConfig = targetBase.userData.config || {};
             const baseLegH = baseConfig.legs?.enabled ? Number(baseConfig.legs.height) : 0;
             const baseCorpusH = Number(baseConfig.height) || 720;
             const baseWtTh = baseConfig.worktop?.enabled ? Number(baseConfig.worktop.thickness) : 0;
-            const splashbackH = baseConfig.worktop?.splashback?.enabled ? Number(baseConfig.worktop.splashback.height) : 600;
+            const splashbackH = (baseConfig.worktop?.enabled && baseConfig.worktop?.splashback?.enabled)
+                ? Number(baseConfig.worktop.splashback.height)
+                : 600;
 
             const baseTopY = targetBase.position.y + baseLegH + baseCorpusH + baseWtTh + splashbackH;
             const baseDepth = Number(baseConfig.depth) || 560;
-            const baseBackZ = targetBase.position.z - (baseDepth / 2);
+
+            // Igazítás a munkalap és a hátfal hátsó síkjához (figyelembe véve az esetleges munkalap hátsó túlnyúlást is)
+            const overhangBack = (baseConfig.worktop?.enabled && Number(baseConfig.worktop.overhangBack) > 0)
+                ? Number(baseConfig.worktop.overhangBack)
+                : 0;
+            const baseBackPlane = (targetBase.position.z - (baseDepth / 2)) - overhangBack;
 
             const targetX = targetBase.position.x;
             const targetY = baseTopY;
-            const targetZ = baseBackZ + (wallD / 2);
+            const targetZ = baseBackPlane + (wallD / 2);
 
             return { x: targetX, y: targetY, z: targetZ };
         }
@@ -3057,11 +3121,23 @@ class FurnitureApp {
             this.boardManager.updateCorpus(this.editingCorpusId, config);
             this.updateDimensionsBadge();
         } else {
+            if (config.type === 'wall') {
+                const placement = this.getWallCabinetPlacement(config);
+                this.newCorpusOffsetX = placement.x;
+                this.newCorpusOffsetY = placement.y;
+                this.newCorpusOffsetZ = placement.z;
+                if (this.previewCorpus) {
+                    this.previewCorpus.position.set(placement.x, placement.y, placement.z);
+                    this.previewCorpus.userData.x = placement.x;
+                    this.previewCorpus.userData.y = placement.y;
+                    this.previewCorpus.userData.z = placement.z;
+                }
+            }
             if (this.previewCorpus) {
                 this.boardManager.updateCorpus(this.previewCorpus.userData.id, config);
                 this.updateDimensionsBadge();
             } else {
-                this.previewCorpus = this.boardManager.createCorpus(config, this.newCorpusOffsetX || 0, 0, 0);
+                this.previewCorpus = this.boardManager.createCorpus(config, this.newCorpusOffsetX || 0, this.newCorpusOffsetY || 0, this.newCorpusOffsetZ || 0);
                 this.scene3D.selectBoard(this.previewCorpus);
                 this.updateDimensionsBadge();
                 this.renderHierarchyTree();
@@ -3101,7 +3177,7 @@ class FurnitureApp {
         } else {
             const currentBounds = this.boardManager.getFurnitureBoundingBox();
             const offsetX = currentBounds.width > 0 ? (currentBounds.width / 2 + config.width / 2 + 80) : 0;
-            const newCorpus = this.boardManager.createCorpus(config, offsetX, 0, 0);
+            const newCorpus = this.boardManager.createCorpus(config, this.newCorpusOffsetX ?? offsetX, this.newCorpusOffsetY ?? 0, this.newCorpusOffsetZ ?? 0);
             this.closeModal('modal-kitchen-generator');
             this.updateDimensionsBadge();
             this.renderHierarchyTree();

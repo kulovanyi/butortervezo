@@ -517,14 +517,14 @@ export class Scene3D {
 
         // 1. KORPUSZOK MÁGNESES ILLESZTÉSE
         if (target.userData && target.userData.isCorpus) {
+            const posX = target.position.x;
+            const posY = target.position.y;
+            const posZ = target.position.z;
+
             const w1 = target.userData.width || 600;
             const h1 = target.userData.height || 720;
             const d1 = target.userData.depth || 560;
             const type1 = target.userData.config?.type || (posY >= 1000 ? 'wall' : 'base');
-
-            const posX = target.position.x;
-            const posY = target.position.y;
-            const posZ = target.position.z;
 
             let closestSnap = null;
             let minDistance = this.magneticSnapDistance;
@@ -548,9 +548,14 @@ export class Scene3D {
                     const baseLegH = baseConfig.legs?.enabled ? Number(baseConfig.legs.height) : 0;
                     const baseCorpusH = Number(baseConfig.height) || h2;
                     const baseWtTh = baseConfig.worktop?.enabled ? Number(baseConfig.worktop.thickness) : 0;
-                    const splashbackH = baseConfig.worktop?.splashback?.enabled ? Number(baseConfig.worktop.splashback.height) : 600;
+                    const splashbackH = (baseConfig.worktop?.enabled && baseConfig.worktop?.splashback?.enabled)
+                        ? Number(baseConfig.worktop.splashback.height)
+                        : (baseConfig.worktop?.enabled ? 600 : 600);
                     const baseTopY = otherY + baseLegH + baseCorpusH + baseWtTh + splashbackH;
-                    const snapZ = otherBackZ + (d1 / 2);
+                    const overhangBack = (baseConfig.worktop?.enabled && Number(baseConfig.worktop.overhangBack) > 0)
+                        ? Number(baseConfig.worktop.overhangBack)
+                        : 0;
+                    const snapZ = (otherBackZ - overhangBack) + (d1 / 2);
 
                     // X-irányú közvetlen fölé-illesztés
                     const distCenterX = Math.abs(posX - otherX);
