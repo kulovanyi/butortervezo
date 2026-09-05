@@ -2547,15 +2547,19 @@ function createBoardGeometry(boardData) {
     const width = Number(boardData.width) || 600;
     const height = Number(boardData.height) || 18;
     const depth = Number(boardData.depth) || 400;
-    const isWorktop = boardData.isWorktop || boardData.type === 'worktop' || (boardData.name && boardData.name.includes('Munkalap'));
+    const isSplashback = boardData.isSplashback || (boardData.name && boardData.name.includes('Hátfalpanel'));
+    const isWorktop = !isSplashback && (boardData.isWorktop || boardData.type === 'worktop' || (boardData.name && boardData.name.includes('Munkalap')));
     const isPlinth = boardData.isPlinth || boardData.type === 'plinth' || (boardData.name && boardData.name.includes('Szokli'));
 
     if (isWorktop) {
         const rad = boardData.edgeRadius !== undefined ? Number(boardData.edgeRadius) : 3;
         return createWorktopGeometry(width, height, depth, rad);
     }
-    if (isPlinth) {
-        return createPlinthGeometry(width, height, depth);
+    if (isPlinth || isSplashback) {
+        const geo = new THREE.BoxGeometry(width, height, depth);
+        applyBoxUVs(geo, width, height, depth, 800);
+        geo.parameters = { width, height, depth, isPlinth: !!isPlinth, isSplashback: !!isSplashback };
+        return geo;
     }
     const rad = boardData.edgeRadius !== undefined ? Number(boardData.edgeRadius) : 1;
     return createRoundedBoxGeometry(width, height, depth, rad);
@@ -3037,11 +3041,12 @@ class BoardManager {
     }
 
     /**
-     * Egymás mellett lévő korpuszok konyhabútor elemeinek (munkalap és szokli) összehangolása
+     * Egymás mellett lévő korpuszok konyhabútor elemeinek (munkalap, szokli és munkalap hátfal) összehangolása
      */
     updateKitchenContinuity() {
         this.updateWorktopContinuity();
         this.updatePlinthContinuity();
+        this.updateSplashbackContinuity();
     }
 
     /**
@@ -3154,6 +3159,63 @@ class BoardManager {
             item.mesh.material = new THREE.MeshStandardMaterial({
                 map: clonedTexture,
                 roughness: texInfo.roughness !== undefined ? texInfo.roughness : 0.85,
+                metalness: texInfo.metalness !== undefined ? texInfo.metalness : 0.05
+            });
+        });
+    }
+
+    /**
+     * Egymás mellett lévő korpuszok munkalap hátfalpaneljeinek (splashback) összehangolása
+     * (Egybefüggő folytonos fali panel textúra a teljes konyhasor mentén, csúszásmentesen)
+     */
+    updateSplashbackContinuity() {
+        const splashbackItems = [];
+        const tileSize = 800; // Pontosan megegyezik az applyBoxUVs tileSize-szal (800 mm)
+
+        this.boards.forEach(b => {
+            if (!b.mesh) return;
+            const isSplashback = b.isSplashback || (b.name && b.name.includes('Hátfalpanel'));
+            if (!isSplashback) return;
+
+            const worldPos = new THREE.Vector3();
+            b.mesh.getWorldPosition(worldPos);
+            const w = b.width || (b.mesh.geometry.parameters && b.mesh.geometry.parameters.width) || 600;
+            const d = b.depth || (b.mesh.geometry.parameters && b.mesh.geometry.parameters.depth) || 5;
+            const h = b.height || (b.mesh.geometry.parameters && b.mesh.geometry.parameters.height) || 600;
+
+            splashbackItems.push({
+                board: b,
+                mesh: b.mesh,
+                worldX: worldPos.x,
+                worldY: worldPos.y,
+                worldZ: worldPos.z,
+                width: w,
+                height: h,
+                depth: d,
+                minX: worldPos.x - w / 2,
+                textureKey: b.textureKey || 'concrete'
+            });
+        });
+
+        if (splashbackItems.length === 0) return;
+
+        splashbackItems.forEach(item => {
+            const texInfo = MaterialManager.textures[item.textureKey] || MaterialManager.textures['concrete'];
+            if (!texInfo || !texInfo.texture) return;
+
+            const clonedTexture = texInfo.texture.clone();
+            clonedTexture.wrapS = THREE.RepeatWrapping;
+            clonedTexture.wrapT = THREE.RepeatWrapping;
+
+            const offX = ((item.minX % tileSize) + tileSize) % tileSize / tileSize;
+
+            clonedTexture.repeat.set(1, 1);
+            clonedTexture.offset.set(offX, 0);
+            clonedTexture.needsUpdate = true;
+
+            item.mesh.material = new THREE.MeshStandardMaterial({
+                map: clonedTexture,
+                roughness: texInfo.roughness !== undefined ? texInfo.roughness : 0.7,
                 metalness: texInfo.metalness !== undefined ? texInfo.metalness : 0.05
             });
         });
