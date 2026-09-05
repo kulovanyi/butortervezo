@@ -195,8 +195,12 @@ export function createBoardGeometry(boardData) {
     const depth = Number(boardData.depth) || 400;
     const isSplashback = boardData.isSplashback || (boardData.name && boardData.name.includes('Hátfalpanel'));
     const isWorktop = !isSplashback && (boardData.isWorktop || boardData.type === 'worktop' || (boardData.name && boardData.name.includes('Munkalap')));
-    const isPlinth = boardData.isPlinth || boardData.type === 'plinth' || (boardData.name && boardData.name.includes('Szokli'));
-
+    if (boardData.isHardware || boardData.type === 'hardware') {
+        const geo = new THREE.BoxGeometry(width, height, depth);
+        applyBoxUVs(geo, width, height, depth, 400);
+        geo.parameters = { width, height, depth, isHardware: true };
+        return geo;
+    }
     if (isWorktop) {
         const rad = boardData.edgeRadius !== undefined ? Number(boardData.edgeRadius) : 3;
         return createWorktopGeometry(width, height, depth, rad);
@@ -464,9 +468,10 @@ export class BoardManager {
                 const isWorktop = b.isWorktop || b.type === 'worktop' || b.isSplashback;
                 const isBackPanel = !b.isSplashback && (b.type === 'back' || (b.name && b.name.includes('Hátfal')));
                 const isAppliance = b.isAppliance || b.type === 'appliance';
+                const isHardware = b.isHardware || b.type === 'hardware' || b.isHinge || b.isHandle;
 
-                if (isWorktop || isBackPanel || isAppliance) {
-                    return; // Munkalapot, korpusz fehér hátfalat és gépeket ne írjuk felül
+                if (isWorktop || isBackPanel || isAppliance || isHardware) {
+                    return; // Munkalapot, korpusz fehér hátfalat, gépeket és pántokat/fogantyúkat ne írjuk felül
                 }
 
                 b.textureKey = textureKey;
@@ -1157,8 +1162,9 @@ export class BoardManager {
             const isSplashback = board.isSplashback || (board.name && board.name.includes('Hátfalpanel'));
             const isBackPanel = !isSplashback && (board.type === 'back' || (board.name && board.name.includes('Hátfal')));
             const isAppliance = board.isAppliance || board.type === 'appliance';
+            const isHardware = board.isHardware || board.type === 'hardware' || board.isHinge || board.isHandle;
 
-            if (isAppliance) return;
+            if (isAppliance || isHardware) return;
 
             // A korpusz hátfal MINDIG fehér marad!
             if (isBackPanel) {

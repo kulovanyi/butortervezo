@@ -1054,9 +1054,190 @@ class KitchenCorpusGenerator {
             }
         }
 
-        // ----------------------------------------------------
-        // 9. DINAMIKUS FRONT ELEMEK & KÉSZÜLÉKEK (Ajtók, Fiókok, Beépíthető Sütő / Főzőlap)
-        // ----------------------------------------------------
+    /**
+     * 3D Kivetőpántok generálása ajtóhoz (Blum/Hettich szabvány szerint)
+     */
+    static addConcealedHinges(boards, p) {
+        const { doorX, doorY, doorW, doorH, frontTh, D, W, Th, side } = p;
+        
+        // Pántok száma az ajtó magassága (doorH) alapján
+        let hingeOffsets = [];
+        if (doorH < 900) {
+            hingeOffsets = [100, doorH - 100];
+        } else if (doorH < 1600) {
+            hingeOffsets = [100, doorH / 2, doorH - 100];
+        } else if (doorH < 2000) {
+            hingeOffsets = [100, doorH * 0.35, doorH * 0.65, doorH - 100];
+        } else {
+            hingeOffsets = [100, doorH * 0.28, doorH * 0.50, doorH * 0.72, doorH - 100];
+        }
+
+        hingeOffsets.forEach((offY, hIdx) => {
+            const hY = (doorY - doorH / 2) + offY;
+
+            if (side === 'left' || side === 'right') {
+                const isLeft = side === 'left';
+                // Pántedény középpont X: ajtó élétől 21.5 mm (Ø35mm edény)
+                const cupX = isLeft ? (doorX - doorW / 2 + 21.5) : (doorX + doorW / 2 - 21.5);
+                // Szerelőtalp X: korpusz belső oldalán
+                const plateX = isLeft ? (-W / 2 + Th + 2) : (W / 2 - Th - 2);
+                const armX = (cupX + plateX) / 2;
+
+                // 1. Pántedény (Ø35mm csésze az ajtó belső felületén)
+                boards.push({
+                    name: `Pántedény Ø35mm ${isLeft ? 'Bal' : 'Jobb'} ${hIdx + 1}`,
+                    width: 35,
+                    height: 35,
+                    depth: 6,
+                    thickness: 6,
+                    type: 'hardware',
+                    isHardware: true,
+                    isHinge: true,
+                    textureKey: 'metal_chrome',
+                    x: cupX,
+                    y: hY,
+                    z: (D / 2) - 1,
+                    edgeBanding: 'Nincs'
+                });
+
+                // 2. Csuklós Pántkar (fém kar állítócsavarral)
+                boards.push({
+                    name: `Pántkar ${isLeft ? 'Bal' : 'Jobb'} ${hIdx + 1}`,
+                    width: Math.max(12, Math.abs(cupX - plateX)),
+                    height: 18,
+                    depth: 28,
+                    thickness: 18,
+                    type: 'hardware',
+                    isHardware: true,
+                    isHinge: true,
+                    textureKey: 'metal_chrome',
+                    x: armX,
+                    y: hY,
+                    z: (D / 2) - 14,
+                    edgeBanding: 'Nincs'
+                });
+
+                // 3. Szerelőtalp (a korpusz belső oldalán, 37mm-re elölről)
+                boards.push({
+                    name: `Pánt Szerelőtalp ${isLeft ? 'Bal' : 'Jobb'} ${hIdx + 1}`,
+                    width: 4,
+                    height: 32,
+                    depth: 37,
+                    thickness: 4,
+                    type: 'hardware',
+                    isHardware: true,
+                    isHinge: true,
+                    textureKey: 'metal_chrome',
+                    x: plateX,
+                    y: hY,
+                    z: (D / 2) - 18.5,
+                    edgeBanding: 'Nincs'
+                });
+            }
+        });
+    }
+
+    /**
+     * Felnyíló ajtó vasalatok: 2 db felső pánt + 2 db gázteleszkóp
+     */
+    static addLiftUpHardware(boards, p) {
+        const { doorX, doorY, doorW, doorH, frontTh, D, W, Th } = p;
+        
+        // 1. Felső 2 db pánt (bal és jobb oldalt 100mm-re a szélektől)
+        const topHingesX = [-doorW / 2 + 100, doorW / 2 - 100];
+        const topHingeY = doorY + doorH / 2 - 20;
+
+        topHingesX.forEach((hx, idx) => {
+            // Pántedény
+            boards.push({
+                name: `Felnyíló Pántedény ${idx + 1}`,
+                width: 35,
+                height: 35,
+                depth: 6,
+                thickness: 6,
+                type: 'hardware',
+                isHardware: true,
+                isHinge: true,
+                textureKey: 'metal_chrome',
+                x: hx,
+                y: topHingeY,
+                z: (D / 2) - 1,
+                edgeBanding: 'Nincs'
+            });
+            // Felső pántkar
+            boards.push({
+                name: `Felnyíló Pántkar ${idx + 1}`,
+                width: 18,
+                height: 18,
+                depth: 30,
+                thickness: 18,
+                type: 'hardware',
+                isHardware: true,
+                isHinge: true,
+                textureKey: 'metal_chrome',
+                x: hx,
+                y: topHingeY + 8,
+                z: (D / 2) - 15,
+                edgeBanding: 'Nincs'
+            });
+        });
+
+        // 2. Gázteleszkópok a bal és jobb oldalon
+        const strutSides = [
+            { name: 'Bal Gázteleszkóp', x: -W / 2 + Th + 12 },
+            { name: 'Jobb Gázteleszkóp', x: W / 2 - Th - 12 }
+        ];
+
+        strutSides.forEach(st => {
+            // Gázkamra henger
+            boards.push({
+                name: `${st.name} Ház`,
+                width: 14,
+                height: 14,
+                depth: 120,
+                thickness: 14,
+                type: 'hardware',
+                isHardware: true,
+                textureKey: 'metal_chrome',
+                x: st.x,
+                y: doorY - 30,
+                z: (D / 2) - 110,
+                edgeBanding: 'Nincs'
+            });
+
+            // Króm dugattyúrúd
+            boards.push({
+                name: `${st.name} Dugattyúrúd`,
+                width: 7,
+                height: 7,
+                depth: 70,
+                thickness: 7,
+                type: 'hardware',
+                isHardware: true,
+                textureKey: 'metal_chrome',
+                x: st.x,
+                y: doorY + 10,
+                z: (D / 2) - 35,
+                edgeBanding: 'Nincs'
+            });
+
+            // Front rögzítőtalp
+            boards.push({
+                name: `${st.name} Front Talp`,
+                width: 20,
+                height: 20,
+                depth: 4,
+                thickness: 4,
+                type: 'hardware',
+                isHardware: true,
+                textureKey: 'metal_chrome',
+                x: st.x,
+                y: doorY + 25,
+                z: (D / 2) - 2,
+                edgeBanding: 'Nincs'
+            });
+        });
+    }
         if (cfg.elements && Array.isArray(cfg.elements) && cfg.elements.length > 0) {
             let currentAllocatedY = 0;
 
@@ -1074,11 +1255,60 @@ class KitchenCorpusGenerator {
                 currentAllocatedY += elemH;
 
                 if (elemType === 'door') {
-                    const doorType = elem.doorType || 'single_left'; // 'single_left', 'single_right', 'double'
+                    const doorType = elem.doorType || 'single_left'; // 'single_left', 'single_right', 'double', 'lift_up'
                     const hasHandle = elem.hasHandle !== false;
 
-                    if (doorType === 'double') {
-                        // Kétszárnyú ajtó
+                    if (doorType === 'lift_up') {
+                        // 1. FELNYÍLÓ AJTÓ (Lift-Up Flap Door)
+                        boards.push({
+                            name: `Felnyíló Ajtó Front (${Math.round(actualW)}×${Math.round(actualH)})`,
+                            width: Math.round(actualW),
+                            height: Math.round(actualH),
+                            depth: frontTh,
+                            thickness: frontTh,
+                            type: 'door',
+                            isDoor: true,
+                            doorType: 'lift_up',
+                            textureKey: frontTex,
+                            x: 0,
+                            y: centerY,
+                            z: frontZ,
+                            edgeBanding: '2.0mm ABS'
+                        });
+
+                        // 3D Felső kivetőpántok és gázteleszkópok
+                        KitchenCorpusGenerator.addLiftUpHardware(boards, {
+                            doorX: 0,
+                            doorY: centerY,
+                            doorW: actualW,
+                            doorH: actualH,
+                            frontTh,
+                            D,
+                            W,
+                            Th
+                        });
+
+                        // Fogantyú: alul középen vízszintesen
+                        if (hasHandle) {
+                            const handleW = Math.min(160, Math.max(80, actualW - 120));
+                            boards.push({
+                                name: 'Felnyíló Ajtó Fogantyú',
+                                width: handleW,
+                                height: 12,
+                                depth: 25,
+                                thickness: 12,
+                                type: 'hardware',
+                                isHardware: true,
+                                isHandle: true,
+                                textureKey: 'metal_chrome',
+                                x: 0,
+                                y: centerY - (actualH / 2) + 35,
+                                z: frontZ + frontTh / 2 + 12.5,
+                                edgeBanding: 'Nincs'
+                            });
+                        }
+                    } else if (doorType === 'double') {
+                        // 2. KÉTSZÁRNYÚ AJTÓ (Double Door)
                         const doubleDoorW = Math.max(10, (actualW - 3) / 2); // 3mm hézag a két szárny között
                         const leftDoorX = -(doubleDoorW / 2 + 1.5);
                         const rightDoorX = (doubleDoorW / 2 + 1.5);
@@ -1092,6 +1322,7 @@ class KitchenCorpusGenerator {
                             thickness: frontTh,
                             type: 'door',
                             isDoor: true,
+                            doorType: 'single_left',
                             textureKey: frontTex,
                             x: leftDoorX,
                             y: centerY,
@@ -1108,11 +1339,36 @@ class KitchenCorpusGenerator {
                             thickness: frontTh,
                             type: 'door',
                             isDoor: true,
+                            doorType: 'single_right',
                             textureKey: frontTex,
                             x: rightDoorX,
                             y: centerY,
                             z: frontZ,
                             edgeBanding: '2.0mm ABS'
+                        });
+
+                        // Kivetőpántok a bal és jobb szárnyhoz
+                        KitchenCorpusGenerator.addConcealedHinges(boards, {
+                            doorX: leftDoorX,
+                            doorY: centerY,
+                            doorW: doubleDoorW,
+                            doorH: actualH,
+                            frontTh,
+                            D,
+                            W,
+                            Th,
+                            side: 'left'
+                        });
+                        KitchenCorpusGenerator.addConcealedHinges(boards, {
+                            doorX: rightDoorX,
+                            doorY: centerY,
+                            doorW: doubleDoorW,
+                            doorH: actualH,
+                            frontTh,
+                            D,
+                            W,
+                            Th,
+                            side: 'right'
                         });
 
                         // Fogantyúk
@@ -1149,7 +1405,7 @@ class KitchenCorpusGenerator {
                             });
                         }
                     } else {
-                        // Egyszárnyú ajtó (balra vagy jobbra nyíló)
+                        // 3. EGYSZÁRNYÚ AJTÓ (Single Door: Balos vagy Jobbos)
                         boards.push({
                             name: `Ajtó Front (${Math.round(actualW)}×${Math.round(actualH)})`,
                             width: Math.round(actualW),
@@ -1158,11 +1414,26 @@ class KitchenCorpusGenerator {
                             thickness: frontTh,
                             type: 'door',
                             isDoor: true,
+                            doorType: doorType,
                             textureKey: frontTex,
                             x: 0,
                             y: centerY,
                             z: frontZ,
                             edgeBanding: '2.0mm ABS'
+                        });
+
+                        // 3D Kivetőpántok
+                        const isLeft = doorType !== 'single_right';
+                        KitchenCorpusGenerator.addConcealedHinges(boards, {
+                            doorX: 0,
+                            doorY: centerY,
+                            doorW: actualW,
+                            doorH: actualH,
+                            frontTh,
+                            D,
+                            W,
+                            Th,
+                            side: isLeft ? 'left' : 'right'
                         });
 
                         if (hasHandle) {
@@ -2608,8 +2879,12 @@ function createBoardGeometry(boardData) {
     const depth = Number(boardData.depth) || 400;
     const isSplashback = boardData.isSplashback || (boardData.name && boardData.name.includes('Hátfalpanel'));
     const isWorktop = !isSplashback && (boardData.isWorktop || boardData.type === 'worktop' || (boardData.name && boardData.name.includes('Munkalap')));
-    const isPlinth = boardData.isPlinth || boardData.type === 'plinth' || (boardData.name && boardData.name.includes('Szokli'));
-
+    if (boardData.isHardware || boardData.type === 'hardware') {
+        const geo = new THREE.BoxGeometry(width, height, depth);
+        applyBoxUVs(geo, width, height, depth, 400);
+        geo.parameters = { width, height, depth, isHardware: true };
+        return geo;
+    }
     if (isWorktop) {
         const rad = boardData.edgeRadius !== undefined ? Number(boardData.edgeRadius) : 3;
         return createWorktopGeometry(width, height, depth, rad);
@@ -2877,9 +3152,10 @@ class BoardManager {
                 const isWorktop = b.isWorktop || b.type === 'worktop' || b.isSplashback;
                 const isBackPanel = !b.isSplashback && (b.type === 'back' || (b.name && b.name.includes('Hátfal')));
                 const isAppliance = b.isAppliance || b.type === 'appliance';
+                const isHardware = b.isHardware || b.type === 'hardware' || b.isHinge || b.isHandle;
 
-                if (isWorktop || isBackPanel || isAppliance) {
-                    return; // Munkalapot, korpusz fehér hátfalat és gépeket ne írjuk felül
+                if (isWorktop || isBackPanel || isAppliance || isHardware) {
+                    return; // Munkalapot, korpusz fehér hátfalat, gépeket és pántokat/fogantyúkat ne írjuk felül
                 }
 
                 b.textureKey = textureKey;
@@ -3570,8 +3846,9 @@ class BoardManager {
             const isSplashback = board.isSplashback || (board.name && board.name.includes('Hátfalpanel'));
             const isBackPanel = !isSplashback && (board.type === 'back' || (board.name && board.name.includes('Hátfal')));
             const isAppliance = board.isAppliance || board.type === 'appliance';
+            const isHardware = board.isHardware || board.type === 'hardware' || board.isHinge || board.isHandle;
 
-            if (isAppliance) return;
+            if (isAppliance || isHardware) return;
 
             // A korpusz hátfal MINDIG fehér marad!
             if (isBackPanel) {
@@ -6226,11 +6503,18 @@ class FurnitureApp {
         const btnKitchenSide = document.getElementById('btn-sidebar-kitchen-wizard');
         if (btnKitchenSide) btnKitchenSide.addEventListener('click', openKitchenModal);
 
-        // Dinamikus Front Elem Hozzáadás Gombok (Ajtó, Fiók, Sütő)
+        // Dinamikus Front Elem Hozzáadás Gombok (Nyíló Ajtó, Felnyíló Ajtó, Fiók, Sütő)
         const btnAddDoor = document.getElementById('btn-kc-add-door');
         if (btnAddDoor) {
             btnAddDoor.addEventListener('click', () => {
                 this.addKitchenElement('door');
+            });
+        }
+
+        const btnAddLiftUp = document.getElementById('btn-kc-add-liftup');
+        if (btnAddLiftUp) {
+            btnAddLiftUp.addEventListener('click', () => {
+                this.addKitchenElement('lift_up');
             });
         }
 
@@ -8103,7 +8387,7 @@ class FurnitureApp {
         };
     }
 
-    addKitchenElement(type) {
+    addKitchenElement(type, options = {}) {
         const corpusHeight = Number(document.getElementById('kc-height').value) || 720;
         let currentTotalH = 0;
         this.kitchenElements.forEach(el => {
@@ -8113,7 +8397,20 @@ class FurnitureApp {
         const remainingH = Math.max(100, corpusHeight - currentTotalH);
         const id = 'elem_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
 
-        if (type === 'door') {
+        if (type === 'lift_up' || (type === 'door' && options.doorType === 'lift_up')) {
+            const doorH = (this.kitchenElements.length === 0) ? corpusHeight : remainingH;
+            this.kitchenElements.push({
+                id: id,
+                type: 'door',
+                name: 'Felnyíló Ajtó',
+                height: doorH,
+                gap: 3,
+                doorType: 'lift_up',
+                thickness: 18,
+                textureKey: document.getElementById('kc-texture').value || 'front_k001',
+                hasHandle: true
+            });
+        } else if (type === 'door') {
             const doorH = (this.kitchenElements.length === 0) ? corpusHeight : remainingH;
             this.kitchenElements.push({
                 id: id,
@@ -8123,7 +8420,7 @@ class FurnitureApp {
                 gap: 3,
                 doorType: (Number(document.getElementById('kc-width').value) >= 800) ? 'double' : 'single_left',
                 thickness: 18,
-                textureKey: document.getElementById('kc-texture').value || 'white_matte',
+                textureKey: document.getElementById('kc-texture').value || 'front_k001',
                 hasHandle: true
             });
         } else if (type === 'drawer') {
@@ -8135,7 +8432,7 @@ class FurnitureApp {
                 height: drawerH,
                 gap: 3,
                 thickness: 18,
-                textureKey: document.getElementById('kc-texture').value || 'white_matte',
+                textureKey: document.getElementById('kc-texture').value || 'front_k001',
                 hasHandle: true
             });
         } else if (type === 'oven') {
@@ -8182,7 +8479,7 @@ class FurnitureApp {
         if (this.kitchenElements.length === 0) {
             container.innerHTML = `
                 <div id="kc-no-elements-msg" style="font-size:11px; color:var(--text-muted); font-style:italic; padding:10px; background:rgba(0,0,0,0.2); border-radius:4px; text-align:center;">
-                    Alapból nincs front hozzáadva (nyitott korpusz). Az alábbi gombokkal adhatsz hozzá tetszőlegesen ajtót, fiókot vagy beépíthető sütőt/főzőlapot!
+                    Alapból nincs front hozzáadva (nyitott korpusz). Az alábbi gombokkal adhatsz hozzá tetszőlegesen nyíló vagy felnyíló ajtót, fiókot vagy beépíthető sütőt/főzőlapot!
                 </div>
             `;
             return;
@@ -8200,15 +8497,17 @@ class FurnitureApp {
             let specificControls = '';
 
             if (elem.type === 'door') {
-                typeIcon = '🚪';
-                typeTitle = `Ajtó ${index + 1}`;
+                const isLiftUp = elem.doorType === 'lift_up';
+                typeIcon = isLiftUp ? '⬆️' : '🚪';
+                typeTitle = isLiftUp ? `Felnyíló Ajtó ${index + 1}` : `Ajtó ${index + 1}`;
                 specificControls = `
                     <div>
                         <label class="form-label" style="font-size:10px;">Nyitás / Típus</label>
                         <select class="form-control elem-prop-doortype" data-id="${elem.id}" style="font-size:11px; padding:3px 6px;">
-                            <option value="single_left" ${elem.doorType === 'single_left' ? 'selected' : ''}>Balos nyíló</option>
+                            <option value="single_left" ${elem.doorType === 'single_left' || !elem.doorType ? 'selected' : ''}>Balos nyíló</option>
                             <option value="single_right" ${elem.doorType === 'single_right' ? 'selected' : ''}>Jobbos nyíló</option>
                             <option value="double" ${elem.doorType === 'double' ? 'selected' : ''}>Kétszárnyú ajtó</option>
+                            <option value="lift_up" ${elem.doorType === 'lift_up' ? 'selected' : ''}>⬆️ Felnyíló ajtó (Gázteleszkópos)</option>
                         </select>
                     </div>
                     <div style="display:flex; align-items:center; gap:6px; margin-top:16px;">

@@ -1109,11 +1109,18 @@ class FurnitureApp {
         const btnKitchenSide = document.getElementById('btn-sidebar-kitchen-wizard');
         if (btnKitchenSide) btnKitchenSide.addEventListener('click', openKitchenModal);
 
-        // Dinamikus Front Elem Hozzáadás Gombok (Ajtó, Fiók, Sütő)
+        // Dinamikus Front Elem Hozzáadás Gombok (Nyíló Ajtó, Felnyíló Ajtó, Fiók, Sütő)
         const btnAddDoor = document.getElementById('btn-kc-add-door');
         if (btnAddDoor) {
             btnAddDoor.addEventListener('click', () => {
                 this.addKitchenElement('door');
+            });
+        }
+
+        const btnAddLiftUp = document.getElementById('btn-kc-add-liftup');
+        if (btnAddLiftUp) {
+            btnAddLiftUp.addEventListener('click', () => {
+                this.addKitchenElement('lift_up');
             });
         }
 
@@ -2986,7 +2993,7 @@ class FurnitureApp {
         };
     }
 
-    addKitchenElement(type) {
+    addKitchenElement(type, options = {}) {
         const corpusHeight = Number(document.getElementById('kc-height').value) || 720;
         let currentTotalH = 0;
         this.kitchenElements.forEach(el => {
@@ -2996,7 +3003,20 @@ class FurnitureApp {
         const remainingH = Math.max(100, corpusHeight - currentTotalH);
         const id = 'elem_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
 
-        if (type === 'door') {
+        if (type === 'lift_up' || (type === 'door' && options.doorType === 'lift_up')) {
+            const doorH = (this.kitchenElements.length === 0) ? corpusHeight : remainingH;
+            this.kitchenElements.push({
+                id: id,
+                type: 'door',
+                name: 'Felnyíló Ajtó',
+                height: doorH,
+                gap: 3,
+                doorType: 'lift_up',
+                thickness: 18,
+                textureKey: document.getElementById('kc-texture').value || 'front_k001',
+                hasHandle: true
+            });
+        } else if (type === 'door') {
             const doorH = (this.kitchenElements.length === 0) ? corpusHeight : remainingH;
             this.kitchenElements.push({
                 id: id,
@@ -3006,7 +3026,7 @@ class FurnitureApp {
                 gap: 3,
                 doorType: (Number(document.getElementById('kc-width').value) >= 800) ? 'double' : 'single_left',
                 thickness: 18,
-                textureKey: document.getElementById('kc-texture').value || 'white_matte',
+                textureKey: document.getElementById('kc-texture').value || 'front_k001',
                 hasHandle: true
             });
         } else if (type === 'drawer') {
@@ -3018,7 +3038,7 @@ class FurnitureApp {
                 height: drawerH,
                 gap: 3,
                 thickness: 18,
-                textureKey: document.getElementById('kc-texture').value || 'white_matte',
+                textureKey: document.getElementById('kc-texture').value || 'front_k001',
                 hasHandle: true
             });
         } else if (type === 'oven') {
@@ -3065,7 +3085,7 @@ class FurnitureApp {
         if (this.kitchenElements.length === 0) {
             container.innerHTML = `
                 <div id="kc-no-elements-msg" style="font-size:11px; color:var(--text-muted); font-style:italic; padding:10px; background:rgba(0,0,0,0.2); border-radius:4px; text-align:center;">
-                    Alapból nincs front hozzáadva (nyitott korpusz). Az alábbi gombokkal adhatsz hozzá tetszőlegesen ajtót, fiókot vagy beépíthető sütőt/főzőlapot!
+                    Alapból nincs front hozzáadva (nyitott korpusz). Az alábbi gombokkal adhatsz hozzá tetszőlegesen nyíló vagy felnyíló ajtót, fiókot vagy beépíthető sütőt/főzőlapot!
                 </div>
             `;
             return;
@@ -3083,15 +3103,17 @@ class FurnitureApp {
             let specificControls = '';
 
             if (elem.type === 'door') {
-                typeIcon = '🚪';
-                typeTitle = `Ajtó ${index + 1}`;
+                const isLiftUp = elem.doorType === 'lift_up';
+                typeIcon = isLiftUp ? '⬆️' : '🚪';
+                typeTitle = isLiftUp ? `Felnyíló Ajtó ${index + 1}` : `Ajtó ${index + 1}`;
                 specificControls = `
                     <div>
                         <label class="form-label" style="font-size:10px;">Nyitás / Típus</label>
                         <select class="form-control elem-prop-doortype" data-id="${elem.id}" style="font-size:11px; padding:3px 6px;">
-                            <option value="single_left" ${elem.doorType === 'single_left' ? 'selected' : ''}>Balos nyíló</option>
+                            <option value="single_left" ${elem.doorType === 'single_left' || !elem.doorType ? 'selected' : ''}>Balos nyíló</option>
                             <option value="single_right" ${elem.doorType === 'single_right' ? 'selected' : ''}>Jobbos nyíló</option>
                             <option value="double" ${elem.doorType === 'double' ? 'selected' : ''}>Kétszárnyú ajtó</option>
+                            <option value="lift_up" ${elem.doorType === 'lift_up' ? 'selected' : ''}>⬆️ Felnyíló ajtó (Gázteleszkópos)</option>
                         </select>
                     </div>
                     <div style="display:flex; align-items:center; gap:6px; margin-top:16px;">
