@@ -1,0 +1,1008 @@
+/**
+ * Bútorlap és Korpusz Egység Menedzser (boardManager.js)
+ * Bútorlapok és egybefüggő Konyha Korpusz egységek kezelése
+ */
+
+import { MaterialManager } from './textures.js';
+import { KitchenCorpusGenerator } from './kitchenCorpusGenerator.js';
+
+/**
+ * Box / Triplanar UV leképezés generátor
+ * Biztosítja, hogy a Three.js Extrude és Box geometriákon a faerezet és egyéb textúrák
+ * valósághű méretben (nem összenyomva/eltorzítva) jelenjenek meg minden oldalon és élen.
+ */
+export function applyBoxUVs(geometry, w, h, d, tileSize = 800) {
+    if (!geometry || !geometry.attributes || !geometry.attributes.position) return geometry;
+    const pos = geometry.attributes.position;
+    const norm = geometry.attributes.normal;
+    const count = pos.count;
+    const uvs = new Float32Array(count * 2);
+
+    for (let i = 0; i < count; i++) {
+        const x = pos.getX(i);
+        const y = pos.getY(i);
+        const z = pos.getZ(i);
+
+        const nx = norm ? norm.getX(i) : 0;
+        const ny = norm ? norm.getY(i) : 0;
+        const nz = norm ? norm.getZ(i) : 1;
+
+        const absX = Math.abs(nx);
+        const absY = Math.abs(ny);
+        const absZ = Math.abs(nz);
+
+        let u, v;
+
+        if (absX >= absY && absX >= absZ) {
+            // X felület normálvektora (Oldallap nagy síkja: Z-Y sík)
+            u = (z + d / 2) / tileSize;
+            v = (y + h / 2) / tileSize;
+        } else if (absY >= absX && absY >= absZ) {
+            // Y felület normálvektora (Fenéklap, tetőlap, polc nagy síkja: X-Z sík)
+            u = (x + w / 2) / tileSize;
+            v = (z + d / 2) / tileSize;
+        } else {
+            // Z felület normálvektora (Hátfal, ajtó nagy síkja: X-Y sík)
+            u = (x + w / 2) / tileSize;
+            v = (y + h / 2) / tileSize;
+        }
+
+        uvs[i * 2] = u;
+        uvs[i * 2 + 1] = v;
+    }
+
+    geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+    geometry.attributes.uv.needsUpdate = true;
+    return geometry;
+}
+
+/**
+ * Lekerekített bútorlap / munkalap geometria generátor
+ * Pontos (w, h, d) befoglaló méretekkel és lekerekített (beveled) élekkel
+ */
+export function createRoundedBoxGeometry(w, h, d, radius = 1, bevelSegments = 2) {
+    const minDim = Math.min(w, h, d);
+    const maxAllowedRadius = (minDim / 2) - 0.1;
+    const r = Math.min(Math.max(0, Number(radius) !== undefined ? Number(radius) : 1), Math.max(0, maxAllowedRadius));
+
+    if (r <= 0.05) {
+        const geo = new THREE.BoxGeometry(w, h, d);
+        applyBoxUVs(geo, w, h, d, 800);
+        geo.parameters = { width: w, height: h, depth: d, radius: 0 };
+        return geo;
+    }
+
+    try {
+        const innerW = Math.max(0.1, w - 2 * r);
+        const innerH = Math.max(0.1, h - 2 * r);
+        const x0 = -innerW / 2;
+        const x1 = innerW / 2;
+        const y0 = -innerH / 2;
+        const y1 = innerH / 2;
+
+        const shape = new THREE.Shape();
+        shape.moveTo(x0 + r, y0);
+        shape.lineTo(x1 - r, y0);
+        shape.absarc(x1 - r, y0 + r, r, -Math.PI / 2, 0, false);
+        shape.lineTo(x1, y1 - r);
+        shape.absarc(x1 - r, y1 - r, r, 0, Math.PI / 2, false);
+        shape.lineTo(x0 + r, y1);
+        shape.absarc(x0 + r, y1 - r, r, Math.PI / 2, Math.PI, false);
+        shape.lineTo(x0, y0 + r);
+        shape.absarc(x0 + r, y0 + r, r, Math.PI, 3 * Math.PI / 2, false);
+
+        const extrudeDepth = Math.max(0.1, d - 2 * r);
+        const extrudeSettings = {
+            depth: extrudeDepth,
+            bevelEnabled: true,
+            bevelSegments: bevelSegments,
+            steps: 1,
+            bevelSize: r,
+            bevelThickness: r
+        };
+
+        const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+        geometry.center();
+        geometry.computeVertexNormals();
+        applyBoxUVs(geometry, w, h, d, 800);
+        geometry.parameters = { width: w, height: h, depth: d, radius: r };
+        return geometry;
+    } catch (e) {
+        console.warn('Fallback to BoxGeometry:', e);
+        const fallback = new THREE.BoxGeometry(w, h, d);
+        applyBoxUVs(fallback, w, h, d, 800);
+        fallback.parameters = { width: w, height: h, depth: d, radius: 0 };
+        return fallback;
+    }
+}
+/**
+ * Konyhai Munkalap Geometria Generátor
+ * CSAK az elülső (+Z) felső és alsó élek vannak lekerekítve.
+ * A bal és jobb oldali végek (-X és +X) és a hátsó fal felőli él (-Z) 90°-os sík vágások,
+ * így az egymás mellé helyezett munkalapok hézagmentesen, tökéletesen egybefüggenek.
+ */
+export function createWorktopGeometry(w, h, d, radius = 3) {
+    const r = Math.min(Math.max(0, Number(radius) !== undefined ? Number(radius) : 3), Math.min(h / 2 - 0.1, d / 2 - 0.1));
+
+    if (r <= 0.05) {
+        const geo = new THREE.BoxGeometry(w, h, d);
+        applyBoxUVs(geo, w, h, d, 800);
+        geo.parameters = { width: w, height: h, depth: d, radius: 0, isWorktop: true };
+        return geo;
+    }
+
+    try {
+        const shape = new THREE.Shape();
+        const halfH = h / 2;
+        const halfD = d / 2;
+
+        // Y-Z síkbeli keresztmetszet (Z a vízszintes mélység, Y a függőleges magasság)
+        // Kezdés a hátsó alsó saroknál (CCW körbejárás)
+        shape.moveTo(-halfD, -halfH);
+        // Alsó sík felület az elülső alsó sarokig
+        shape.lineTo(halfD - r, -halfH);
+        // Elülső alsó lekerekítés
+        shape.absarc(halfD - r, -halfH + r, r, -Math.PI / 2, 0, false);
+        // Elülső függőleges él
+        shape.lineTo(halfD, halfH - r);
+        // Elülső felső lekerekítés
+        shape.absarc(halfD - r, halfH - r, r, 0, Math.PI / 2, false);
+        // Felső sík felület vissza a hátfalig
+        shape.lineTo(-halfD, halfH);
+        // Hátsó egyenes él (sík 90° fal felőli él)
+        shape.lineTo(-halfD, -halfH);
+
+        const extrudeSettings = {
+            depth: w,
+            bevelEnabled: false,
+            steps: 1
+        };
+
+        const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+        // Elforgatjuk az extrúzió tengelyét X-re úgy, hogy a lekerekítés a front (+Z) felé essen
+        geometry.rotateY(-Math.PI / 2);
+        geometry.center();
+        geometry.computeVertexNormals();
+        applyBoxUVs(geometry, w, h, d, 800);
+        geometry.parameters = { width: w, height: h, depth: d, radius: r, isWorktop: true };
+        return geometry;
+    } catch (e) {
+        console.warn('Fallback worktop geometry:', e);
+        const fallback = new THREE.BoxGeometry(w, h, d);
+        applyBoxUVs(fallback, w, h, d, 800);
+        fallback.parameters = { width: w, height: h, depth: d, radius: 0, isWorktop: true };
+        return fallback;
+    }
+}
+
+/**
+ * Szokli Takaróléc Geometria Generátor
+ * A bal és jobb oldali végek 90°-os síkok, így a szomszédos szoklik hézagmentesen összeolvadnak.
+ */
+export function createPlinthGeometry(w, h, d) {
+    const geo = new THREE.BoxGeometry(w, h, d);
+    applyBoxUVs(geo, w, h, d, 800);
+    geo.parameters = { width: w, height: h, depth: d, isPlinth: true };
+    return geo;
+}
+
+/**
+ * Megfelelő geometriát választ a bútorlap típusa alapján
+ */
+export function createBoardGeometry(boardData) {
+    const width = Number(boardData.width) || 600;
+    const height = Number(boardData.height) || 18;
+    const depth = Number(boardData.depth) || 400;
+    const isWorktop = boardData.isWorktop || boardData.type === 'worktop' || (boardData.name && boardData.name.includes('Munkalap'));
+    const isPlinth = boardData.isPlinth || boardData.type === 'plinth' || (boardData.name && boardData.name.includes('Szokli'));
+
+    if (isWorktop) {
+        const rad = boardData.edgeRadius !== undefined ? Number(boardData.edgeRadius) : 3;
+        return createWorktopGeometry(width, height, depth, rad);
+    }
+    if (isPlinth) {
+        return createPlinthGeometry(width, height, depth);
+    }
+    const rad = boardData.edgeRadius !== undefined ? Number(boardData.edgeRadius) : 1;
+    return createRoundedBoxGeometry(width, height, depth, rad);
+}
+
+export class BoardManager {
+    constructor(scene3D) {
+        this.scene3D = scene3D;
+        this.boards = [];   // Egyedi és korpusz alkatrészlapok listája (CutListhez és méretezéshez)
+        this.corpora = [];  // Konyha Korpusz egységek listája (THREE.Group)
+        this.boardCounter = 1;
+        this.corpusCounter = 1;
+        this.activeTextureKey = 'oak_natural';
+    }
+
+    /**
+     * Új önálló bútorlap hozzáadása a térhez
+     */
+    createBoard(options = {}) {
+        const id = 'board_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
+        const name = options.name || `Bútorlap ${this.boardCounter++}`;
+        const width = Number(options.width) || 600;
+        const height = Number(options.height) || 18;
+        const depth = Number(options.depth) || 400;
+        const thickness = Number(options.thickness) || (options.type === 'back' ? 3 : 18);
+        const textureKey = options.textureKey || this.activeTextureKey;
+        const type = options.type || 'horizontal';
+        const edgeRadius = options.edgeRadius !== undefined ? Number(options.edgeRadius) : (type === 'worktop' ? 3 : 1);
+
+        const x = options.x !== undefined ? Number(options.x) : 0;
+        const y = options.y !== undefined ? Number(options.y) : (height / 2);
+        const z = options.z !== undefined ? Number(options.z) : 0;
+
+        const rotX = options.rotX !== undefined ? Number(options.rotX) : 0;
+        const rotY = options.rotY !== undefined ? Number(options.rotY) : 0;
+        const rotZ = options.rotZ !== undefined ? Number(options.rotZ) : 0;
+
+        const geometry = createBoardGeometry({ ...options, width, height, depth, edgeRadius, type });
+        const material = MaterialManager.createMaterial(textureKey);
+
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.position.set(x, y, z);
+        mesh.rotation.set(
+            THREE.MathUtils.degToRad(rotX),
+            THREE.MathUtils.degToRad(rotY),
+            THREE.MathUtils.degToRad(rotZ)
+        );
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+
+        const edges = new THREE.EdgesGeometry(geometry, 20);
+        const lineMat = new THREE.LineBasicMaterial({ color: '#38bdf8', linewidth: 2 });
+        const outlineMesh = new THREE.LineSegments(edges, lineMat);
+        outlineMesh.visible = false;
+        mesh.add(outlineMesh);
+
+        const boardData = {
+            id: id,
+            name: name,
+            width: width,
+            height: height,
+            depth: depth,
+            thickness: thickness,
+            edgeRadius: edgeRadius,
+            type: type,
+            textureKey: textureKey,
+            edgeBanding: options.edgeBanding || '0.4mm ABS',
+            edgeBandingSides: options.edgeBandingSides || { top: true, bottom: true, left: true, right: true },
+            x: x,
+            y: y,
+            z: z,
+            rotX: rotX,
+            rotY: rotY,
+            rotZ: rotZ,
+            locked: false,
+            visible: true,
+            mesh: mesh,
+            outlineMesh: outlineMesh
+        };
+
+        mesh.userData = boardData;
+
+        this.scene3D.scene.add(mesh);
+        this.scene3D.boardMeshes.push(mesh);
+        this.boards.push(boardData);
+
+        return boardData;
+    }
+
+    /**
+     * EGYBEFÜGGŐ KONYHA KORPUSZ EGYSÉG LÉTREHOZÁSA (Egyetlen egységként kezelve!)
+     */
+    createCorpus(config, x = 0, y = 0, z = 0) {
+        const corpusId = 'corpus_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
+        const corpusGroup = new THREE.Group();
+        corpusGroup.position.set(x, y, z);
+
+        const corpusName = `Konyha Elem ${this.corpusCounter++} (${config.width}×${config.height})`;
+
+        corpusGroup.userData = {
+            id: corpusId,
+            name: corpusName,
+            isCorpus: true,
+            config: JSON.parse(JSON.stringify(config)),
+            width: config.width,
+            height: config.height,
+            depth: config.depth,
+            x: x,
+            y: y,
+            z: z
+        };
+
+        // Bútorlapok legenerálása a varázsló konfigurációjából
+        const generatedBoards = KitchenCorpusGenerator.generateBoards(config);
+
+        generatedBoards.forEach((boardData, index) => {
+            const bId = `${corpusId}_b_${index}`;
+            const geometry = createBoardGeometry(boardData);
+            const material = MaterialManager.createMaterial(boardData.textureKey || config.textureKey || 'white_matte');
+
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.position.set(boardData.x, boardData.y, boardData.z);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+
+            const fullBoardData = {
+                ...boardData,
+                id: bId,
+                corpusId: corpusId,
+                parentGroup: corpusGroup,
+                mesh: mesh
+            };
+
+            mesh.userData = fullBoardData;
+
+            corpusGroup.add(mesh);
+            this.scene3D.boardMeshes.push(mesh);
+            this.boards.push(fullBoardData);
+        });
+
+        this.scene3D.scene.add(corpusGroup);
+        this.corpora.push(corpusGroup);
+
+        this.updateKitchenContinuity();
+        return corpusGroup;
+    }
+
+    /**
+     * KONYHA ELEM MÓDOSÍTÁSA A VARÁZSLÓBÓL (In-place frissítés)
+     */
+    updateCorpus(corpusId, newConfig) {
+        const corpusGroup = this.corpora.find(c => c.userData.id === corpusId);
+        if (!corpusGroup) return null;
+
+        // 1. Régi alkatrészek törlése
+        const oldChildren = [...corpusGroup.children];
+        oldChildren.forEach(mesh => {
+            corpusGroup.remove(mesh);
+            mesh.geometry.dispose();
+            if (mesh.material.map) mesh.material.map.dispose();
+            mesh.material.dispose();
+
+            const meshIdx = this.scene3D.boardMeshes.indexOf(mesh);
+            if (meshIdx > -1) this.scene3D.boardMeshes.splice(meshIdx, 1);
+        });
+
+        this.boards = this.boards.filter(b => b.corpusId !== corpusId);
+
+        // 2. Új konfiguráció mentése
+        corpusGroup.userData.config = JSON.parse(JSON.stringify(newConfig));
+        corpusGroup.userData.width = newConfig.width;
+        corpusGroup.userData.height = newConfig.height;
+        corpusGroup.userData.depth = newConfig.depth;
+        corpusGroup.userData.name = `Konyha Elem (${newConfig.width}×${newConfig.height})`;
+
+        // 3. Új alkatrészlapok legenerálása
+        const generatedBoards = KitchenCorpusGenerator.generateBoards(newConfig);
+
+        generatedBoards.forEach((boardData, index) => {
+            const bId = `${corpusId}_b_${index}`;
+            const geometry = createBoardGeometry(boardData);
+            const material = MaterialManager.createMaterial(boardData.textureKey || newConfig.textureKey || 'white_matte');
+
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.position.set(boardData.x, boardData.y, boardData.z);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+
+            const fullBoardData = {
+                ...boardData,
+                id: bId,
+                corpusId: corpusId,
+                parentGroup: corpusGroup,
+                mesh: mesh
+            };
+
+            mesh.userData = fullBoardData;
+
+            corpusGroup.add(mesh);
+            this.scene3D.boardMeshes.push(mesh);
+            this.boards.push(fullBoardData);
+        });
+
+        this.scene3D.updateDimensionVisualizer();
+        this.updateKitchenContinuity();
+        return corpusGroup;
+    }
+
+    /**
+     * Korpusz törlése
+     */
+    deleteCorpus(corpusId) {
+        const corpusIdx = this.corpora.findIndex(c => c.userData.id === corpusId);
+        if (corpusIdx === -1) return;
+
+        const corpusGroup = this.corpora[corpusIdx];
+
+        if (this.scene3D.selectedTarget === corpusGroup) {
+            this.scene3D.selectBoard(null);
+        }
+
+        const children = [...corpusGroup.children];
+        children.forEach(mesh => {
+            corpusGroup.remove(mesh);
+            mesh.geometry.dispose();
+            if (mesh.material.map) mesh.material.map.dispose();
+            mesh.material.dispose();
+
+            const meshIdx = this.scene3D.boardMeshes.indexOf(mesh);
+            if (meshIdx > -1) this.scene3D.boardMeshes.splice(meshIdx, 1);
+        });
+
+        this.boards = this.boards.filter(b => b.corpusId !== corpusId);
+        this.scene3D.scene.remove(corpusGroup);
+        this.corpora.splice(corpusIdx, 1);
+
+        this.scene3D.updateDimensionVisualizer();
+        this.updateKitchenContinuity();
+    }
+
+    /**
+     * Korpusz duplikálása
+     */
+    duplicateCorpus(corpusId) {
+        const source = this.corpora.find(c => c.userData.id === corpusId);
+        if (!source) return null;
+
+        const config = JSON.parse(JSON.stringify(source.userData.config));
+        const offsetX = source.position.x + (config.width || 600) + 20;
+        const newCorpus = this.createCorpus(config, offsetX, source.position.y, source.position.z);
+        this.scene3D.selectBoard(newCorpus);
+        this.updateKitchenContinuity();
+        return newCorpus;
+    }
+
+    /**
+     * Egymás mellett lévő korpuszok konyhabútor elemeinek (munkalap és szokli) összehangolása
+     */
+    updateKitchenContinuity() {
+        this.updateWorktopContinuity();
+        this.updatePlinthContinuity();
+    }
+
+    /**
+     * Egymás mellett lévő korpuszok munkalapjainak és textúráinak összehangolása
+     * (Egybefüggő folytonos erezet és minta a teljes konyhasor mentén, csúszásmentesen)
+     */
+    updateWorktopContinuity() {
+        const worktopItems = [];
+        const tileSize = 800; // Pontosan megegyezik az applyBoxUVs tileSize-szal (800 mm)
+
+        this.boards.forEach(b => {
+            if (!b.mesh) return;
+            const isWorktop = b.isWorktop || b.type === 'worktop' || (b.name && b.name.includes('Munkalap'));
+            if (!isWorktop) return;
+
+            const worldPos = new THREE.Vector3();
+            b.mesh.getWorldPosition(worldPos);
+            const w = b.width || (b.mesh.geometry.parameters && b.mesh.geometry.parameters.width) || 600;
+            const d = b.depth || (b.mesh.geometry.parameters && b.mesh.geometry.parameters.depth) || 600;
+            const h = b.height || (b.mesh.geometry.parameters && b.mesh.geometry.parameters.height) || 38;
+
+            worktopItems.push({
+                board: b,
+                mesh: b.mesh,
+                worldX: worldPos.x,
+                worldY: worldPos.y,
+                worldZ: worldPos.z,
+                width: w,
+                height: h,
+                depth: d,
+                minX: worldPos.x - w / 2,
+                textureKey: b.textureKey || 'concrete'
+            });
+        });
+
+        if (worktopItems.length === 0) return;
+
+        worktopItems.forEach(item => {
+            const texInfo = MaterialManager.textures[item.textureKey] || MaterialManager.textures['concrete'];
+            if (!texInfo || !texInfo.texture) return;
+
+            const clonedTexture = texInfo.texture.clone();
+            clonedTexture.wrapS = THREE.RepeatWrapping;
+            clonedTexture.wrapT = THREE.RepeatWrapping;
+
+            // Pontos matematikai textúra offset a világkoordináta alapján (csúszásmentes illesztés)
+            const offX = ((item.minX % tileSize) + tileSize) % tileSize / tileSize;
+
+            clonedTexture.repeat.set(1, 1);
+            clonedTexture.offset.set(offX, 0);
+            clonedTexture.needsUpdate = true;
+
+            item.mesh.material = new THREE.MeshStandardMaterial({
+                map: clonedTexture,
+                roughness: texInfo.roughness !== undefined ? texInfo.roughness : 0.7,
+                metalness: texInfo.metalness !== undefined ? texInfo.metalness : 0.05
+            });
+        });
+    }
+
+    /**
+     * Egymás mellett lévő korpuszok szoklijainak (plinth) összehangolása
+     * (Egybefüggő folytonos takaróléc textúra a teljes lábazat mentén, csúszásmentesen)
+     */
+    updatePlinthContinuity() {
+        const plinthItems = [];
+        const tileSize = 800; // Pontosan megegyezik az applyBoxUVs tileSize-szal (800 mm)
+
+        this.boards.forEach(b => {
+            if (!b.mesh) return;
+            const isPlinth = b.isPlinth || b.type === 'plinth' || (b.name && b.name.includes('Szokli'));
+            if (!isPlinth) return;
+
+            const worldPos = new THREE.Vector3();
+            b.mesh.getWorldPosition(worldPos);
+            const w = b.width || (b.mesh.geometry.parameters && b.mesh.geometry.parameters.width) || 600;
+            const d = b.depth || (b.mesh.geometry.parameters && b.mesh.geometry.parameters.depth) || 18;
+            const h = b.height || (b.mesh.geometry.parameters && b.mesh.geometry.parameters.height) || 100;
+
+            plinthItems.push({
+                board: b,
+                mesh: b.mesh,
+                worldX: worldPos.x,
+                worldY: worldPos.y,
+                worldZ: worldPos.z,
+                width: w,
+                height: h,
+                depth: d,
+                minX: worldPos.x - w / 2,
+                textureKey: b.textureKey || 'anthracite'
+            });
+        });
+
+        if (plinthItems.length === 0) return;
+
+        plinthItems.forEach(item => {
+            const texInfo = MaterialManager.textures[item.textureKey] || MaterialManager.textures['anthracite'];
+            if (!texInfo || !texInfo.texture) return;
+
+            const clonedTexture = texInfo.texture.clone();
+            clonedTexture.wrapS = THREE.RepeatWrapping;
+            clonedTexture.wrapT = THREE.RepeatWrapping;
+
+            const offX = ((item.minX % tileSize) + tileSize) % tileSize / tileSize;
+
+            clonedTexture.repeat.set(1, 1);
+            clonedTexture.offset.set(offX, 0);
+            clonedTexture.needsUpdate = true;
+
+            item.mesh.material = new THREE.MeshStandardMaterial({
+                map: clonedTexture,
+                roughness: texInfo.roughness !== undefined ? texInfo.roughness : 0.85,
+                metalness: texInfo.metalness !== undefined ? texInfo.metalness : 0.05
+            });
+        });
+    }
+
+    /**
+     * Bútorlap gyors sablonok
+     */
+    createBoardFromPreset(presetType, mainDims = { w: 600, h: 800, d: 400, th: 18 }) {
+        const { w, h, d, th } = mainDims;
+        let params = {};
+
+        switch (presetType) {
+            case 'vertical_left':
+                params = {
+                    name: 'Bal Oldallap',
+                    type: 'vertical_side',
+                    width: th,
+                    height: h,
+                    depth: d,
+                    thickness: th,
+                    x: -w / 2 + th / 2,
+                    y: h / 2,
+                    z: 0
+                };
+                break;
+            case 'vertical_right':
+                params = {
+                    name: 'Jobb Oldallap',
+                    type: 'vertical_side',
+                    width: th,
+                    height: h,
+                    depth: d,
+                    thickness: th,
+                    x: w / 2 - th / 2,
+                    y: h / 2,
+                    z: 0
+                };
+                break;
+            case 'bottom':
+                params = {
+                    name: 'Fenéklap',
+                    type: 'horizontal',
+                    width: w - (2 * th),
+                    height: th,
+                    depth: d,
+                    thickness: th,
+                    x: 0,
+                    y: th / 2,
+                    z: 0
+                };
+                break;
+            case 'top':
+                params = {
+                    name: 'Tetőlap',
+                    type: 'horizontal',
+                    width: w,
+                    height: th,
+                    depth: d,
+                    thickness: th,
+                    x: 0,
+                    y: h - th / 2,
+                    z: 0
+                };
+                break;
+            case 'shelf':
+                params = {
+                    name: 'Belső Polc',
+                    type: 'shelf',
+                    width: w - (2 * th) - 2,
+                    height: th,
+                    depth: d - 20,
+                    thickness: th,
+                    x: 0,
+                    y: h / 2,
+                    z: -10
+                };
+                break;
+            case 'back':
+                params = {
+                    name: 'Hátfal (HDF)',
+                    type: 'back',
+                    width: w - 10,
+                    height: h - 10,
+                    depth: 3,
+                    thickness: 3,
+                    textureKey: 'white_matte',
+                    x: 0,
+                    y: h / 2,
+                    z: -d / 2 + 1.5
+                };
+                break;
+            case 'door':
+                params = {
+                    name: 'Ajtó Front',
+                    type: 'door',
+                    width: w - 4,
+                    height: h - 4,
+                    depth: th,
+                    thickness: th,
+                    x: 0,
+                    y: h / 2,
+                    z: d / 2 + th / 2
+                };
+                break;
+            default:
+                params = {
+                    name: 'Egyedi Lap',
+                    width: 500,
+                    height: th,
+                    depth: 300,
+                    thickness: th,
+                    x: 0,
+                    y: th / 2,
+                    z: 0
+                };
+                break;
+        }
+
+        return this.createBoard(params);
+    }
+
+    updateBoard(id, newParams) {
+        const board = this.boards.find(b => b.id === id);
+        if (!board || board.corpusId) return null; // Korpusz elemeket nem egyenként szerkesztünk!
+
+        let geoNeedsUpdate = false;
+
+        if (newParams.width !== undefined && newParams.width !== board.width) {
+            board.width = Math.max(1, Number(newParams.width));
+            geoNeedsUpdate = true;
+        }
+        if (newParams.height !== undefined && newParams.height !== board.height) {
+            board.height = Math.max(1, Number(newParams.height));
+            geoNeedsUpdate = true;
+        }
+        if (newParams.depth !== undefined && newParams.depth !== board.depth) {
+            board.depth = Math.max(1, Number(newParams.depth));
+            geoNeedsUpdate = true;
+        }
+        if (newParams.edgeRadius !== undefined && newParams.edgeRadius !== board.edgeRadius) {
+            board.edgeRadius = Math.max(0, Number(newParams.edgeRadius));
+            geoNeedsUpdate = true;
+        }
+        if (newParams.name !== undefined) {
+            board.name = newParams.name;
+        }
+        if (newParams.edgeBanding !== undefined) {
+            board.edgeBanding = newParams.edgeBanding;
+        }
+
+        if (newParams.x !== undefined) {
+            board.x = Number(newParams.x);
+            board.mesh.position.x = board.x;
+        }
+        if (newParams.y !== undefined) {
+            board.y = Number(newParams.y);
+            board.mesh.position.y = board.y;
+        }
+        if (newParams.z !== undefined) {
+            board.z = Number(newParams.z);
+            board.mesh.position.z = board.z;
+        }
+
+        if (newParams.rotX !== undefined) {
+            board.rotX = Number(newParams.rotX);
+            board.mesh.rotation.x = THREE.MathUtils.degToRad(board.rotX);
+        }
+        if (newParams.rotY !== undefined) {
+            board.rotY = Number(newParams.rotY);
+            board.mesh.rotation.y = THREE.MathUtils.degToRad(board.rotY);
+        }
+        if (newParams.rotZ !== undefined) {
+            board.rotZ = Number(newParams.rotZ);
+            board.mesh.rotation.z = THREE.MathUtils.degToRad(board.rotZ);
+        }
+
+        if (geoNeedsUpdate) {
+            board.mesh.geometry.dispose();
+            board.mesh.geometry = createBoardGeometry(board);
+            if (board.outlineMesh) {
+                board.outlineMesh.geometry.dispose();
+                board.outlineMesh.geometry = new THREE.EdgesGeometry(board.mesh.geometry, 20);
+            }
+        }
+
+        if (newParams.textureKey !== undefined && newParams.textureKey !== board.textureKey) {
+            board.textureKey = newParams.textureKey;
+            MaterialManager.applyTextureToMesh(board.mesh, board.textureKey);
+        }
+
+        this.scene3D.updateDimensionVisualizer();
+        return board;
+    }
+
+    applyTextureToAll(textureKey) {
+        this.activeTextureKey = textureKey;
+        this.boards.forEach(board => {
+            board.textureKey = textureKey;
+            MaterialManager.applyTextureToMesh(board.mesh, textureKey);
+        });
+    }
+
+    duplicateBoard(id) {
+        const source = this.boards.find(b => b.id === id);
+        if (!source || source.corpusId) return null;
+
+        const cloneData = {
+            name: `${source.name} (másolat)`,
+            width: source.width,
+            height: source.height,
+            depth: source.depth,
+            thickness: source.thickness,
+            edgeRadius: source.edgeRadius !== undefined ? source.edgeRadius : 1,
+            type: source.type,
+            textureKey: source.textureKey,
+            edgeBanding: source.edgeBanding,
+            x: source.x + 30,
+            y: source.y + 30,
+            z: source.z + 30
+        };
+
+        const newBoard = this.createBoard(cloneData);
+        this.scene3D.selectBoard(newBoard.mesh);
+        return newBoard;
+    }
+
+    deleteBoard(id) {
+        const index = this.boards.findIndex(b => b.id === id);
+        if (index === -1) return;
+
+        const board = this.boards[index];
+
+        // Ha korpusz tagja, az egész korpuszt töröljük
+        if (board.corpusId) {
+            this.deleteCorpus(board.corpusId);
+            return;
+        }
+
+        if (this.scene3D.selectedTarget === board.mesh) {
+            this.scene3D.selectBoard(null);
+        }
+
+        this.scene3D.scene.remove(board.mesh);
+        board.mesh.geometry.dispose();
+        if (board.mesh.material.map) board.mesh.material.map.dispose();
+        board.mesh.material.dispose();
+
+        if (board.outlineMesh) {
+            board.outlineMesh.geometry.dispose();
+            board.outlineMesh.material.dispose();
+        }
+
+        const meshIdx = this.scene3D.boardMeshes.indexOf(board.mesh);
+        if (meshIdx > -1) {
+            this.scene3D.boardMeshes.splice(meshIdx, 1);
+        }
+
+        this.boards.splice(index, 1);
+        this.scene3D.updateDimensionVisualizer();
+    }
+
+    setExplodedView(factor) {
+        if (this.boards.length === 0) return;
+
+        const center = this.scene3D.calculateFurnitureCenter();
+        const maxExplodeDistance = 350;
+
+        this.boards.forEach(b => {
+            if (!b.mesh) return;
+
+            const worldPos = new THREE.Vector3();
+            b.mesh.getWorldPosition(worldPos);
+
+            const origX = b.x;
+            const origY = b.y;
+            const origZ = b.z;
+
+            const dirX = worldPos.x - center.x;
+            const dirY = worldPos.y - center.y;
+            const dirZ = worldPos.z - center.z;
+
+            const len = Math.hypot(dirX, dirY, dirZ) || 1;
+            const normX = dirX / len;
+            const normY = dirY / len;
+            const normZ = dirZ / len;
+
+            b.mesh.position.x = origX + normX * maxExplodeDistance * factor;
+            b.mesh.position.y = origY + normY * maxExplodeDistance * factor;
+            b.mesh.position.z = origZ + normZ * maxExplodeDistance * factor;
+        });
+
+        this.scene3D.updateDimensionVisualizer();
+    }
+
+    getFurnitureBoundingBox() {
+        if (this.boards.length === 0) {
+            return { width: 0, height: 0, depth: 0, count: 0 };
+        }
+
+        const box = new THREE.Box3();
+        this.boards.forEach(b => {
+            if (b.mesh) box.expandByObject(b.mesh);
+        });
+
+        const size = new THREE.Vector3();
+        box.getSize(size);
+
+        return {
+            width: Math.round(size.x),
+            height: Math.round(size.y),
+            depth: Math.round(size.z),
+            count: this.boards.length,
+            box: box
+        };
+    }
+
+    clearAll() {
+        while (this.corpora.length > 0) {
+            this.deleteCorpus(this.corpora[0].userData.id);
+        }
+        while (this.boards.length > 0) {
+            this.deleteBoard(this.boards[0].id);
+        }
+        this.boardCounter = 1;
+        this.corpusCounter = 1;
+    }
+
+    getCorpusJSON(corpusId) {
+        const c = this.corpora.find(item => item.userData.id === corpusId);
+        if (!c) return null;
+        return {
+            corpora: [{
+                id: c.userData.id,
+                name: c.userData.name,
+                config: JSON.parse(JSON.stringify(c.userData.config)),
+                x: 0,
+                y: 0,
+                z: 0
+            }],
+            boards: []
+        };
+    }
+
+    getSingleBoardJSON(boardId) {
+        const b = this.boards.find(item => item.id === boardId);
+        if (!b) return null;
+        return {
+            corpora: [],
+            boards: [{
+                name: b.name,
+                width: b.width,
+                height: b.height,
+                depth: b.depth,
+                thickness: b.thickness,
+                edgeRadius: b.edgeRadius !== undefined ? b.edgeRadius : 1,
+                type: b.type,
+                textureKey: b.textureKey,
+                edgeBanding: b.edgeBanding,
+                x: 0,
+                y: b.height / 2,
+                z: 0,
+                rotX: b.rotX || 0,
+                rotY: b.rotY || 0,
+                rotZ: b.rotZ || 0
+            }]
+        };
+    }
+
+    toJSON() {
+        return {
+            corpora: this.corpora.map(c => ({
+                id: c.userData.id,
+                name: c.userData.name,
+                config: c.userData.config,
+                x: c.position.x,
+                y: c.position.y,
+                z: c.position.z
+            })),
+            boards: this.boards.filter(b => !b.corpusId).map(b => ({
+                name: b.name,
+                width: b.width,
+                height: b.height,
+                depth: b.depth,
+                thickness: b.thickness,
+                edgeRadius: b.edgeRadius !== undefined ? b.edgeRadius : 1,
+                type: b.type,
+                textureKey: b.textureKey,
+                edgeBanding: b.edgeBanding,
+                x: b.x,
+                y: b.y,
+                z: b.z,
+                rotX: b.rotX,
+                rotY: b.rotY,
+                rotZ: b.rotZ
+            }))
+        };
+    }
+
+    fromJSON(data, replace = true) {
+        if (replace) {
+            this.clearAll();
+        }
+
+        if (!data) return;
+
+        // Ha a régi formátumú egyszerű boards tömb
+        if (Array.isArray(data)) {
+            data.forEach(item => {
+                this.createBoard(item);
+            });
+            this.scene3D.setCameraView('iso');
+            return;
+        }
+
+        // Új formátum: corpora + boards
+        if (data.corpora && Array.isArray(data.corpora)) {
+            data.corpora.forEach(c => {
+                this.createCorpus(c.config, c.x || 0, c.y || 0, c.z || 0);
+            });
+        }
+
+        if (data.boards && Array.isArray(data.boards)) {
+            data.boards.forEach(b => {
+                this.createBoard(b);
+            });
+        }
+
+        this.scene3D.setCameraView('iso');
+    }
+}
