@@ -13,13 +13,14 @@ export const FirebaseSync = {
 
     // Opcionális beépített alapértelmezett Firebase konfiguráció
     defaultConfig: {
-        apiKey: "",
-        authDomain: "",
-        databaseURL: "",
-        projectId: "",
-        storageBucket: "",
-        messagingSenderId: "",
-        appId: ""
+        apiKey: "AIzaSyA7g7Y63Ht9F2IY2KuhUvdmi-d4lXImrJ0",
+        authDomain: "butortervezo-3da49.firebaseapp.com",
+        databaseURL: "https://butortervezo-3da49-default-rtdb.firebaseio.com",
+        projectId: "butortervezo-3da49",
+        storageBucket: "butortervezo-3da49.firebasestorage.app",
+        messagingSenderId: "146339595839",
+        appId: "1:146339595839:web:2a7059895c8b8581e21a8a",
+        measurementId: "G-006Q1HLZTE"
     },
 
     /**
