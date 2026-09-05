@@ -442,6 +442,7 @@ const MaterialManager = {
     }
 };
 
+
 // --- FILE: presetFurniture.js ---
 /**
  * Mintabútorok és Beépített Sablonok (presetFurniture.js)
@@ -527,6 +528,7 @@ const PresetFurniture = [
         ]
     }
 ];
+
 
 // --- FILE: kitchenCorpusGenerator.js ---
 /**
@@ -1256,6 +1258,7 @@ class KitchenCorpusGenerator {
     }
 }
 
+
 // --- FILE: scene3d.js ---
 /**
  * 3D Jelenet Menedzser (scene3d.js)
@@ -1968,14 +1971,12 @@ class Scene3D {
     }
 }
 
+
 // --- FILE: boardManager.js ---
 /**
  * Bútorlap és Korpusz Egység Menedzser (boardManager.js)
  * Bútorlapok és egybefüggő Konyha Korpusz egységek kezelése
  */
-
-
-
 
 /**
  * Box / Triplanar UV leképezés generátor
@@ -2978,6 +2979,7 @@ class BoardManager {
     }
 }
 
+
 // --- FILE: snapEngine.js ---
 /**
  * Intelligens Illesztő és Igazító Motor (snapEngine.js)
@@ -3179,6 +3181,7 @@ class SnapEngine {
     }
 }
 
+
 // --- FILE: catalogManager.js ---
 /**
  * Bal Oldali Katalógus és Kategóriakezelő Menedzser (catalogManager.js)
@@ -3224,7 +3227,7 @@ class CatalogManager {
             }
 
             if (itemJson) {
-                this.items = JSON.parse(itemJson);
+                this.items = JSON.parse(itemJson).filter(item => !item.id.startsWith('preset_'));
             } else {
                 this.items = [];
             }
@@ -3520,6 +3523,7 @@ class CatalogManager {
         });
     }
 }
+
 
 // --- FILE: cutListManager.js ---
 /**
@@ -4141,20 +4145,12 @@ class CutListManager {
     }
 }
 
+
 // --- FILE: app.js ---
 /**
  * Fő Alkalmazás Vezérlő (app.js)
  * Összeköti a 3D grafikai motort, a lapkezelőt, az intelligens illesztőt, textúrákat és a bal oldali katalógust.
  */
-
-
-
-
-
-
-
-
-
 
 /**
  * 3D Élőkép és Előnézet kezelő a Konyha Korpusz Varázsló jobb oldalán
@@ -4359,7 +4355,7 @@ class FurnitureApp {
         this.savingTarget = null;
         this.applyTextureTarget = 'selected'; // 'selected' vagy 'all'
         this.kitchenElements = [];
-        this.expandedCategories = new Set(['cat_kitchen', 'cat_living']);
+        this.expandedCategories = new Set();
 
         this.init();
     }
@@ -4397,34 +4393,18 @@ class FurnitureApp {
         this.renderCatalogUI();
         this.updateDimensionsBadge();
 
-        // 6. Ha a katalógus üres, töltsük be a beépített mintákat
-        this.initPresetCatalog();
+        // 6. Alaphelyzet: nincs kijelölt elem (kontextus menü rejtve)
+        this.onBoardSelected(null);
 
         // Tiszta, üres 3D munkatérrel indulunk (nem töltünk be alapmodellt)
         this.renderHierarchyTree();
     }
 
     /**
-     * Kezdő mintabútorok feltöltése a katalógusba, ha még nincs egy sem
+     * Kezdő mintabútorok - kategóriák üresen indulnak, felhasználó töltheti fel
      */
     initPresetCatalog() {
-        if (this.catalogManager.items.length === 0) {
-            PresetFurniture.forEach(preset => {
-                this.catalogManager.items.push({
-                    id: preset.id,
-                    name: preset.name,
-                    categoryId: preset.categoryId,
-                    description: preset.description,
-                    dimensions: preset.dimensions,
-                    boardCount: preset.boards.length,
-                    thumbnail: '', // rendereléskor vagy betöltéskor frissül
-                    boards: preset.boards,
-                    createdAt: new Date().toISOString()
-                });
-            });
-            this.catalogManager.saveItemsToStorage();
-            this.renderCatalogUI();
-        }
+        // Üresen hagyva: a felhasználó hozza létre és menti el a bútorokat
     }
 
     loadInitialFurniture() {
@@ -5163,14 +5143,18 @@ class FurnitureApp {
         const boardPanel = document.getElementById('board-properties-panel');
         const noBoardMsg = document.getElementById('no-board-selected-msg');
         const boardForm = document.getElementById('board-selected-form');
+        const snappingPanel = document.getElementById('snapping-panel');
+        const texturesPanel = document.getElementById('textures-panel');
 
         if (!target) {
             this.selectedBoard = null;
             this.selectedCorpus = null;
             if (corpusPanel) corpusPanel.style.display = 'none';
-            if (boardPanel) boardPanel.style.display = 'block';
-            if (noBoardMsg) noBoardMsg.style.display = 'block';
+            if (boardPanel) boardPanel.style.display = 'none';
+            if (noBoardMsg) noBoardMsg.style.display = 'none';
             if (boardForm) boardForm.style.display = 'none';
+            if (snappingPanel) snappingPanel.style.display = 'none';
+            if (texturesPanel) texturesPanel.style.display = 'none';
             this.highlightHierarchyItem(null);
             return;
         }
@@ -5182,6 +5166,8 @@ class FurnitureApp {
 
             if (corpusPanel) corpusPanel.style.display = 'block';
             if (boardPanel) boardPanel.style.display = 'none';
+            if (snappingPanel) snappingPanel.style.display = 'none';
+            if (texturesPanel) texturesPanel.style.display = 'block';
 
             const nameEl = document.getElementById('corpus-prop-name');
             const dimsEl = document.getElementById('corpus-prop-dims');
@@ -5203,6 +5189,8 @@ class FurnitureApp {
             if (boardPanel) boardPanel.style.display = 'block';
             if (noBoardMsg) noBoardMsg.style.display = 'none';
             if (boardForm) boardForm.style.display = 'block';
+            if (snappingPanel) snappingPanel.style.display = 'block';
+            if (texturesPanel) texturesPanel.style.display = 'block';
 
             this.updatePropertiesForm(board);
             this.highlightHierarchyItem(board.id);
@@ -6415,6 +6403,24 @@ class FurnitureApp {
         }
     }
 }
+
+// Alkalmazás indítása a DOM betöltődése után
+function startFurnitureApp() {
+    if (!window.app) {
+        try {
+            window.app = new FurnitureApp();
+        } catch (e) {
+            console.error('Hiba az alkalmazás indításakor:', e);
+        }
+    }
+}
+
+if (document.readyState === 'loading') {
+    window.addEventListener('DOMContentLoaded', startFurnitureApp);
+} else {
+    startFurnitureApp();
+}
+
 
 // Alkalmazás indítása a DOM betöltődése után
 function startFurnitureApp() {

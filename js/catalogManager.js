@@ -42,7 +42,7 @@ export class CatalogManager {
             }
 
             if (itemJson) {
-                this.items = JSON.parse(itemJson);
+                this.items = JSON.parse(itemJson).filter(item => !item.id.startsWith('preset_'));
             } else {
                 this.items = [];
             }

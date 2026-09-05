@@ -215,7 +215,7 @@ class FurnitureApp {
         this.savingTarget = null;
         this.applyTextureTarget = 'selected'; // 'selected' vagy 'all'
         this.kitchenElements = [];
-        this.expandedCategories = new Set(['cat_kitchen', 'cat_living']);
+        this.expandedCategories = new Set();
 
         this.init();
     }
@@ -253,34 +253,18 @@ class FurnitureApp {
         this.renderCatalogUI();
         this.updateDimensionsBadge();
 
-        // 6. Ha a katalógus üres, töltsük be a beépített mintákat
-        this.initPresetCatalog();
+        // 6. Alaphelyzet: nincs kijelölt elem (kontextus menü rejtve)
+        this.onBoardSelected(null);
 
         // Tiszta, üres 3D munkatérrel indulunk (nem töltünk be alapmodellt)
         this.renderHierarchyTree();
     }
 
     /**
-     * Kezdő mintabútorok feltöltése a katalógusba, ha még nincs egy sem
+     * Kezdő mintabútorok - kategóriák üresen indulnak, felhasználó töltheti fel
      */
     initPresetCatalog() {
-        if (this.catalogManager.items.length === 0) {
-            PresetFurniture.forEach(preset => {
-                this.catalogManager.items.push({
-                    id: preset.id,
-                    name: preset.name,
-                    categoryId: preset.categoryId,
-                    description: preset.description,
-                    dimensions: preset.dimensions,
-                    boardCount: preset.boards.length,
-                    thumbnail: '', // rendereléskor vagy betöltéskor frissül
-                    boards: preset.boards,
-                    createdAt: new Date().toISOString()
-                });
-            });
-            this.catalogManager.saveItemsToStorage();
-            this.renderCatalogUI();
-        }
+        // Üresen hagyva: a felhasználó hozza létre és menti el a bútorokat
     }
 
     loadInitialFurniture() {
@@ -1019,14 +1003,18 @@ class FurnitureApp {
         const boardPanel = document.getElementById('board-properties-panel');
         const noBoardMsg = document.getElementById('no-board-selected-msg');
         const boardForm = document.getElementById('board-selected-form');
+        const snappingPanel = document.getElementById('snapping-panel');
+        const texturesPanel = document.getElementById('textures-panel');
 
         if (!target) {
             this.selectedBoard = null;
             this.selectedCorpus = null;
             if (corpusPanel) corpusPanel.style.display = 'none';
-            if (boardPanel) boardPanel.style.display = 'block';
-            if (noBoardMsg) noBoardMsg.style.display = 'block';
+            if (boardPanel) boardPanel.style.display = 'none';
+            if (noBoardMsg) noBoardMsg.style.display = 'none';
             if (boardForm) boardForm.style.display = 'none';
+            if (snappingPanel) snappingPanel.style.display = 'none';
+            if (texturesPanel) texturesPanel.style.display = 'none';
             this.highlightHierarchyItem(null);
             return;
         }
@@ -1038,6 +1026,8 @@ class FurnitureApp {
 
             if (corpusPanel) corpusPanel.style.display = 'block';
             if (boardPanel) boardPanel.style.display = 'none';
+            if (snappingPanel) snappingPanel.style.display = 'none';
+            if (texturesPanel) texturesPanel.style.display = 'block';
 
             const nameEl = document.getElementById('corpus-prop-name');
             const dimsEl = document.getElementById('corpus-prop-dims');
@@ -1059,6 +1049,8 @@ class FurnitureApp {
             if (boardPanel) boardPanel.style.display = 'block';
             if (noBoardMsg) noBoardMsg.style.display = 'none';
             if (boardForm) boardForm.style.display = 'block';
+            if (snappingPanel) snappingPanel.style.display = 'block';
+            if (texturesPanel) texturesPanel.style.display = 'block';
 
             this.updatePropertiesForm(board);
             this.highlightHierarchyItem(board.id);
