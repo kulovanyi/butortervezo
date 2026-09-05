@@ -5667,11 +5667,173 @@ class SnapEngine {
 }
 
 
+// --- FILE: firebaseSync.js ---
+/**
+ * Firebase Realtime Database Szinkronizációs Menedzser (firebaseSync.js)
+ * Lehetővé teszi, hogy a weben (GitHub Pages vagy böngésző) futtatott alkalmazás
+ * ingyenes Google Firebase felhőbe mentse és valós időben szinkronizálja a katalógust.
+ */
+
+const FirebaseSync = {
+    app: null,
+    db: null,
+    isConnected: false,
+    storageKeyConfig: 'butortervezo_firebase_config_v1',
+    listeners: [],
+
+    defaultConfig: {
+        apiKey: "",
+        authDomain: "",
+        databaseURL: "",
+        projectId: "",
+        storageBucket: "",
+        messagingSenderId: "",
+        appId: ""
+    },
+
+    init(onCatalogUpdateCallback) {
+        if (onCatalogUpdateCallback) {
+            this.listeners.push(onCatalogUpdateCallback);
+        }
+
+        const config = this.getConfig();
+        if (config && config.apiKey && config.projectId) {
+            this.connect(config);
+        } else {
+            console.log('[FIREBASE] Nincs konfigurálva Firebase adatbázis (Helyi mód aktív).');
+        }
+    },
+
+    getConfig() {
+        try {
+            const saved = localStorage.getItem(this.storageKeyConfig);
+            if (saved) {
+                return JSON.parse(saved);
+            }
+        } catch (e) {
+            console.error('Hiba a Firebase config betöltésekor:', e);
+        }
+        return this.defaultConfig;
+    },
+
+    saveConfig(config) {
+        try {
+            localStorage.setItem(this.storageKeyConfig, JSON.stringify(config));
+            return this.connect(config);
+        } catch (e) {
+            console.error('Hiba a Firebase config mentésekor:', e);
+            return false;
+        }
+    },
+
+    connect(config) {
+        if (typeof firebase === 'undefined') {
+            console.warn('[FIREBASE] A Firebase SDK nem töltődött be.');
+            this.isConnected = false;
+            return false;
+        }
+
+        try {
+            if (firebase.apps && firebase.apps.length > 0) {
+                this.app = firebase.apps[0];
+            } else {
+                this.app = firebase.initializeApp(config);
+            }
+
+            this.db = firebase.database();
+            this.isConnected = true;
+            console.log('[FIREBASE] Sikeres csatlakozás a felhőhöz! Project:', config.projectId);
+
+            this.setupRealtimeListener();
+            this.updateStatusUI(true);
+            return true;
+        } catch (e) {
+            console.error('[FIREBASE] Csatlakozási hiba:', e);
+            this.isConnected = false;
+            this.updateStatusUI(false, e.message);
+            return false;
+        }
+    },
+
+    setupRealtimeListener() {
+        if (!this.db) return;
+
+        try {
+            const catalogRef = this.db.ref('catalog');
+            catalogRef.on('value', (snapshot) => {
+                const data = snapshot.val();
+                if (data) {
+                    console.log('[FIREBASE] Új katalógus adatok érkeztek a felhőből:', data);
+                    this.listeners.forEach(cb => {
+                        try {
+                            cb(data);
+                        } catch (err) {
+                            console.error('Hiba a katalógus frissítő callbackben:', err);
+                        }
+                    });
+                }
+            }, (error) => {
+                console.error('[FIREBASE] Adatlekérési hiba (jogosultság?):', error);
+            });
+        } catch (e) {
+            console.error('[FIREBASE] Figyelő hiba:', e);
+        }
+    },
+
+    async saveCatalog(categories, items, actionName = 'Katalógus mentés') {
+        if (!this.isConnected || !this.db) {
+            return false;
+        }
+
+        try {
+            const payload = {
+                version: '1.0',
+                lastUpdated: new Date().toISOString(),
+                lastAction: actionName,
+                categories: categories || [],
+                items: items || []
+            };
+
+            await this.db.ref('catalog').set(payload);
+            console.log(`[FIREBASE] Sikeres felhő mentés: ${items.length} bútor, ${categories.length} kategória.`);
+            return true;
+        } catch (e) {
+            console.error('[FIREBASE] Mentési hiba a felhőbe:', e);
+            return false;
+        }
+    },
+
+    updateStatusUI(connected, errorMsg = '') {
+        const dot = document.getElementById('firebase-status-dot');
+        const badge = document.getElementById('firebase-status-badge');
+
+        if (dot) {
+            dot.style.background = connected ? '#10b981' : '#ef4444';
+        }
+        if (badge) {
+            if (connected) {
+                badge.textContent = '🟢 Csatlakozva a felhőhöz';
+                badge.style.background = 'rgba(16, 185, 129, 0.2)';
+                badge.style.color = '#10b981';
+            } else {
+                badge.textContent = errorMsg ? `🔴 Hiba: ${errorMsg}` : '⚪ Nincs beállítva (Helyi mód)';
+                badge.style.background = 'rgba(239, 68, 68, 0.15)';
+                badge.style.color = '#ef4444';
+            }
+        }
+    }
+};
+
+if (typeof window !== 'undefined') {
+    window.FirebaseSync = FirebaseSync;
+}
+
+
 // --- FILE: catalogManager.js ---
 /**
  * Bal Oldali Katalógus és Kategóriakezelő Menedzser (catalogManager.js)
  * Kategóriák kezelése, bútorok mentése automatikus 3D előnézettel, visszatöltés, export/import,
- * valamint automatikus szinkronizáció a helyi Python szerverrel és a GitHub-bal.
+ * valamint automatikus szinkronizáció a Firebase Felhővel, a helyi Python szerverrel és a GitHub-bal.
  */
 
 class CatalogManager {
@@ -5693,6 +5855,61 @@ class CatalogManager {
 
         // 2. Háttérben lekérés a szervertől (data/catalog.json - GitHub szinkron)
         this.fetchServerCatalog();
+
+        // 3. Firebase Felhős Szinkronizáció inicializálása
+        this.initFirebase();
+    }
+
+    /**
+     * Firebase szinkron inicializálása
+     */
+    initFirebase() {
+        if (typeof window !== 'undefined' && window.FirebaseSync) {
+            window.FirebaseSync.init((cloudData) => {
+                this.handleCloudCatalogUpdate(cloudData);
+            });
+        }
+    }
+
+    /**
+     * Felhőből (Firebase) érkező valós idejű katalógus frissítés kezelése
+     */
+    handleCloudCatalogUpdate(cloudData) {
+        if (!cloudData) return;
+
+        let changed = false;
+
+        if (cloudData.categories && Array.isArray(cloudData.categories)) {
+            cloudData.categories.forEach(cCat => {
+                const exists = this.categories.some(c => c.id === cCat.id);
+                if (!exists) {
+                    this.categories.push(cCat);
+                    changed = true;
+                }
+            });
+        }
+
+        if (cloudData.items && Array.isArray(cloudData.items)) {
+            if (this.items.length === 0 && cloudData.items.length > 0) {
+                this.items = cloudData.items;
+                changed = true;
+            } else {
+                cloudData.items.forEach(cItem => {
+                    const exists = this.items.some(i => i.id === cItem.id);
+                    if (!exists) {
+                        this.items.push(cItem);
+                        changed = true;
+                    }
+                });
+            }
+        }
+
+        if (changed) {
+            this.saveCategoriesToStorage();
+            this.saveItemsToStorage();
+            this.notifyChange();
+            this.showToast('☁️ Új bútorok szinkronizálva a felhőből!', 'info');
+        }
     }
 
     /**
@@ -5816,9 +6033,18 @@ class CatalogManager {
     }
 
     /**
-     * Katalógus elküldése a szervernek és automatikus Git Push indítása
+     * Katalógus elküldése a szervernek és a Firebase felhőbe
      */
     async syncToServer(actionDescription = 'Katalógus frissítés') {
+        let firebaseSaved = false;
+        let localServerSaved = false;
+
+        // 1. Mentés a Firebase Felhőbe (ha csatlakozva van)
+        if (typeof window !== 'undefined' && window.FirebaseSync && window.FirebaseSync.isConnected) {
+            firebaseSaved = await window.FirebaseSync.saveCatalog(this.categories, this.items, actionDescription);
+        }
+
+        // 2. Mentés a helyi Python szervernek és Git Push
         try {
             const res = await fetch('/api/catalog', {
                 method: 'POST',
@@ -5831,15 +6057,21 @@ class CatalogManager {
             });
 
             if (res.ok) {
-                const data = await res.json();
-                this.showToast(`💾 Katalógus mentve & feltöltve a GitHub-ra! 🚀`, 'success');
-                console.log('[SYNC SIKER]', data);
-            } else {
-                this.showToast('💾 Katalógus mentve a böngészőben (Helyi)', 'info');
+                localServerSaved = true;
             }
         } catch (e) {
-            // Offline mód vagy nincs Python szerver
-            this.showToast('💾 Katalógus mentve (Offline / LocalStorage)', 'info');
+            // Nincs Python szerver
+        }
+
+        // Visszajelzés a felhasználónak
+        if (firebaseSaved && localServerSaved) {
+            this.showToast('☁️ Mentve a Firebase Felhőbe & GitHub-ra! 🚀', 'success');
+        } else if (firebaseSaved) {
+            this.showToast('☁️ Sikeresen mentve a Firebase Felhőbe! 🌐', 'success');
+        } else if (localServerSaved) {
+            this.showToast('💾 Katalógus mentve & feltöltve a GitHub-ra! 🚀', 'success');
+        } else {
+            this.showToast('💾 Katalógus mentve a böngészőben (Helyi)', 'info');
         }
     }
 
@@ -7194,6 +7426,77 @@ class FurnitureApp {
         document.getElementById('btn-open-cutlist').addEventListener('click', () => {
             this.openCutListModal();
         });
+
+        // --- Firebase Felhő Szinkron Modal Események ---
+        const btnOpenFirebase = document.getElementById('btn-open-firebase');
+        if (btnOpenFirebase) {
+            btnOpenFirebase.addEventListener('click', () => {
+                const config = window.FirebaseSync ? window.FirebaseSync.getConfig() : {};
+                const textarea = document.getElementById('firebase-config-json');
+                if (textarea) {
+                    if (config && config.apiKey) {
+                        textarea.value = JSON.stringify(config, null, 2);
+                    } else {
+                        textarea.value = '';
+                    }
+                }
+                if (window.FirebaseSync) {
+                    window.FirebaseSync.updateStatusUI(window.FirebaseSync.isConnected);
+                }
+                this.openModal('modal-firebase-config');
+            });
+        }
+
+        const btnSaveFirebase = document.getElementById('btn-save-firebase-config');
+        if (btnSaveFirebase) {
+            btnSaveFirebase.addEventListener('click', () => {
+                const rawVal = (document.getElementById('firebase-config-json').value || '').trim();
+                if (!rawVal) {
+                    alert('Kérlek illeszd be a Firebase konfigurációt!');
+                    return;
+                }
+
+                try {
+                    let cleanJson = rawVal;
+                    if (rawVal.includes('{')) {
+                        cleanJson = rawVal.substring(rawVal.indexOf('{'), rawVal.lastIndexOf('}') + 1);
+                        cleanJson = cleanJson.replace(/(['"])?([a-zA-Z0-9_]+)(['"])?:/g, '"$2": ').replace(/'/g, '"');
+                    }
+                    const parsedConfig = JSON.parse(cleanJson);
+
+                    if (!parsedConfig.apiKey || !parsedConfig.projectId) {
+                        alert('A megadott konfigurációból hiányzik az apiKey vagy a projectId!');
+                        return;
+                    }
+
+                    const ok = window.FirebaseSync.saveConfig(parsedConfig);
+                    if (ok) {
+                        this.catalogManager.showToast('🟢 Sikeresen csatlakozva a Firebase Felhőhöz! 🚀', 'success');
+                        this.closeModal('modal-firebase-config');
+                    } else {
+                        alert('Nem sikerült csatlakozni a Firebase-hez. Ellenőrizd a megadott adatokat!');
+                    }
+                } catch (err) {
+                    alert('Érvénytelen konfigurációs formátum! Kérlek érvényes JSON formátumot adj meg.\nHiba: ' + err.message);
+                }
+            });
+        }
+
+        const btnSyncNow = document.getElementById('btn-sync-firebase-now');
+        if (btnSyncNow) {
+            btnSyncNow.addEventListener('click', async () => {
+                if (!window.FirebaseSync || !window.FirebaseSync.isConnected) {
+                    alert('A felhőkapcsolat még nincs beállítva vagy nem aktív!');
+                    return;
+                }
+                const ok = await window.FirebaseSync.saveCatalog(this.catalogManager.categories, this.catalogManager.items, 'Kézi szinkronizáció');
+                if (ok) {
+                    this.catalogManager.showToast('☁️ Teljes katalógus feltöltve a felhőbe! 🚀', 'success');
+                } else {
+                    alert('Hiba történt a felhőbe töltéskor.');
+                }
+            });
+        }
 
         document.getElementById('btn-take-screenshot').addEventListener('click', () => {
             const snap = this.scene3D.getSnapshot(1920, 1080);

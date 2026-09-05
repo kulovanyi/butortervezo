@@ -1,7 +1,7 @@
 /**
  * Bal Oldali Katalógus és Kategóriakezelő Menedzser (catalogManager.js)
  * Kategóriák kezelése, bútorok mentése automatikus 3D előnézettel, visszatöltés, export/import,
- * valamint automatikus szinkronizáció a helyi Python szerverrel és a GitHub-bal.
+ * valamint automatikus szinkronizáció a Firebase Felhővel, a helyi Python szerverrel és a GitHub-bal.
  */
 
 export class CatalogManager {
@@ -23,6 +23,61 @@ export class CatalogManager {
 
         // 2. Háttérben lekérés a szervertől (data/catalog.json - GitHub szinkron)
         this.fetchServerCatalog();
+
+        // 3. Firebase Felhős Szinkronizáció inicializálása
+        this.initFirebase();
+    }
+
+    /**
+     * Firebase szinkron inicializálása
+     */
+    initFirebase() {
+        if (typeof window !== 'undefined' && window.FirebaseSync) {
+            window.FirebaseSync.init((cloudData) => {
+                this.handleCloudCatalogUpdate(cloudData);
+            });
+        }
+    }
+
+    /**
+     * Felhőből (Firebase) érkező valós idejű katalógus frissítés kezelése
+     */
+    handleCloudCatalogUpdate(cloudData) {
+        if (!cloudData) return;
+
+        let changed = false;
+
+        if (cloudData.categories && Array.isArray(cloudData.categories)) {
+            cloudData.categories.forEach(cCat => {
+                const exists = this.categories.some(c => c.id === cCat.id);
+                if (!exists) {
+                    this.categories.push(cCat);
+                    changed = true;
+                }
+            });
+        }
+
+        if (cloudData.items && Array.isArray(cloudData.items)) {
+            if (this.items.length === 0 && cloudData.items.length > 0) {
+                this.items = cloudData.items;
+                changed = true;
+            } else {
+                cloudData.items.forEach(cItem => {
+                    const exists = this.items.some(i => i.id === cItem.id);
+                    if (!exists) {
+                        this.items.push(cItem);
+                        changed = true;
+                    }
+                });
+            }
+        }
+
+        if (changed) {
+            this.saveCategoriesToStorage();
+            this.saveItemsToStorage();
+            this.notifyChange();
+            this.showToast('☁️ Új bútorok szinkronizálva a felhőből!', 'info');
+        }
     }
 
     /**
@@ -146,9 +201,18 @@ export class CatalogManager {
     }
 
     /**
-     * Katalógus elküldése a szervernek és automatikus Git Push indítása
+     * Katalógus elküldése a szervernek és a Firebase felhőbe
      */
     async syncToServer(actionDescription = 'Katalógus frissítés') {
+        let firebaseSaved = false;
+        let localServerSaved = false;
+
+        // 1. Mentés a Firebase Felhőbe (ha csatlakozva van)
+        if (typeof window !== 'undefined' && window.FirebaseSync && window.FirebaseSync.isConnected) {
+            firebaseSaved = await window.FirebaseSync.saveCatalog(this.categories, this.items, actionDescription);
+        }
+
+        // 2. Mentés a helyi Python szervernek és Git Push
         try {
             const res = await fetch('/api/catalog', {
                 method: 'POST',
@@ -161,15 +225,21 @@ export class CatalogManager {
             });
 
             if (res.ok) {
-                const data = await res.json();
-                this.showToast(`💾 Katalógus mentve & feltöltve a GitHub-ra! 🚀`, 'success');
-                console.log('[SYNC SIKER]', data);
-            } else {
-                this.showToast('💾 Katalógus mentve a böngészőben (Helyi)', 'info');
+                localServerSaved = true;
             }
         } catch (e) {
-            // Offline mód vagy nincs Python szerver
-            this.showToast('💾 Katalógus mentve (Offline / LocalStorage)', 'info');
+            // Nincs Python szerver
+        }
+
+        // Visszajelzés a felhasználónak
+        if (firebaseSaved && localServerSaved) {
+            this.showToast('☁️ Mentve a Firebase Felhőbe & GitHub-ra! 🚀', 'success');
+        } else if (firebaseSaved) {
+            this.showToast('☁️ Sikeresen mentve a Firebase Felhőbe! 🌐', 'success');
+        } else if (localServerSaved) {
+            this.showToast('💾 Katalógus mentve & feltöltve a GitHub-ra! 🚀', 'success');
+        } else {
+            this.showToast('💾 Katalógus mentve a böngészőben (Helyi)', 'info');
         }
     }
 

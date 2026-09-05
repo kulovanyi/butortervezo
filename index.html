@@ -14,6 +14,9 @@
     <script src="libs/OrbitControls.js"></script>
     <script src="libs/TransformControls.js"></script>
     <script src="libs/GLTFLoader.js"></script>
+    <!-- Google Firebase SDK (Ingyenes valós idejű felhő szinkronizáció) -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
     <script>
         window.addEventListener('error', function(e) {
             console.error('ALKALMAZÁS HIBA:', e.error || e.message, e);
@@ -76,6 +79,11 @@
             <button id="btn-toggle-doors" class="btn" title="Ajtók és fiókok kinyitása / becsukása">
                 <span id="btn-toggle-doors-icon">🚪</span>
                 <span id="btn-toggle-doors-text">Ajtók Nyitása</span>
+            </button>
+
+            <button id="btn-open-firebase" class="btn" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b; border-color: rgba(245, 158, 11, 0.4);" title="Firebase Felhő szinkronizáció beállítása">
+                <span id="firebase-status-dot" style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#94a3b8; margin-right:4px;"></span>
+                <span>☁️ Felhő Szinkron</span>
             </button>
 
             <button id="btn-take-screenshot" class="btn btn-icon" title="Kép mentése (Screenshot)">
@@ -788,6 +796,57 @@
             <div class="modal-footer">
                 <button class="btn btn-close-modal" data-modal="modal-add-category">Mégse</button>
                 <button id="btn-confirm-add-category" class="btn btn-primary">Létrehozás</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: FIREBASE FELHŐ SZINKRONIZÁCIÓ BEÁLLÍTÁSA -->
+    <div class="modal-overlay" id="modal-firebase-config">
+        <div class="modal-dialog" style="max-width: 520px;">
+            <div class="modal-header">
+                <div class="modal-title" style="display:flex; align-items:center; gap:8px;">
+                    <span>☁️ Google Firebase Felhő Szinkron</span>
+                </div>
+                <button class="btn btn-icon btn-close-modal" data-modal="modal-firebase-config">✕</button>
+            </div>
+            <div class="modal-body" style="display:flex; flex-direction:column; gap:14px;">
+                
+                <!-- Kapcsolati státusz kártya -->
+                <div style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:var(--radius-sm); padding:10px 14px; display:flex; justify-content:space-between; align-items:center;">
+                    <span style="font-size:12px; font-weight:600; color:var(--text-secondary);">Felhő kapcsolat:</span>
+                    <span id="firebase-status-badge" style="font-size:11px; font-weight:700; padding:3px 10px; border-radius:12px; background:rgba(239, 68, 68, 0.15); color:#ef4444;">⚪ Nincs beállítva (Helyi mód)</span>
+                </div>
+
+                <div style="font-size:12px; color:var(--text-muted); line-height:1.5;">
+                    A Firebase segítségével a weben (GitHub Pages vagy böngésző) futó tervező bárki számára valós időben menti és szinkronizálja a kész bútorokat egy ingyenes közös felhőbe.
+                </div>
+
+                <!-- Firebase Config JSON beillesztő -->
+                <div class="form-group" style="margin:0;">
+                    <label class="form-label" style="display:flex; justify-content:space-between;">
+                        <span>Firebase Web Konfiguráció (JSON vagy objektum) *</span>
+                        <span style="font-size:10px; color:#f59e0b; font-weight:400;">console.firebase.google.com</span>
+                    </label>
+                    <textarea id="firebase-config-json" class="form-control" rows="6" placeholder='{\n  "apiKey": "AIzaSy...",\n  "authDomain": "projekt.firebaseapp.com",\n  "databaseURL": "https://projekt-default-rtdb.firebaseio.com",\n  "projectId": "projekt-id",\n  "storageBucket": "projekt.appspot.com",\n  "messagingSenderId": "...",\n  "appId": "..."\n}' style="font-family:monospace; font-size:11px;"></textarea>
+                </div>
+
+                <!-- Gyors útmutató accordion / infó -->
+                <div style="background:rgba(59,130,246,0.08); border:1px solid rgba(59,130,246,0.25); border-radius:var(--radius-sm); padding:10px 12px; font-size:11px; color:#93c5fd; line-height:1.4;">
+                    <strong>💡 Hogyan hozz létre 1 perc alatt ingyenes felhőt?</strong><br>
+                    1. Nyisd meg a <a href="https://console.firebase.google.com" target="_blank" style="color:#60a5fa; text-decoration:underline;">console.firebase.google.com</a> oldalt.<br>
+                    2. Hozz létre egy új projektet és kapcsold be a <strong>Realtime Database</strong>-t (Test mode / írási és olvasási joggal).<br>
+                    3. A Projekt beállításainál add hozzá a Web alkalmazást (&lt;/&gt;) és másold be a kapott <code>firebaseConfig</code> blokkot!
+                </div>
+
+            </div>
+            <div class="modal-footer" style="display:flex; justify-content:space-between;">
+                <button id="btn-sync-firebase-now" class="btn btn-sm" title="Katalógus azonnali feltöltése a felhőbe">
+                    <span>⬆️ Feltöltés a Felhőbe</span>
+                </button>
+                <div style="display:flex; gap:8px;">
+                    <button class="btn btn-close-modal" data-modal="modal-firebase-config">Bezárás</button>
+                    <button id="btn-save-firebase-config" class="btn btn-primary">Mentés & Csatlakozás</button>
+                </div>
             </div>
         </div>
     </div>
