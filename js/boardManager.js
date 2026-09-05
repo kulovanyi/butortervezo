@@ -220,7 +220,7 @@ export class BoardManager {
         this.boardCounter = 1;
         this.corpusCounter = 1;
         this.groupCounter = 1;
-        this.activeTextureKey = 'oak_natural';
+        this.activeTextureKey = 'front_k001';
     }
 
     /**
@@ -414,6 +414,71 @@ export class BoardManager {
         this.scene3D.updateDimensionVisualizer();
         this.updateKitchenContinuity();
         return corpusGroup;
+    }
+
+    /**
+     * Textúra alkalmazása teljes Konyha Korpuszra (Front vagy Munkalap/Hátfal kategória alapján)
+     */
+    applyTextureToCorpus(corpusGroupOrId, textureKey) {
+        const corpusGroup = typeof corpusGroupOrId === 'string'
+            ? this.corpora.find(c => c.userData.id === corpusGroupOrId)
+            : corpusGroupOrId;
+        if (!corpusGroup || !corpusGroup.userData || !corpusGroup.userData.config) return;
+
+        const config = corpusGroup.userData.config;
+        const texInfo = MaterialManager.textures[textureKey] || MaterialManager.textures['front_k001'];
+        if (!texInfo) return;
+
+        const isWorktopTex = texInfo.category === 'worktop';
+
+        if (isWorktopTex) {
+            // Munkalap textúra -> Munkalap és Munkalap hátfalpanel (splashback) frissítése
+            if (!config.worktop) config.worktop = {};
+            config.worktop.textureKey = textureKey;
+            if (config.worktop.splashback) {
+                config.worktop.splashback.textureKey = textureKey;
+            }
+
+            const corpusBoards = this.boards.filter(b => b.corpusId === corpusGroup.userData.id);
+            corpusBoards.forEach(b => {
+                if (b.isWorktop || b.type === 'worktop' || b.isSplashback) {
+                    b.textureKey = textureKey;
+                    if (b.mesh) {
+                        const oldMat = b.mesh.material;
+                        b.mesh.material = MaterialManager.createMaterial(textureKey);
+                        if (oldMat && oldMat.map) oldMat.map.dispose();
+                        if (oldMat) oldMat.dispose();
+                        b.mesh.userData.textureKey = textureKey;
+                    }
+                }
+            });
+            this.updateKitchenContinuity();
+        } else {
+            // Front / Bútorlap textúra -> Minden korpusz lap frissítése KIVÉVE a hátfalat (mindig fehér) és munkalapot/splashbacket/gépeket
+            config.textureKey = textureKey;
+            if (config.sides) config.sides.textureKey = textureKey;
+            if (config.plinth) config.plinth.textureKey = textureKey;
+
+            const corpusBoards = this.boards.filter(b => b.corpusId === corpusGroup.userData.id);
+            corpusBoards.forEach(b => {
+                const isWorktop = b.isWorktop || b.type === 'worktop' || b.isSplashback;
+                const isBackPanel = !b.isSplashback && (b.type === 'back' || (b.name && b.name.includes('Hátfal')));
+                const isAppliance = b.isAppliance || b.type === 'appliance';
+
+                if (isWorktop || isBackPanel || isAppliance) {
+                    return; // Munkalapot, korpusz fehér hátfalat és gépeket ne írjuk felül
+                }
+
+                b.textureKey = textureKey;
+                if (b.mesh) {
+                    const oldMat = b.mesh.material;
+                    b.mesh.material = MaterialManager.createMaterial(textureKey);
+                    if (oldMat && oldMat.map) oldMat.map.dispose();
+                    if (oldMat) oldMat.dispose();
+                    b.mesh.userData.textureKey = textureKey;
+                }
+            });
+        }
     }
 
     /**
@@ -724,14 +789,14 @@ export class BoardManager {
                 height: h,
                 depth: d,
                 minX: worldPos.x - w / 2,
-                textureKey: b.textureKey || 'concrete'
+                textureKey: b.textureKey || 'wt_3025'
             });
         });
 
         if (worktopItems.length === 0) return;
 
         worktopItems.forEach(item => {
-            const texInfo = MaterialManager.textures[item.textureKey] || MaterialManager.textures['concrete'];
+            const texInfo = MaterialManager.textures[item.textureKey] || MaterialManager.textures['wt_3025'];
             if (!texInfo || !texInfo.texture) return;
 
             const clonedTexture = texInfo.texture.clone();
@@ -782,14 +847,14 @@ export class BoardManager {
                 height: h,
                 depth: d,
                 minX: worldPos.x - w / 2,
-                textureKey: b.textureKey || 'anthracite'
+                textureKey: b.textureKey || 'front_k001'
             });
         });
 
         if (plinthItems.length === 0) return;
 
         plinthItems.forEach(item => {
-            const texInfo = MaterialManager.textures[item.textureKey] || MaterialManager.textures['anthracite'];
+            const texInfo = MaterialManager.textures[item.textureKey] || MaterialManager.textures['front_k001'];
             if (!texInfo || !texInfo.texture) return;
 
             const clonedTexture = texInfo.texture.clone();
@@ -839,14 +904,14 @@ export class BoardManager {
                 height: h,
                 depth: d,
                 minX: worldPos.x - w / 2,
-                textureKey: b.textureKey || 'concrete'
+                textureKey: b.textureKey || 'wt_3025'
             });
         });
 
         if (splashbackItems.length === 0) return;
 
         splashbackItems.forEach(item => {
-            const texInfo = MaterialManager.textures[item.textureKey] || MaterialManager.textures['concrete'];
+            const texInfo = MaterialManager.textures[item.textureKey] || MaterialManager.textures['wt_3025'];
             if (!texInfo || !texInfo.texture) return;
 
             const clonedTexture = texInfo.texture.clone();
@@ -1083,31 +1148,52 @@ export class BoardManager {
 
     applyTextureToAll(textureKey) {
         this.activeTextureKey = textureKey;
-        const texInfo = MaterialManager.textures[textureKey] || MaterialManager.textures['white_matte'];
+        const texInfo = MaterialManager.textures[textureKey] || MaterialManager.textures['front_k001'];
         const isWorktopTex = texInfo && texInfo.category === 'worktop';
 
+        // 1. Frissítsük az összes különálló bútorlapot
         this.boards.forEach(board => {
             const isWorktop = board.isWorktop || board.type === 'worktop' || (board.name && board.name.includes('Munkalap'));
             const isSplashback = board.isSplashback || (board.name && board.name.includes('Hátfalpanel'));
             const isBackPanel = !isSplashback && (board.type === 'back' || (board.name && board.name.includes('Hátfal')));
+            const isAppliance = board.isAppliance || board.type === 'appliance';
 
-            // 1. A korpusz hátfal MINDIG fehér marad!
+            if (isAppliance) return;
+
+            // A korpusz hátfal MINDIG fehér marad!
             if (isBackPanel) {
                 board.textureKey = 'white_matte';
-                MaterialManager.applyTextureToMesh(board.mesh, 'white_matte');
+                if (board.mesh) MaterialManager.applyTextureToMesh(board.mesh, 'white_matte');
                 return;
             }
 
-            // 2. Munkalap textúra csak munkalapra/hátfalpanelre, front textúra csak bútorlapra kerül
+            // Munkalap textúra csak munkalapra/hátfalpanelre, front textúra csak bútorlapra kerül
             if (isWorktop || isSplashback) {
                 if (isWorktopTex) {
                     board.textureKey = textureKey;
-                    MaterialManager.applyTextureToMesh(board.mesh, textureKey);
+                    if (board.mesh) MaterialManager.applyTextureToMesh(board.mesh, textureKey);
                 }
             } else {
                 if (!isWorktopTex) {
                     board.textureKey = textureKey;
-                    MaterialManager.applyTextureToMesh(board.mesh, textureKey);
+                    if (board.mesh) MaterialManager.applyTextureToMesh(board.mesh, textureKey);
+                }
+            }
+        });
+
+        // 2. Frissítsük az összes korpusz konfigurációt
+        this.corpora.forEach(corpusGroup => {
+            if (corpusGroup.userData && corpusGroup.userData.config) {
+                if (isWorktopTex) {
+                    if (!corpusGroup.userData.config.worktop) corpusGroup.userData.config.worktop = {};
+                    corpusGroup.userData.config.worktop.textureKey = textureKey;
+                    if (corpusGroup.userData.config.worktop.splashback) {
+                        corpusGroup.userData.config.worktop.splashback.textureKey = textureKey;
+                    }
+                } else {
+                    corpusGroup.userData.config.textureKey = textureKey;
+                    if (corpusGroup.userData.config.sides) corpusGroup.userData.config.sides.textureKey = textureKey;
+                    if (corpusGroup.userData.config.plinth) corpusGroup.userData.config.plinth.textureKey = textureKey;
                 }
             }
         });

@@ -75,103 +75,19 @@ const MaterialManager = {
             });
         });
 
-        // --- 3. ALAPÉRTELMEZETT PROCEDURÁLIS TEXTÚRÁK ---
-        // Natúr Tölgy (Natural Oak)
-        this.textures['oak_natural'] = this.createWoodTexture({
-            baseColor: '#c8a165',
-            grainColor: '#8a6234',
-            ringColor: '#6e4c23',
-            name: 'Natúr Tölgy',
-            type: 'wood',
-            category: 'front'
-        });
-
-        // Sonoma Tölgy (Sonoma Oak)
-        this.textures['oak_sonoma'] = this.createWoodTexture({
-            baseColor: '#d6c4a8',
-            grainColor: '#a89476',
-            ringColor: '#806e53',
-            name: 'Sonoma Tölgy',
-            type: 'wood',
-            category: 'front'
-        });
-
-        // Sötét Dió (Dark Walnut)
-        this.textures['walnut_dark'] = this.createWoodTexture({
-            baseColor: '#533827',
-            grainColor: '#342114',
-            ringColor: '#22140a',
-            name: 'Sötét Dió',
-            type: 'wood',
-            category: 'front'
-        });
-
-        // Meleg Bükk (Beech)
-        this.textures['beech_warm'] = this.createWoodTexture({
-            baseColor: '#d99f6c',
-            grainColor: '#b06f3b',
-            ringColor: '#8c5021',
-            name: 'Meleg Bükk',
-            type: 'wood',
-            category: 'front'
-        });
-
-        // Fenyő (Pine Wood)
-        this.textures['pine_light'] = this.createWoodTexture({
-            baseColor: '#edd09e',
-            grainColor: '#c79c5a',
-            ringColor: '#9e6d2c',
-            name: 'Skandináv Fenyő',
-            type: 'wood',
-            category: 'front'
-        });
-
-        // Fehér Selyemfényű / Kasmír (White Matte) - MINDIG ALAPÉRTELMEZETT A HÁTFALHOZ IS
+        // Fehér Hátfal Textúra (White Matte) - MINDIG ALAPÉRTELMEZETT A HÁTFALHOZ
         this.textures['white_matte'] = this.createSolidTexture({
+            id: 'white_matte',
             color: '#f8f9fa',
-            noiseAmount: 3,
-            name: 'Prémium Fehér (Matt)',
+            noiseAmount: 2,
+            name: 'Prémium Fehér',
             type: 'solid',
             category: 'front'
         });
 
-        // Kasmír Szürke (Cashmere Grey)
-        this.textures['cashmere'] = this.createSolidTexture({
-            color: '#dcd5cc',
-            noiseAmount: 4,
-            name: 'Kasmír Bézs',
-            type: 'solid',
-            category: 'front'
-        });
-
-        // Antracit Szürke (Anthracite)
-        this.textures['anthracite'] = this.createSolidTexture({
-            color: '#383b40',
-            noiseAmount: 5,
-            name: 'Antracit Szürke',
-            type: 'solid',
-            category: 'front'
-        });
-
-        // Fekete Matt (Black Matte)
-        this.textures['black_matte'] = this.createSolidTexture({
-            color: '#1a1a1a',
-            noiseAmount: 6,
-            name: 'Matt Fekete',
-            type: 'solid',
-            category: 'front'
-        });
-
-        // Loft Beton Hatás (Concrete Loft)
-        this.textures['concrete'] = this.createConcreteTexture({
-            baseColor: '#8a8d91',
-            name: 'Loft Beton',
-            type: 'stone',
-            category: 'worktop'
-        });
-
-        // Rozsdamentes Acél (Stainless Steel)
+        // Rozsdamentes Acél (Készülékekhez)
         this.textures['stainless_steel'] = this.createSolidTexture({
+            id: 'stainless_steel',
             color: '#a8b0b8',
             noiseAmount: 3,
             name: 'Rozsdamentes Acél',
@@ -181,8 +97,9 @@ const MaterialManager = {
             category: 'appliance'
         });
 
-        // Fekete Sütő Üveg (Oven Black Glass)
+        // Fekete Sütő Üveg (Készülékekhez)
         this.textures['oven_black_glass'] = this.createSolidTexture({
+            id: 'oven_black_glass',
             color: '#111317',
             noiseAmount: 1,
             name: 'Fekete Üveg Sütőfront',
@@ -192,8 +109,9 @@ const MaterialManager = {
             category: 'appliance'
         });
 
-        // Indukciós Főzőlap Üveg (Cooktop Glass)
+        // Indukciós Főzőlap Üveg (Készülékekhez)
         this.textures['cooktop_glass'] = this.createSolidTexture({
+            id: 'cooktop_glass',
             color: '#0a0d12',
             noiseAmount: 1,
             name: 'Indukciós Főzőlap',
@@ -203,8 +121,9 @@ const MaterialManager = {
             category: 'appliance'
         });
 
-        // Króm Fém Fogantyú (Chrome / Silver)
+        // Króm Fém Fogantyú (Készülékekhez)
         this.textures['metal_chrome'] = this.createSolidTexture({
+            id: 'metal_chrome',
             color: '#d1d5db',
             noiseAmount: 2,
             name: 'Króm Fém',
@@ -509,18 +428,18 @@ const MaterialManager = {
     /**
      * Three.js MeshStandardMaterial létrehozása
      */
-    createMaterial(textureKey = 'oak_natural') {
-        const texInfo = this.textures[textureKey] || this.textures['oak_natural'];
+    createMaterial(textureKey = 'front_k001') {
+        const texInfo = this.textures[textureKey] || this.textures['front_k001'] || this.textures['white_matte'];
         
         const mat = new THREE.MeshStandardMaterial({
-            map: texInfo.texture,
-            roughness: texInfo.roughness !== undefined ? texInfo.roughness : 0.65,
-            metalness: texInfo.metalness !== undefined ? texInfo.metalness : 0.05
+            map: texInfo ? texInfo.texture : null,
+            roughness: texInfo && texInfo.roughness !== undefined ? texInfo.roughness : 0.65,
+            metalness: texInfo && texInfo.metalness !== undefined ? texInfo.metalness : 0.05
         });
 
         mat.userData = {
             textureKey: textureKey,
-            textureName: texInfo.name
+            textureName: texInfo ? texInfo.name : 'Alapértelmezett'
         };
 
         return mat;
@@ -531,13 +450,16 @@ const MaterialManager = {
      */
     applyTextureToMesh(mesh, textureKey, repeatX = 1, repeatY = 1) {
         if (!mesh) return;
-        const texInfo = this.textures[textureKey] || this.textures['oak_natural'];
+        const texInfo = this.textures[textureKey] || this.textures['front_k001'] || this.textures['white_matte'];
+        if (!texInfo) return;
         
-        const clonedTexture = texInfo.texture.clone();
-        clonedTexture.wrapS = THREE.RepeatWrapping;
-        clonedTexture.wrapT = THREE.RepeatWrapping;
-        clonedTexture.repeat.set(repeatX, repeatY);
-        clonedTexture.needsUpdate = true;
+        const clonedTexture = texInfo.texture ? texInfo.texture.clone() : null;
+        if (clonedTexture) {
+            clonedTexture.wrapS = THREE.RepeatWrapping;
+            clonedTexture.wrapT = THREE.RepeatWrapping;
+            clonedTexture.repeat.set(repeatX, repeatY);
+            clonedTexture.needsUpdate = true;
+        }
 
         mesh.material = new THREE.MeshStandardMaterial({
             map: clonedTexture,
@@ -568,19 +490,19 @@ const PresetFurniture = [
         dimensions: { w: 450, h: 500, d: 400 },
         boards: [
             // Bal oldal
-            { name: 'Bal Oldallap', width: 18, height: 482, depth: 380, thickness: 18, type: 'vertical_side', textureKey: 'oak_natural', x: -216, y: 241, z: 0 },
+            { name: 'Bal Oldallap', width: 18, height: 482, depth: 380, thickness: 18, type: 'vertical_side', textureKey: 'front_k001', x: -216, y: 241, z: 0 },
             // Jobb oldal
-            { name: 'Jobb Oldallap', width: 18, height: 482, depth: 380, thickness: 18, type: 'vertical_side', textureKey: 'oak_natural', x: 216, y: 241, z: 0 },
+            { name: 'Jobb Oldallap', width: 18, height: 482, depth: 380, thickness: 18, type: 'vertical_side', textureKey: 'front_k001', x: 216, y: 241, z: 0 },
             // Fenéklap
-            { name: 'Fenéklap', width: 414, height: 18, depth: 380, thickness: 18, type: 'horizontal', textureKey: 'oak_natural', x: 0, y: 9, z: 0 },
+            { name: 'Fenéklap', width: 414, height: 18, depth: 380, thickness: 18, type: 'horizontal', textureKey: 'front_k001', x: 0, y: 9, z: 0 },
             // Tetőlap (kicsit szélesebb)
-            { name: 'Tetőlap', width: 450, height: 18, depth: 400, thickness: 18, type: 'horizontal', textureKey: 'anthracite', x: 0, y: 491, z: 0 },
+            { name: 'Tetőlap', width: 450, height: 18, depth: 400, thickness: 18, type: 'horizontal', textureKey: 'front_k002', x: 0, y: 491, z: 0 },
             // Középső polc
-            { name: 'Középső Polc', width: 414, height: 18, depth: 360, thickness: 18, type: 'shelf', textureKey: 'oak_natural', x: 0, y: 250, z: -10 },
+            { name: 'Középső Polc', width: 414, height: 18, depth: 360, thickness: 18, type: 'shelf', textureKey: 'front_k001', x: 0, y: 250, z: -10 },
             // Hátfal (HDF)
             { name: 'Hátfal (HDF)', width: 430, height: 480, depth: 3, thickness: 3, type: 'back', textureKey: 'white_matte', x: 0, y: 245, z: -188.5 },
             // Alsó fiókelő / front
-            { name: 'Fiók Front', width: 410, height: 220, depth: 18, thickness: 18, type: 'door', textureKey: 'anthracite', x: 0, y: 120, z: 199 }
+            { name: 'Fiók Front', width: 410, height: 220, depth: 18, thickness: 18, type: 'door', textureKey: 'front_k002', x: 0, y: 120, z: 199 }
         ]
     },
     {
@@ -591,21 +513,21 @@ const PresetFurniture = [
         dimensions: { w: 800, h: 1600, d: 300 },
         boards: [
             // Bal oldal
-            { name: 'Bal Oldallap', width: 18, height: 1600, depth: 300, thickness: 18, type: 'vertical_side', textureKey: 'pine_light', x: -391, y: 800, z: 0 },
+            { name: 'Bal Oldallap', width: 18, height: 1600, depth: 300, thickness: 18, type: 'vertical_side', textureKey: 'front_k003', x: -391, y: 800, z: 0 },
             // Jobb oldal
-            { name: 'Jobb Oldallap', width: 18, height: 1600, depth: 300, thickness: 18, type: 'vertical_side', textureKey: 'pine_light', x: 391, y: 800, z: 0 },
+            { name: 'Jobb Oldallap', width: 18, height: 1600, depth: 300, thickness: 18, type: 'vertical_side', textureKey: 'front_k003', x: 391, y: 800, z: 0 },
             // Fenéklap
-            { name: 'Fenéklap', width: 764, height: 18, depth: 300, thickness: 18, type: 'horizontal', textureKey: 'pine_light', x: 0, y: 70, z: 0 },
+            { name: 'Fenéklap', width: 764, height: 18, depth: 300, thickness: 18, type: 'horizontal', textureKey: 'front_k003', x: 0, y: 70, z: 0 },
             // Lábazati takaró
-            { name: 'Lábazat Front', width: 764, height: 60, depth: 18, thickness: 18, type: 'horizontal', textureKey: 'pine_light', x: 0, y: 30, z: 130 },
+            { name: 'Lábazat Front', width: 764, height: 60, depth: 18, thickness: 18, type: 'horizontal', textureKey: 'front_k003', x: 0, y: 30, z: 130 },
             // Tetőlap
-            { name: 'Tetőlap', width: 800, height: 18, depth: 300, thickness: 18, type: 'horizontal', textureKey: 'pine_light', x: 0, y: 1591, z: 0 },
+            { name: 'Tetőlap', width: 800, height: 18, depth: 300, thickness: 18, type: 'horizontal', textureKey: 'front_k003', x: 0, y: 1591, z: 0 },
             // 1. Polc
-            { name: 'Alsó Polc', width: 764, height: 18, depth: 290, thickness: 18, type: 'shelf', textureKey: 'pine_light', x: 0, y: 450, z: -5 },
+            { name: 'Alsó Polc', width: 764, height: 18, depth: 290, thickness: 18, type: 'shelf', textureKey: 'front_k003', x: 0, y: 450, z: -5 },
             // 2. Polc
-            { name: 'Középső Polc', width: 764, height: 18, depth: 290, thickness: 18, type: 'shelf', textureKey: 'pine_light', x: 0, y: 830, z: -5 },
+            { name: 'Középső Polc', width: 764, height: 18, depth: 290, thickness: 18, type: 'shelf', textureKey: 'front_k003', x: 0, y: 830, z: -5 },
             // 3. Polc
-            { name: 'Felső Polc', width: 764, height: 18, depth: 290, thickness: 18, type: 'shelf', textureKey: 'pine_light', x: 0, y: 1210, z: -5 },
+            { name: 'Felső Polc', width: 764, height: 18, depth: 290, thickness: 18, type: 'shelf', textureKey: 'front_k003', x: 0, y: 1210, z: -5 },
             // Hátfal
             { name: 'Hátfal', width: 780, height: 1530, depth: 3, thickness: 3, type: 'back', textureKey: 'white_matte', x: 0, y: 830, z: -148.5 }
         ]
@@ -618,23 +540,23 @@ const PresetFurniture = [
         dimensions: { w: 600, h: 860, d: 600 },
         boards: [
             // Bal oldal
-            { name: 'Bal Korpusz Oldal', width: 18, height: 720, depth: 540, thickness: 18, type: 'vertical_side', textureKey: 'white_matte', x: -291, y: 460, z: 0 },
+            { name: 'Bal Korpusz Oldal', width: 18, height: 720, depth: 540, thickness: 18, type: 'vertical_side', textureKey: 'front_k001', x: -291, y: 460, z: 0 },
             // Jobb oldal
-            { name: 'Jobb Korpusz Oldal', width: 18, height: 720, depth: 540, thickness: 18, type: 'vertical_side', textureKey: 'white_matte', x: 291, y: 460, z: 0 },
+            { name: 'Jobb Korpusz Oldal', width: 18, height: 720, depth: 540, thickness: 18, type: 'vertical_side', textureKey: 'front_k001', x: 291, y: 460, z: 0 },
             // Fenéklap
-            { name: 'Fenéklap', width: 564, height: 18, depth: 540, thickness: 18, type: 'horizontal', textureKey: 'white_matte', x: 0, y: 109, z: 0 },
+            { name: 'Fenéklap', width: 564, height: 18, depth: 540, thickness: 18, type: 'horizontal', textureKey: 'front_k001', x: 0, y: 109, z: 0 },
             // Felső merevítő léc 1 (első)
-            { name: 'Felső Merevítő Első', width: 564, height: 18, depth: 80, thickness: 18, type: 'horizontal', textureKey: 'white_matte', x: 0, y: 811, z: 220 },
+            { name: 'Felső Merevítő Első', width: 564, height: 18, depth: 80, thickness: 18, type: 'horizontal', textureKey: 'front_k001', x: 0, y: 811, z: 220 },
             // Felső merevítő léc 2 (hátsó)
-            { name: 'Felső Merevítő Hátsó', width: 564, height: 18, depth: 80, thickness: 18, type: 'horizontal', textureKey: 'white_matte', x: 0, y: 811, z: -220 },
+            { name: 'Felső Merevítő Hátsó', width: 564, height: 18, depth: 80, thickness: 18, type: 'horizontal', textureKey: 'front_k001', x: 0, y: 811, z: -220 },
             // Belső polc
-            { name: 'Belső Állítható Polc', width: 562, height: 18, depth: 500, thickness: 18, type: 'shelf', textureKey: 'white_matte', x: 0, y: 460, z: -15 },
-            // Konyhai Munkalap (38mm beton hatású)
-            { name: 'Munkalap (38mm)', width: 600, height: 38, depth: 600, thickness: 38, type: 'horizontal', textureKey: 'concrete', x: 0, y: 839, z: 20 },
-            // Hátfal
+            { name: 'Belső Állítható Polc', width: 562, height: 18, depth: 500, thickness: 18, type: 'shelf', textureKey: 'front_k001', x: 0, y: 460, z: -15 },
+            // Konyhai Munkalap (38mm)
+            { name: 'Munkalap (38mm)', width: 600, height: 38, depth: 600, thickness: 38, type: 'horizontal', textureKey: 'wt_3025', x: 0, y: 839, z: 20 },
+            // Hátfal (Mindig fehér!)
             { name: 'Hátfal (3mm fehér)', width: 580, height: 700, depth: 3, thickness: 3, type: 'back', textureKey: 'white_matte', x: 0, y: 460, z: -268.5 },
             // Ajtólap
-            { name: 'Konyha Ajtó Front', width: 596, height: 716, depth: 18, thickness: 18, type: 'door', textureKey: 'oak_sonoma', x: 0, y: 460, z: 279 }
+            { name: 'Konyha Ajtó Front', width: 596, height: 716, depth: 18, thickness: 18, type: 'door', textureKey: 'front_k001', x: 0, y: 460, z: 279 }
         ]
     }
 ];
@@ -659,7 +581,7 @@ class KitchenCorpusGenerator {
             height: 720,      // Korpusz magassága lábak nélkül
             depth: 560,       // Korpusz mélysége (oldallapok mélysége)
             thickness: 18,    // Lapvastagság (korpusz)
-            textureKey: 'white_matte',
+            textureKey: 'front_k001',
 
             // Korpusz lekerekítés (mm)
             edgeRadius: 1,
@@ -728,7 +650,7 @@ class KitchenCorpusGenerator {
                 height: 100,
                 thickness: 18,
                 insetFront: 20,       // Mennyivel van beljebb a korpusz frontjától (lábtér - 20mm alapértelmezett)
-                textureKey: 'anthracite'
+                textureKey: 'front_k001'
             },
 
             // 7. Konyhai Munkalap
@@ -741,13 +663,13 @@ class KitchenCorpusGenerator {
                 overhangLeft: 0,
                 overhangRight: 0,
                 edgeRadius: 3,        // 38mm-es munkalap 3mm lekerekítéssel
-                textureKey: 'concrete',
+                textureKey: 'wt_3025',
                 // Munkalap hátfal (fali panel / csempepótló)
                 splashback: {
                     enabled: false,   // Bekapcsolható a varázslóban
                     height: 600,      // 60 cm (600 mm)
                     thickness: 5,     // 0.5 cm (5 mm mélység/vastagság)
-                    textureKey: 'concrete'
+                    textureKey: 'wt_3025'
                 }
             },
 
@@ -1036,7 +958,7 @@ class KitchenCorpusGenerator {
                     depth: legSize,
                     thickness: legSize,
                     type: 'horizontal',
-                    textureKey: 'black_matte',
+                    textureKey: 'metal_chrome',
                     x: pos.x,
                     y: legH / 2,
                     z: pos.z,
@@ -1062,7 +984,7 @@ class KitchenCorpusGenerator {
                 depth: plinthTh,
                 thickness: plinthTh,
                 type: 'plinth',
-                textureKey: cfg.plinth.textureKey || 'anthracite',
+                textureKey: cfg.plinth.textureKey || tex,
                 x: 0,
                 y: plinthH / 2,
                 z: plinthZ,
@@ -1088,7 +1010,7 @@ class KitchenCorpusGenerator {
             
             // Z pozíció: a korpusz elöl +D/2, hátul -D/2.
             const wtZ = (overhangF - overhangB) / 2;
-            const wtTex = cfg.worktop.textureKey || 'concrete';
+            const wtTex = cfg.worktop.textureKey || 'wt_3025';
 
             boards.push({
                 name: `Munkalap (${wtTh}mm, ${wtW}×${wtD})`,
@@ -1363,7 +1285,7 @@ class KitchenCorpusGenerator {
                         thickness: 3,
                         type: 'appliance',
                         isAppliance: true,
-                        textureKey: 'black_matte',
+                        textureKey: 'oven_black_glass',
                         x: 0,
                         y: centerY - (panelH / 2) - 15,
                         z: (D / 2) + 21,
@@ -2711,7 +2633,7 @@ class BoardManager {
         this.boardCounter = 1;
         this.corpusCounter = 1;
         this.groupCounter = 1;
-        this.activeTextureKey = 'oak_natural';
+        this.activeTextureKey = 'front_k001';
     }
 
     /**
@@ -2905,6 +2827,71 @@ class BoardManager {
         this.scene3D.updateDimensionVisualizer();
         this.updateKitchenContinuity();
         return corpusGroup;
+    }
+
+    /**
+     * Textúra alkalmazása teljes Konyha Korpuszra (Front vagy Munkalap/Hátfal kategória alapján)
+     */
+    applyTextureToCorpus(corpusGroupOrId, textureKey) {
+        const corpusGroup = typeof corpusGroupOrId === 'string'
+            ? this.corpora.find(c => c.userData.id === corpusGroupOrId)
+            : corpusGroupOrId;
+        if (!corpusGroup || !corpusGroup.userData || !corpusGroup.userData.config) return;
+
+        const config = corpusGroup.userData.config;
+        const texInfo = MaterialManager.textures[textureKey] || MaterialManager.textures['front_k001'];
+        if (!texInfo) return;
+
+        const isWorktopTex = texInfo.category === 'worktop';
+
+        if (isWorktopTex) {
+            // Munkalap textúra -> Munkalap és Munkalap hátfalpanel (splashback) frissítése
+            if (!config.worktop) config.worktop = {};
+            config.worktop.textureKey = textureKey;
+            if (config.worktop.splashback) {
+                config.worktop.splashback.textureKey = textureKey;
+            }
+
+            const corpusBoards = this.boards.filter(b => b.corpusId === corpusGroup.userData.id);
+            corpusBoards.forEach(b => {
+                if (b.isWorktop || b.type === 'worktop' || b.isSplashback) {
+                    b.textureKey = textureKey;
+                    if (b.mesh) {
+                        const oldMat = b.mesh.material;
+                        b.mesh.material = MaterialManager.createMaterial(textureKey);
+                        if (oldMat && oldMat.map) oldMat.map.dispose();
+                        if (oldMat) oldMat.dispose();
+                        b.mesh.userData.textureKey = textureKey;
+                    }
+                }
+            });
+            this.updateKitchenContinuity();
+        } else {
+            // Front / Bútorlap textúra -> Minden korpusz lap frissítése KIVÉVE a hátfalat (mindig fehér) és munkalapot/splashbacket/gépeket
+            config.textureKey = textureKey;
+            if (config.sides) config.sides.textureKey = textureKey;
+            if (config.plinth) config.plinth.textureKey = textureKey;
+
+            const corpusBoards = this.boards.filter(b => b.corpusId === corpusGroup.userData.id);
+            corpusBoards.forEach(b => {
+                const isWorktop = b.isWorktop || b.type === 'worktop' || b.isSplashback;
+                const isBackPanel = !b.isSplashback && (b.type === 'back' || (b.name && b.name.includes('Hátfal')));
+                const isAppliance = b.isAppliance || b.type === 'appliance';
+
+                if (isWorktop || isBackPanel || isAppliance) {
+                    return; // Munkalapot, korpusz fehér hátfalat és gépeket ne írjuk felül
+                }
+
+                b.textureKey = textureKey;
+                if (b.mesh) {
+                    const oldMat = b.mesh.material;
+                    b.mesh.material = MaterialManager.createMaterial(textureKey);
+                    if (oldMat && oldMat.map) oldMat.map.dispose();
+                    if (oldMat) oldMat.dispose();
+                    b.mesh.userData.textureKey = textureKey;
+                }
+            });
+        }
     }
 
     /**
@@ -3215,14 +3202,14 @@ class BoardManager {
                 height: h,
                 depth: d,
                 minX: worldPos.x - w / 2,
-                textureKey: b.textureKey || 'concrete'
+                textureKey: b.textureKey || 'wt_3025'
             });
         });
 
         if (worktopItems.length === 0) return;
 
         worktopItems.forEach(item => {
-            const texInfo = MaterialManager.textures[item.textureKey] || MaterialManager.textures['concrete'];
+            const texInfo = MaterialManager.textures[item.textureKey] || MaterialManager.textures['wt_3025'];
             if (!texInfo || !texInfo.texture) return;
 
             const clonedTexture = texInfo.texture.clone();
@@ -3273,14 +3260,14 @@ class BoardManager {
                 height: h,
                 depth: d,
                 minX: worldPos.x - w / 2,
-                textureKey: b.textureKey || 'anthracite'
+                textureKey: b.textureKey || 'front_k001'
             });
         });
 
         if (plinthItems.length === 0) return;
 
         plinthItems.forEach(item => {
-            const texInfo = MaterialManager.textures[item.textureKey] || MaterialManager.textures['anthracite'];
+            const texInfo = MaterialManager.textures[item.textureKey] || MaterialManager.textures['front_k001'];
             if (!texInfo || !texInfo.texture) return;
 
             const clonedTexture = texInfo.texture.clone();
@@ -3330,14 +3317,14 @@ class BoardManager {
                 height: h,
                 depth: d,
                 minX: worldPos.x - w / 2,
-                textureKey: b.textureKey || 'concrete'
+                textureKey: b.textureKey || 'wt_3025'
             });
         });
 
         if (splashbackItems.length === 0) return;
 
         splashbackItems.forEach(item => {
-            const texInfo = MaterialManager.textures[item.textureKey] || MaterialManager.textures['concrete'];
+            const texInfo = MaterialManager.textures[item.textureKey] || MaterialManager.textures['wt_3025'];
             if (!texInfo || !texInfo.texture) return;
 
             const clonedTexture = texInfo.texture.clone();
@@ -3574,31 +3561,52 @@ class BoardManager {
 
     applyTextureToAll(textureKey) {
         this.activeTextureKey = textureKey;
-        const texInfo = MaterialManager.textures[textureKey] || MaterialManager.textures['white_matte'];
+        const texInfo = MaterialManager.textures[textureKey] || MaterialManager.textures['front_k001'];
         const isWorktopTex = texInfo && texInfo.category === 'worktop';
 
+        // 1. Frissítsük az összes különálló bútorlapot
         this.boards.forEach(board => {
             const isWorktop = board.isWorktop || board.type === 'worktop' || (board.name && board.name.includes('Munkalap'));
             const isSplashback = board.isSplashback || (board.name && board.name.includes('Hátfalpanel'));
             const isBackPanel = !isSplashback && (board.type === 'back' || (board.name && board.name.includes('Hátfal')));
+            const isAppliance = board.isAppliance || board.type === 'appliance';
 
-            // 1. A korpusz hátfal MINDIG fehér marad!
+            if (isAppliance) return;
+
+            // A korpusz hátfal MINDIG fehér marad!
             if (isBackPanel) {
                 board.textureKey = 'white_matte';
-                MaterialManager.applyTextureToMesh(board.mesh, 'white_matte');
+                if (board.mesh) MaterialManager.applyTextureToMesh(board.mesh, 'white_matte');
                 return;
             }
 
-            // 2. Munkalap textúra csak munkalapra/hátfalpanelre, front textúra csak bútorlapra kerül
+            // Munkalap textúra csak munkalapra/hátfalpanelre, front textúra csak bútorlapra kerül
             if (isWorktop || isSplashback) {
                 if (isWorktopTex) {
                     board.textureKey = textureKey;
-                    MaterialManager.applyTextureToMesh(board.mesh, textureKey);
+                    if (board.mesh) MaterialManager.applyTextureToMesh(board.mesh, textureKey);
                 }
             } else {
                 if (!isWorktopTex) {
                     board.textureKey = textureKey;
-                    MaterialManager.applyTextureToMesh(board.mesh, textureKey);
+                    if (board.mesh) MaterialManager.applyTextureToMesh(board.mesh, textureKey);
+                }
+            }
+        });
+
+        // 2. Frissítsük az összes korpusz konfigurációt
+        this.corpora.forEach(corpusGroup => {
+            if (corpusGroup.userData && corpusGroup.userData.config) {
+                if (isWorktopTex) {
+                    if (!corpusGroup.userData.config.worktop) corpusGroup.userData.config.worktop = {};
+                    corpusGroup.userData.config.worktop.textureKey = textureKey;
+                    if (corpusGroup.userData.config.worktop.splashback) {
+                        corpusGroup.userData.config.worktop.splashback.textureKey = textureKey;
+                    }
+                } else {
+                    corpusGroup.userData.config.textureKey = textureKey;
+                    if (corpusGroup.userData.config.sides) corpusGroup.userData.config.sides.textureKey = textureKey;
+                    if (corpusGroup.userData.config.plinth) corpusGroup.userData.config.plinth.textureKey = textureKey;
                 }
             }
         });
@@ -7020,10 +7028,13 @@ class FurnitureApp {
             btn.classList.toggle('btn-primary', btnCat === cat);
         });
 
-        const isTargetWorktop = this.selectedBoard && (this.selectedBoard.isWorktop || this.selectedBoard.type === 'worktop' || this.selectedBoard.isSplashback);
-
+        // Csak a feltöltött front és worktop textúrák megjelenítése (készülékeket és a belső fehér hátfalat nem jelenítjük meg a palettán)
         Object.keys(MaterialManager.textures).forEach(key => {
             const tex = MaterialManager.textures[key];
+            if (!tex || tex.category === 'appliance' || key === 'white_matte') {
+                return;
+            }
+
             if (cat !== 'all' && tex.category && tex.category !== cat) {
                 return;
             }
@@ -7031,7 +7042,12 @@ class FurnitureApp {
             const item = document.createElement('div');
             item.className = 'texture-item';
             item.style.position = 'relative';
-            if (this.selectedBoard && this.selectedBoard.textureKey === key) {
+            
+            const isCurrentActive = (this.selectedBoard && this.selectedBoard.textureKey === key) ||
+                (this.selectedCorpus && this.selectedCorpus.userData?.config?.textureKey === key) ||
+                (this.selectedCorpus && this.selectedCorpus.userData?.config?.worktop?.textureKey === key);
+
+            if (isCurrentActive) {
                 item.classList.add('active');
             }
 
@@ -7056,7 +7072,7 @@ class FurnitureApp {
     }
 
     applyTexture(textureKey) {
-        const texInfo = MaterialManager.textures[textureKey] || MaterialManager.textures['white_matte'];
+        const texInfo = MaterialManager.textures[textureKey] || MaterialManager.textures['front_k001'];
         const isWorktopTex = texInfo && texInfo.category === 'worktop';
 
         if (this.applyTextureTarget === 'all') {
@@ -7065,15 +7081,12 @@ class FurnitureApp {
             return;
         }
 
-        if (this.selectedCustomGroup) {
-            if (!isWorktopTex) {
-                this.boardManager.updateGroup(this.selectedCustomGroup.userData.id, { textureKey: textureKey });
-            } else {
-                alert('A munkalap textúrák csak konyhai munkalapokra alkalmazhatók!');
-            }
-        } else if (this.scene3D.selectedTargets && this.scene3D.selectedTargets.length > 1) {
+        // 1. TÖBBES KIJELÖLÉS (2 vagy több elem / korpusz egyszerre van kijelölve)
+        if (this.scene3D.selectedTargets && this.scene3D.selectedTargets.length > 1) {
             this.scene3D.selectedTargets.forEach(t => {
-                if (t.userData && t.userData.isCustomGroup) {
+                if (t.userData && t.userData.isCorpus) {
+                    this.boardManager.applyTextureToCorpus(t, textureKey);
+                } else if (t.userData && t.userData.isCustomGroup) {
                     if (!isWorktopTex) this.boardManager.updateGroup(t.userData.id, { textureKey: textureKey });
                 } else {
                     const b = this.boardManager.boards.find(x => x.mesh === t);
@@ -7089,7 +7102,30 @@ class FurnitureApp {
                     }
                 }
             });
-        } else if (this.selectedBoard) {
+            this.boardManager.updateKitchenContinuity();
+            this.updateDimensionsBadge();
+            return;
+        }
+
+        // 2. EGYEDI KORPUSZ KIJELÖLÉS
+        if (this.selectedCorpus) {
+            this.boardManager.applyTextureToCorpus(this.selectedCorpus, textureKey);
+            this.updateDimensionsBadge();
+            return;
+        }
+
+        // 3. EGYEDI BÚTOR CSOPORT KIJELÖLÉS
+        if (this.selectedCustomGroup) {
+            if (!isWorktopTex) {
+                this.boardManager.updateGroup(this.selectedCustomGroup.userData.id, { textureKey: textureKey });
+            } else {
+                alert('A munkalap textúrák csak konyhai munkalapokra alkalmazhatók!');
+            }
+            return;
+        }
+
+        // 4. EGYEDI BÚTORLAP KIJELÖLÉS
+        if (this.selectedBoard) {
             const isWorktop = this.selectedBoard.isWorktop || this.selectedBoard.type === 'worktop' || this.selectedBoard.isSplashback;
             const isBack = !this.selectedBoard.isSplashback && (this.selectedBoard.type === 'back' || (this.selectedBoard.name && this.selectedBoard.name.includes('Hátfal')));
 
@@ -8037,7 +8073,7 @@ class FurnitureApp {
                 height: Number(document.getElementById('kc-legs-height').value) || 100,
                 thickness: 18,
                 insetFront: Number(document.getElementById('kc-plinth-inset')?.value) !== undefined ? Number(document.getElementById('kc-plinth-inset').value) : 20,
-                textureKey: 'anthracite'
+                textureKey: texKey
             },
 
             worktop: {

@@ -16,7 +16,7 @@ export class KitchenCorpusGenerator {
             height: 720,      // Korpusz magassága lábak nélkül
             depth: 560,       // Korpusz mélysége (oldallapok mélysége)
             thickness: 18,    // Lapvastagság (korpusz)
-            textureKey: 'white_matte',
+            textureKey: 'front_k001',
 
             // Korpusz lekerekítés (mm)
             edgeRadius: 1,
@@ -85,7 +85,7 @@ export class KitchenCorpusGenerator {
                 height: 100,
                 thickness: 18,
                 insetFront: 20,       // Mennyivel van beljebb a korpusz frontjától (lábtér - 20mm alapértelmezett)
-                textureKey: 'anthracite'
+                textureKey: 'front_k001'
             },
 
             // 7. Konyhai Munkalap
@@ -98,13 +98,13 @@ export class KitchenCorpusGenerator {
                 overhangLeft: 0,
                 overhangRight: 0,
                 edgeRadius: 3,        // 38mm-es munkalap 3mm lekerekítéssel
-                textureKey: 'concrete',
+                textureKey: 'wt_3025',
                 // Munkalap hátfal (fali panel / csempepótló)
                 splashback: {
                     enabled: false,   // Bekapcsolható a varázslóban
                     height: 600,      // 60 cm (600 mm)
                     thickness: 5,     // 0.5 cm (5 mm mélység/vastagság)
-                    textureKey: 'concrete'
+                    textureKey: 'wt_3025'
                 }
             },
 
@@ -393,7 +393,7 @@ export class KitchenCorpusGenerator {
                     depth: legSize,
                     thickness: legSize,
                     type: 'horizontal',
-                    textureKey: 'black_matte',
+                    textureKey: 'metal_chrome',
                     x: pos.x,
                     y: legH / 2,
                     z: pos.z,
@@ -419,7 +419,7 @@ export class KitchenCorpusGenerator {
                 depth: plinthTh,
                 thickness: plinthTh,
                 type: 'plinth',
-                textureKey: cfg.plinth.textureKey || 'anthracite',
+                textureKey: cfg.plinth.textureKey || tex,
                 x: 0,
                 y: plinthH / 2,
                 z: plinthZ,
@@ -445,7 +445,7 @@ export class KitchenCorpusGenerator {
             
             // Z pozíció: a korpusz elöl +D/2, hátul -D/2.
             const wtZ = (overhangF - overhangB) / 2;
-            const wtTex = cfg.worktop.textureKey || 'concrete';
+            const wtTex = cfg.worktop.textureKey || 'wt_3025';
 
             boards.push({
                 name: `Munkalap (${wtTh}mm, ${wtW}×${wtD})`,
@@ -720,7 +720,7 @@ export class KitchenCorpusGenerator {
                         thickness: 3,
                         type: 'appliance',
                         isAppliance: true,
-                        textureKey: 'black_matte',
+                        textureKey: 'oven_black_glass',
                         x: 0,
                         y: centerY - (panelH / 2) - 15,
                         z: (D / 2) + 21,

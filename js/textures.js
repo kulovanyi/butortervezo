@@ -68,103 +68,19 @@ export const MaterialManager = {
             });
         });
 
-        // --- 3. ALAPÉRTELMEZETT PROCEDURÁLIS TEXTÚRÁK ---
-        // Natúr Tölgy (Natural Oak)
-        this.textures['oak_natural'] = this.createWoodTexture({
-            baseColor: '#c8a165',
-            grainColor: '#8a6234',
-            ringColor: '#6e4c23',
-            name: 'Natúr Tölgy',
-            type: 'wood',
-            category: 'front'
-        });
-
-        // Sonoma Tölgy (Sonoma Oak)
-        this.textures['oak_sonoma'] = this.createWoodTexture({
-            baseColor: '#d6c4a8',
-            grainColor: '#a89476',
-            ringColor: '#806e53',
-            name: 'Sonoma Tölgy',
-            type: 'wood',
-            category: 'front'
-        });
-
-        // Sötét Dió (Dark Walnut)
-        this.textures['walnut_dark'] = this.createWoodTexture({
-            baseColor: '#533827',
-            grainColor: '#342114',
-            ringColor: '#22140a',
-            name: 'Sötét Dió',
-            type: 'wood',
-            category: 'front'
-        });
-
-        // Meleg Bükk (Beech)
-        this.textures['beech_warm'] = this.createWoodTexture({
-            baseColor: '#d99f6c',
-            grainColor: '#b06f3b',
-            ringColor: '#8c5021',
-            name: 'Meleg Bükk',
-            type: 'wood',
-            category: 'front'
-        });
-
-        // Fenyő (Pine Wood)
-        this.textures['pine_light'] = this.createWoodTexture({
-            baseColor: '#edd09e',
-            grainColor: '#c79c5a',
-            ringColor: '#9e6d2c',
-            name: 'Skandináv Fenyő',
-            type: 'wood',
-            category: 'front'
-        });
-
-        // Fehér Selyemfényű / Kasmír (White Matte) - MINDIG ALAPÉRTELMEZETT A HÁTFALHOZ IS
+        // Fehér Hátfal Textúra (White Matte) - MINDIG ALAPÉRTELMEZETT A HÁTFALHOZ
         this.textures['white_matte'] = this.createSolidTexture({
+            id: 'white_matte',
             color: '#f8f9fa',
-            noiseAmount: 3,
-            name: 'Prémium Fehér (Matt)',
+            noiseAmount: 2,
+            name: 'Prémium Fehér',
             type: 'solid',
             category: 'front'
         });
 
-        // Kasmír Szürke (Cashmere Grey)
-        this.textures['cashmere'] = this.createSolidTexture({
-            color: '#dcd5cc',
-            noiseAmount: 4,
-            name: 'Kasmír Bézs',
-            type: 'solid',
-            category: 'front'
-        });
-
-        // Antracit Szürke (Anthracite)
-        this.textures['anthracite'] = this.createSolidTexture({
-            color: '#383b40',
-            noiseAmount: 5,
-            name: 'Antracit Szürke',
-            type: 'solid',
-            category: 'front'
-        });
-
-        // Fekete Matt (Black Matte)
-        this.textures['black_matte'] = this.createSolidTexture({
-            color: '#1a1a1a',
-            noiseAmount: 6,
-            name: 'Matt Fekete',
-            type: 'solid',
-            category: 'front'
-        });
-
-        // Loft Beton Hatás (Concrete Loft)
-        this.textures['concrete'] = this.createConcreteTexture({
-            baseColor: '#8a8d91',
-            name: 'Loft Beton',
-            type: 'stone',
-            category: 'worktop'
-        });
-
-        // Rozsdamentes Acél (Stainless Steel)
+        // Rozsdamentes Acél (Készülékekhez)
         this.textures['stainless_steel'] = this.createSolidTexture({
+            id: 'stainless_steel',
             color: '#a8b0b8',
             noiseAmount: 3,
             name: 'Rozsdamentes Acél',
@@ -174,8 +90,9 @@ export const MaterialManager = {
             category: 'appliance'
         });
 
-        // Fekete Sütő Üveg (Oven Black Glass)
+        // Fekete Sütő Üveg (Készülékekhez)
         this.textures['oven_black_glass'] = this.createSolidTexture({
+            id: 'oven_black_glass',
             color: '#111317',
             noiseAmount: 1,
             name: 'Fekete Üveg Sütőfront',
@@ -185,8 +102,9 @@ export const MaterialManager = {
             category: 'appliance'
         });
 
-        // Indukciós Főzőlap Üveg (Cooktop Glass)
+        // Indukciós Főzőlap Üveg (Készülékekhez)
         this.textures['cooktop_glass'] = this.createSolidTexture({
+            id: 'cooktop_glass',
             color: '#0a0d12',
             noiseAmount: 1,
             name: 'Indukciós Főzőlap',
@@ -196,8 +114,9 @@ export const MaterialManager = {
             category: 'appliance'
         });
 
-        // Króm Fém Fogantyú (Chrome / Silver)
+        // Króm Fém Fogantyú (Készülékekhez)
         this.textures['metal_chrome'] = this.createSolidTexture({
+            id: 'metal_chrome',
             color: '#d1d5db',
             noiseAmount: 2,
             name: 'Króm Fém',
@@ -502,18 +421,18 @@ export const MaterialManager = {
     /**
      * Three.js MeshStandardMaterial létrehozása
      */
-    createMaterial(textureKey = 'oak_natural') {
-        const texInfo = this.textures[textureKey] || this.textures['oak_natural'];
+    createMaterial(textureKey = 'front_k001') {
+        const texInfo = this.textures[textureKey] || this.textures['front_k001'] || this.textures['white_matte'];
         
         const mat = new THREE.MeshStandardMaterial({
-            map: texInfo.texture,
-            roughness: texInfo.roughness !== undefined ? texInfo.roughness : 0.65,
-            metalness: texInfo.metalness !== undefined ? texInfo.metalness : 0.05
+            map: texInfo ? texInfo.texture : null,
+            roughness: texInfo && texInfo.roughness !== undefined ? texInfo.roughness : 0.65,
+            metalness: texInfo && texInfo.metalness !== undefined ? texInfo.metalness : 0.05
         });
 
         mat.userData = {
             textureKey: textureKey,
-            textureName: texInfo.name
+            textureName: texInfo ? texInfo.name : 'Alapértelmezett'
         };
 
         return mat;
@@ -524,13 +443,16 @@ export const MaterialManager = {
      */
     applyTextureToMesh(mesh, textureKey, repeatX = 1, repeatY = 1) {
         if (!mesh) return;
-        const texInfo = this.textures[textureKey] || this.textures['oak_natural'];
+        const texInfo = this.textures[textureKey] || this.textures['front_k001'] || this.textures['white_matte'];
+        if (!texInfo) return;
         
-        const clonedTexture = texInfo.texture.clone();
-        clonedTexture.wrapS = THREE.RepeatWrapping;
-        clonedTexture.wrapT = THREE.RepeatWrapping;
-        clonedTexture.repeat.set(repeatX, repeatY);
-        clonedTexture.needsUpdate = true;
+        const clonedTexture = texInfo.texture ? texInfo.texture.clone() : null;
+        if (clonedTexture) {
+            clonedTexture.wrapS = THREE.RepeatWrapping;
+            clonedTexture.wrapT = THREE.RepeatWrapping;
+            clonedTexture.repeat.set(repeatX, repeatY);
+            clonedTexture.needsUpdate = true;
+        }
 
         mesh.material = new THREE.MeshStandardMaterial({
             map: clonedTexture,

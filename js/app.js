@@ -1911,10 +1911,13 @@ class FurnitureApp {
             btn.classList.toggle('btn-primary', btnCat === cat);
         });
 
-        const isTargetWorktop = this.selectedBoard && (this.selectedBoard.isWorktop || this.selectedBoard.type === 'worktop' || this.selectedBoard.isSplashback);
-
+        // Csak a feltöltött front és worktop textúrák megjelenítése (készülékeket és a belső fehér hátfalat nem jelenítjük meg a palettán)
         Object.keys(MaterialManager.textures).forEach(key => {
             const tex = MaterialManager.textures[key];
+            if (!tex || tex.category === 'appliance' || key === 'white_matte') {
+                return;
+            }
+
             if (cat !== 'all' && tex.category && tex.category !== cat) {
                 return;
             }
@@ -1922,7 +1925,12 @@ class FurnitureApp {
             const item = document.createElement('div');
             item.className = 'texture-item';
             item.style.position = 'relative';
-            if (this.selectedBoard && this.selectedBoard.textureKey === key) {
+            
+            const isCurrentActive = (this.selectedBoard && this.selectedBoard.textureKey === key) ||
+                (this.selectedCorpus && this.selectedCorpus.userData?.config?.textureKey === key) ||
+                (this.selectedCorpus && this.selectedCorpus.userData?.config?.worktop?.textureKey === key);
+
+            if (isCurrentActive) {
                 item.classList.add('active');
             }
 
@@ -1947,7 +1955,7 @@ class FurnitureApp {
     }
 
     applyTexture(textureKey) {
-        const texInfo = MaterialManager.textures[textureKey] || MaterialManager.textures['white_matte'];
+        const texInfo = MaterialManager.textures[textureKey] || MaterialManager.textures['front_k001'];
         const isWorktopTex = texInfo && texInfo.category === 'worktop';
 
         if (this.applyTextureTarget === 'all') {
@@ -1956,15 +1964,12 @@ class FurnitureApp {
             return;
         }
 
-        if (this.selectedCustomGroup) {
-            if (!isWorktopTex) {
-                this.boardManager.updateGroup(this.selectedCustomGroup.userData.id, { textureKey: textureKey });
-            } else {
-                alert('A munkalap textúrák csak konyhai munkalapokra alkalmazhatók!');
-            }
-        } else if (this.scene3D.selectedTargets && this.scene3D.selectedTargets.length > 1) {
+        // 1. TÖBBES KIJELÖLÉS (2 vagy több elem / korpusz egyszerre van kijelölve)
+        if (this.scene3D.selectedTargets && this.scene3D.selectedTargets.length > 1) {
             this.scene3D.selectedTargets.forEach(t => {
-                if (t.userData && t.userData.isCustomGroup) {
+                if (t.userData && t.userData.isCorpus) {
+                    this.boardManager.applyTextureToCorpus(t, textureKey);
+                } else if (t.userData && t.userData.isCustomGroup) {
                     if (!isWorktopTex) this.boardManager.updateGroup(t.userData.id, { textureKey: textureKey });
                 } else {
                     const b = this.boardManager.boards.find(x => x.mesh === t);
@@ -1980,7 +1985,30 @@ class FurnitureApp {
                     }
                 }
             });
-        } else if (this.selectedBoard) {
+            this.boardManager.updateKitchenContinuity();
+            this.updateDimensionsBadge();
+            return;
+        }
+
+        // 2. EGYEDI KORPUSZ KIJELÖLÉS
+        if (this.selectedCorpus) {
+            this.boardManager.applyTextureToCorpus(this.selectedCorpus, textureKey);
+            this.updateDimensionsBadge();
+            return;
+        }
+
+        // 3. EGYEDI BÚTOR CSOPORT KIJELÖLÉS
+        if (this.selectedCustomGroup) {
+            if (!isWorktopTex) {
+                this.boardManager.updateGroup(this.selectedCustomGroup.userData.id, { textureKey: textureKey });
+            } else {
+                alert('A munkalap textúrák csak konyhai munkalapokra alkalmazhatók!');
+            }
+            return;
+        }
+
+        // 4. EGYEDI BÚTORLAP KIJELÖLÉS
+        if (this.selectedBoard) {
             const isWorktop = this.selectedBoard.isWorktop || this.selectedBoard.type === 'worktop' || this.selectedBoard.isSplashback;
             const isBack = !this.selectedBoard.isSplashback && (this.selectedBoard.type === 'back' || (this.selectedBoard.name && this.selectedBoard.name.includes('Hátfal')));
 
@@ -2928,7 +2956,7 @@ class FurnitureApp {
                 height: Number(document.getElementById('kc-legs-height').value) || 100,
                 thickness: 18,
                 insetFront: Number(document.getElementById('kc-plinth-inset')?.value) !== undefined ? Number(document.getElementById('kc-plinth-inset').value) : 20,
-                textureKey: 'anthracite'
+                textureKey: texKey
             },
 
             worktop: {
