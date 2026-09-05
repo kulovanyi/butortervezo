@@ -9102,10 +9102,14 @@ class FurnitureApp {
 
     updateDimensionsBadge() {
         const bounds = this.boardManager.getFurnitureBoundingBox();
-        document.getElementById('badge-w').textContent = bounds.width;
-        document.getElementById('badge-h').textContent = bounds.height;
-        document.getElementById('badge-d').textContent = bounds.depth;
-        document.getElementById('boards-count-tab').textContent = bounds.count;
+        const badgeW = document.getElementById('badge-w');
+        if (badgeW) badgeW.textContent = bounds.width;
+        const badgeH = document.getElementById('badge-h');
+        if (badgeH) badgeH.textContent = bounds.height;
+        const badgeD = document.getElementById('badge-d');
+        if (badgeD) badgeD.textContent = bounds.depth;
+        const countTab = document.getElementById('boards-count-tab');
+        if (countTab) countTab.textContent = bounds.count;
     }
 
     updateSnapTargetDropdown() {

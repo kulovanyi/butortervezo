@@ -47,15 +47,13 @@
                 3D Bútortervező
                 <span class="brand-badge">PRO v1.0</span>
             </div>
+            <!-- Új gomb bal oldalon a márkanév mellett -->
+            <button id="btn-new-project" class="btn" title="Új üres terv kezdése" style="margin-left: 12px; padding: 6px 12px; font-weight: 600;">
+                <span>✨ Új</span>
+            </button>
         </div>
 
         <div class="top-toolbar">
-            <!-- Befoglaló méretek kijelzője -->
-            <div class="dimension-badge" id="total-dimensions-badge" title="Teljes bútor mérete (Szélesség × Magasság × Mélység)">
-                <span>📏 Méret:</span>
-                <span id="badge-w">0</span> × <span id="badge-h">0</span> × <span id="badge-d">0</span> mm
-            </div>
-
             <!-- Minta bútorok gyorsbetöltése -->
             <select id="preset-selector" class="btn" style="padding: 6px 10px; background: var(--bg-card);">
                 <option value="">📂 Mintabútor betöltése...</option>
@@ -64,26 +62,8 @@
                 <option value="preset_kitchen_base">Konyhai Alsószekrény 60cm</option>
             </select>
 
-            <button id="btn-kitchen-wizard" class="btn btn-primary" style="background: linear-gradient(135deg, #f59e0b, #d97706); border-color: #d97706;" title="Egyedi konyhai alsó-, felső- és kamraszekrény elemek tervezése ajtókkal, fiókokkal és készülékekkel">
-                <span>🍳 Konyha Elem Varázsló</span>
-            </button>
-
-            <button id="btn-new-project" class="btn" title="Üres munkatér">
-                <span>✨ Új</span>
-            </button>
-
             <button id="btn-open-cutlist" class="btn btn-success" title="Szabászati lista és árkalkuláció">
                 <span>📋 Szabászat</span>
-            </button>
-
-            <button id="btn-toggle-doors" class="btn" title="Ajtók és fiókok kinyitása / becsukása">
-                <span id="btn-toggle-doors-icon">🚪</span>
-                <span id="btn-toggle-doors-text">Ajtók Nyitása</span>
-            </button>
-
-            <button id="btn-open-firebase" class="btn" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b; border-color: rgba(245, 158, 11, 0.4);" title="Firebase Felhő szinkronizáció beállítása">
-                <span id="firebase-status-dot" style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#94a3b8; margin-right:4px;"></span>
-                <span>☁️ Felhő Szinkron</span>
             </button>
 
             <button id="btn-take-screenshot" class="btn btn-icon" title="Kép mentése (Screenshot)">
@@ -194,6 +174,11 @@
                     <option value="80">🧲 Mágnes: 80 mm</option>
                     <option value="0">🧲 Mágnes: Kikapcsolva</option>
                 </select>
+                <div style="width:1px; background:var(--border-color); margin:0 2px;"></div>
+                <button id="btn-toggle-doors" class="floating-btn" title="Ajtók és fiókok kinyitása / becsukása">
+                    <span id="btn-toggle-doors-icon">🚪</span>
+                    <span id="btn-toggle-doors-text">Ajtók Nyitása</span>
+                </button>
             </div>
 
             <!-- Jobb Felső Lebegő Nézet & Megjelenítés Menü (Egyetlen gomb alatt) -->
@@ -1471,6 +1456,6 @@
     </div>
 
     <!-- Betöltjük a fő alkalmazás scriptet (Működik közvetlen fájlmegnyitással és webszerverrel is) -->
-    <script src="js/bundle.js?v=3.7"></script>
+    <script src="js/bundle.js?v=3.8"></script>
 </body>
 </html>
