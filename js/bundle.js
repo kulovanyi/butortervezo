@@ -1054,190 +1054,9 @@ class KitchenCorpusGenerator {
             }
         }
 
-    /**
-     * 3D Kivetőpántok generálása ajtóhoz (Blum/Hettich szabvány szerint)
-     */
-    static addConcealedHinges(boards, p) {
-        const { doorX, doorY, doorW, doorH, frontTh, D, W, Th, side } = p;
-        
-        // Pántok száma az ajtó magassága (doorH) alapján
-        let hingeOffsets = [];
-        if (doorH < 900) {
-            hingeOffsets = [100, doorH - 100];
-        } else if (doorH < 1600) {
-            hingeOffsets = [100, doorH / 2, doorH - 100];
-        } else if (doorH < 2000) {
-            hingeOffsets = [100, doorH * 0.35, doorH * 0.65, doorH - 100];
-        } else {
-            hingeOffsets = [100, doorH * 0.28, doorH * 0.50, doorH * 0.72, doorH - 100];
-        }
-
-        hingeOffsets.forEach((offY, hIdx) => {
-            const hY = (doorY - doorH / 2) + offY;
-
-            if (side === 'left' || side === 'right') {
-                const isLeft = side === 'left';
-                // Pántedény középpont X: ajtó élétől 21.5 mm (Ø35mm edény)
-                const cupX = isLeft ? (doorX - doorW / 2 + 21.5) : (doorX + doorW / 2 - 21.5);
-                // Szerelőtalp X: korpusz belső oldalán
-                const plateX = isLeft ? (-W / 2 + Th + 2) : (W / 2 - Th - 2);
-                const armX = (cupX + plateX) / 2;
-
-                // 1. Pántedény (Ø35mm csésze az ajtó belső felületén)
-                boards.push({
-                    name: `Pántedény Ø35mm ${isLeft ? 'Bal' : 'Jobb'} ${hIdx + 1}`,
-                    width: 35,
-                    height: 35,
-                    depth: 6,
-                    thickness: 6,
-                    type: 'hardware',
-                    isHardware: true,
-                    isHinge: true,
-                    textureKey: 'metal_chrome',
-                    x: cupX,
-                    y: hY,
-                    z: (D / 2) - 1,
-                    edgeBanding: 'Nincs'
-                });
-
-                // 2. Csuklós Pántkar (fém kar állítócsavarral)
-                boards.push({
-                    name: `Pántkar ${isLeft ? 'Bal' : 'Jobb'} ${hIdx + 1}`,
-                    width: Math.max(12, Math.abs(cupX - plateX)),
-                    height: 18,
-                    depth: 28,
-                    thickness: 18,
-                    type: 'hardware',
-                    isHardware: true,
-                    isHinge: true,
-                    textureKey: 'metal_chrome',
-                    x: armX,
-                    y: hY,
-                    z: (D / 2) - 14,
-                    edgeBanding: 'Nincs'
-                });
-
-                // 3. Szerelőtalp (a korpusz belső oldalán, 37mm-re elölről)
-                boards.push({
-                    name: `Pánt Szerelőtalp ${isLeft ? 'Bal' : 'Jobb'} ${hIdx + 1}`,
-                    width: 4,
-                    height: 32,
-                    depth: 37,
-                    thickness: 4,
-                    type: 'hardware',
-                    isHardware: true,
-                    isHinge: true,
-                    textureKey: 'metal_chrome',
-                    x: plateX,
-                    y: hY,
-                    z: (D / 2) - 18.5,
-                    edgeBanding: 'Nincs'
-                });
-            }
-        });
-    }
-
-    /**
-     * Felnyíló ajtó vasalatok: 2 db felső pánt + 2 db gázteleszkóp
-     */
-    static addLiftUpHardware(boards, p) {
-        const { doorX, doorY, doorW, doorH, frontTh, D, W, Th } = p;
-        
-        // 1. Felső 2 db pánt (bal és jobb oldalt 100mm-re a szélektől)
-        const topHingesX = [-doorW / 2 + 100, doorW / 2 - 100];
-        const topHingeY = doorY + doorH / 2 - 20;
-
-        topHingesX.forEach((hx, idx) => {
-            // Pántedény
-            boards.push({
-                name: `Felnyíló Pántedény ${idx + 1}`,
-                width: 35,
-                height: 35,
-                depth: 6,
-                thickness: 6,
-                type: 'hardware',
-                isHardware: true,
-                isHinge: true,
-                textureKey: 'metal_chrome',
-                x: hx,
-                y: topHingeY,
-                z: (D / 2) - 1,
-                edgeBanding: 'Nincs'
-            });
-            // Felső pántkar
-            boards.push({
-                name: `Felnyíló Pántkar ${idx + 1}`,
-                width: 18,
-                height: 18,
-                depth: 30,
-                thickness: 18,
-                type: 'hardware',
-                isHardware: true,
-                isHinge: true,
-                textureKey: 'metal_chrome',
-                x: hx,
-                y: topHingeY + 8,
-                z: (D / 2) - 15,
-                edgeBanding: 'Nincs'
-            });
-        });
-
-        // 2. Gázteleszkópok a bal és jobb oldalon
-        const strutSides = [
-            { name: 'Bal Gázteleszkóp', x: -W / 2 + Th + 12 },
-            { name: 'Jobb Gázteleszkóp', x: W / 2 - Th - 12 }
-        ];
-
-        strutSides.forEach(st => {
-            // Gázkamra henger
-            boards.push({
-                name: `${st.name} Ház`,
-                width: 14,
-                height: 14,
-                depth: 120,
-                thickness: 14,
-                type: 'hardware',
-                isHardware: true,
-                textureKey: 'metal_chrome',
-                x: st.x,
-                y: doorY - 30,
-                z: (D / 2) - 110,
-                edgeBanding: 'Nincs'
-            });
-
-            // Króm dugattyúrúd
-            boards.push({
-                name: `${st.name} Dugattyúrúd`,
-                width: 7,
-                height: 7,
-                depth: 70,
-                thickness: 7,
-                type: 'hardware',
-                isHardware: true,
-                textureKey: 'metal_chrome',
-                x: st.x,
-                y: doorY + 10,
-                z: (D / 2) - 35,
-                edgeBanding: 'Nincs'
-            });
-
-            // Front rögzítőtalp
-            boards.push({
-                name: `${st.name} Front Talp`,
-                width: 20,
-                height: 20,
-                depth: 4,
-                thickness: 4,
-                type: 'hardware',
-                isHardware: true,
-                textureKey: 'metal_chrome',
-                x: st.x,
-                y: doorY + 25,
-                z: (D / 2) - 2,
-                edgeBanding: 'Nincs'
-            });
-        });
-    }
+        // ----------------------------------------------------
+        // 9. DINAMIKUS FRONT ELEMEK & KÉSZÜLÉKEK (Ajtók, Fiókok, Beépíthető Sütő / Főzőlap)
+        // ----------------------------------------------------
         if (cfg.elements && Array.isArray(cfg.elements) && cfg.elements.length > 0) {
             let currentAllocatedY = 0;
 
@@ -1597,6 +1416,191 @@ class KitchenCorpusGenerator {
         });
 
         return boards;
+    }
+
+    /**
+     * 3D Kivetőpántok generálása ajtóhoz (Blum/Hettich szabvány szerint)
+     */
+    static addConcealedHinges(boards, p) {
+        const { doorX, doorY, doorW, doorH, frontTh, D, W, Th, side } = p;
+        
+        // Pántok száma az ajtó magassága (doorH) alapján
+        let hingeOffsets = [];
+        if (doorH < 900) {
+            hingeOffsets = [100, doorH - 100];
+        } else if (doorH < 1600) {
+            hingeOffsets = [100, doorH / 2, doorH - 100];
+        } else if (doorH < 2000) {
+            hingeOffsets = [100, doorH * 0.35, doorH * 0.65, doorH - 100];
+        } else {
+            hingeOffsets = [100, doorH * 0.28, doorH * 0.50, doorH * 0.72, doorH - 100];
+        }
+
+        hingeOffsets.forEach((offY, hIdx) => {
+            const hY = (doorY - doorH / 2) + offY;
+
+            if (side === 'left' || side === 'right') {
+                const isLeft = side === 'left';
+                // Pántedény középpont X: ajtó élétől 21.5 mm (Ø35mm edény)
+                const cupX = isLeft ? (doorX - doorW / 2 + 21.5) : (doorX + doorW / 2 - 21.5);
+                // Szerelőtalp X: korpusz belső oldalán
+                const plateX = isLeft ? (-W / 2 + Th + 2) : (W / 2 - Th - 2);
+                const armX = (cupX + plateX) / 2;
+
+                // 1. Pántedény (Ø35mm csésze az ajtó belső felületén)
+                boards.push({
+                    name: `Pántedény Ø35mm ${isLeft ? 'Bal' : 'Jobb'} ${hIdx + 1}`,
+                    width: 35,
+                    height: 35,
+                    depth: 6,
+                    thickness: 6,
+                    type: 'hardware',
+                    isHardware: true,
+                    isHinge: true,
+                    textureKey: 'metal_chrome',
+                    x: cupX,
+                    y: hY,
+                    z: (D / 2) - 1,
+                    edgeBanding: 'Nincs'
+                });
+
+                // 2. Csuklós Pántkar (fém kar állítócsavarral)
+                boards.push({
+                    name: `Pántkar ${isLeft ? 'Bal' : 'Jobb'} ${hIdx + 1}`,
+                    width: Math.max(12, Math.abs(cupX - plateX)),
+                    height: 18,
+                    depth: 28,
+                    thickness: 18,
+                    type: 'hardware',
+                    isHardware: true,
+                    isHinge: true,
+                    textureKey: 'metal_chrome',
+                    x: armX,
+                    y: hY,
+                    z: (D / 2) - 14,
+                    edgeBanding: 'Nincs'
+                });
+
+                // 3. Szerelőtalp (a korpusz belső oldalán, 37mm-re elölről)
+                boards.push({
+                    name: `Pánt Szerelőtalp ${isLeft ? 'Bal' : 'Jobb'} ${hIdx + 1}`,
+                    width: 4,
+                    height: 32,
+                    depth: 37,
+                    thickness: 4,
+                    type: 'hardware',
+                    isHardware: true,
+                    isHinge: true,
+                    textureKey: 'metal_chrome',
+                    x: plateX,
+                    y: hY,
+                    z: (D / 2) - 18.5,
+                    edgeBanding: 'Nincs'
+                });
+            }
+        });
+    }
+
+    /**
+     * Felnyíló ajtó vasalatok: 2 db felső pánt + 2 db gázteleszkóp
+     */
+    static addLiftUpHardware(boards, p) {
+        const { doorX, doorY, doorW, doorH, frontTh, D, W, Th } = p;
+        
+        // 1. Felső 2 db pánt (bal és jobb oldalt 100mm-re a szélektől)
+        const topHingesX = [-doorW / 2 + 100, doorW / 2 - 100];
+        const topHingeY = doorY + doorH / 2 - 20;
+
+        topHingesX.forEach((hx, idx) => {
+            // Pántedény
+            boards.push({
+                name: `Felnyíló Pántedény ${idx + 1}`,
+                width: 35,
+                height: 35,
+                depth: 6,
+                thickness: 6,
+                type: 'hardware',
+                isHardware: true,
+                isHinge: true,
+                textureKey: 'metal_chrome',
+                x: hx,
+                y: topHingeY,
+                z: (D / 2) - 1,
+                edgeBanding: 'Nincs'
+            });
+            // Felső pántkar
+            boards.push({
+                name: `Felnyíló Pántkar ${idx + 1}`,
+                width: 18,
+                height: 18,
+                depth: 30,
+                thickness: 18,
+                type: 'hardware',
+                isHardware: true,
+                isHinge: true,
+                textureKey: 'metal_chrome',
+                x: hx,
+                y: topHingeY + 8,
+                z: (D / 2) - 15,
+                edgeBanding: 'Nincs'
+            });
+        });
+
+        // 2. Gázteleszkópok a bal és jobb oldalon
+        const strutSides = [
+            { name: 'Bal Gázteleszkóp', x: -W / 2 + Th + 12 },
+            { name: 'Jobb Gázteleszkóp', x: W / 2 - Th - 12 }
+        ];
+
+        strutSides.forEach(st => {
+            // Gázkamra henger
+            boards.push({
+                name: `${st.name} Ház`,
+                width: 14,
+                height: 14,
+                depth: 120,
+                thickness: 14,
+                type: 'hardware',
+                isHardware: true,
+                textureKey: 'metal_chrome',
+                x: st.x,
+                y: doorY - 30,
+                z: (D / 2) - 110,
+                edgeBanding: 'Nincs'
+            });
+
+            // Króm dugattyúrúd
+            boards.push({
+                name: `${st.name} Dugattyúrúd`,
+                width: 7,
+                height: 7,
+                depth: 70,
+                thickness: 7,
+                type: 'hardware',
+                isHardware: true,
+                textureKey: 'metal_chrome',
+                x: st.x,
+                y: doorY + 10,
+                z: (D / 2) - 35,
+                edgeBanding: 'Nincs'
+            });
+
+            // Front rögzítőtalp
+            boards.push({
+                name: `${st.name} Front Talp`,
+                width: 20,
+                height: 20,
+                depth: 4,
+                thickness: 4,
+                type: 'hardware',
+                isHardware: true,
+                textureKey: 'metal_chrome',
+                x: st.x,
+                y: doorY + 25,
+                z: (D / 2) - 2,
+                edgeBanding: 'Nincs'
+            });
+        });
     }
 }
 
