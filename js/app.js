@@ -1655,6 +1655,9 @@ class FurnitureApp {
         } else if (this.selectedCorpus && this.selectedCorpus === target) {
             this.updateDimensionsBadge();
         }
+        if (this.boardManager && this.boardManager.updateKitchenContinuity) {
+            this.boardManager.updateKitchenContinuity();
+        }
     }
 
     openKitchenWizardForCorpus(corpusGroup) {
