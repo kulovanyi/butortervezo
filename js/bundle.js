@@ -5988,8 +5988,12 @@ class CatalogManager {
      */
     async fetchServerCatalog() {
         try {
-            const res = await fetch('/api/catalog');
-            if (!res.ok) return;
+            let res = await fetch('/api/catalog');
+            if (!res || !res.ok) {
+                // Fallback statikus webre / GitHub Pages-re
+                res = await fetch('data/catalog.json');
+            }
+            if (!res || !res.ok) return;
 
             const serverData = await res.json();
             let changed = false;
