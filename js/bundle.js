@@ -1275,6 +1275,15 @@ class Scene3D {
 
         this.scene = null;
         this.camera = null;
+        this.perspCamera = null;
+        this.orthoCamera = null;
+        this.currentViewMode = 'iso';
+        this.isWireframeMode = false;
+        this.isStudioMode = false;
+        this.studioEnvMap = null;
+        this.defaultEnvMap = null;
+        this.studioLights = [];
+        this.defaultLights = [];
         this.renderer = null;
         this.controls = null;
         this.transformControls = null;
@@ -1297,7 +1306,8 @@ class Scene3D {
 
         this.dimensionGroup = null;
         this.boardMeshes = [];
-        this.selectedTarget = null; // Mesh VAGY Group (Korpusz)
+        this.selectedTarget = null; // Mesh VAGY Group (Korpusz / Bútor Csoport)
+        this.selectedTargets = []; // Többes kijelölés listája
         this.snapDistance = 10; // mm
         this.magneticSnapDistance = 30; // Mágneses vonzás alapértelmezett értéke (mm)
         this.boardManager = null;
@@ -1308,14 +1318,25 @@ class Scene3D {
     init() {
         const width = this.container.clientWidth || window.innerWidth;
         const height = this.container.clientHeight || window.innerHeight;
+        const aspect = width / height;
 
         // 1. Jelenet
         this.scene = new THREE.Scene();
         this.scene.background = new THREE.Color('#1e222b');
 
-        // 2. Kamera
-        this.camera = new THREE.PerspectiveCamera(45, width / height, 1, 20000);
-        this.camera.position.set(1200, 900, 1600);
+        // 2. Dual Kamerarendszer: Perspektivikus (3D) + Ortografikus (2D Műszaki rajz torzításmentes)
+        this.perspCamera = new THREE.PerspectiveCamera(45, aspect, 1, 30000);
+        this.perspCamera.position.set(1200, 900, 1600);
+
+        const orthoSize = 1000;
+        this.orthoCamera = new THREE.OrthographicCamera(
+            -orthoSize * aspect, orthoSize * aspect,
+            orthoSize, -orthoSize,
+            -20000, 30000
+        );
+        this.orthoCamera.position.set(0, 400, 2000);
+
+        this.camera = this.perspCamera;
 
         // 3. Renderelő
         this.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
@@ -1604,13 +1625,17 @@ class Scene3D {
         this.raycaster.setFromCamera(this.mouse, this.camera);
         const intersects = this.raycaster.intersectObjects(this.boardMeshes, false);
 
+        const isMultiModifier = event.shiftKey || event.ctrlKey || event.metaKey;
+
         if (intersects.length > 0) {
             const hitMesh = intersects[0].object;
-            // Ha a lap egy Konyha Korpusz része, a teljes Korpusz egységet jelöljük ki!
-            if (hitMesh.userData && hitMesh.userData.parentGroup) {
-                this.selectBoard(hitMesh.userData.parentGroup);
+            // Ha a lap egy Konyha Korpusz vagy Csoport része, alapértelmezetten a szülő csoportot célozzuk
+            const target = (hitMesh.userData && hitMesh.userData.parentGroup) ? hitMesh.userData.parentGroup : hitMesh;
+
+            if (isMultiModifier) {
+                this.toggleMultiSelectTarget(target);
             } else {
-                this.selectBoard(hitMesh);
+                this.selectBoard(target);
             }
         } else {
             if (!this.transformControls.dragging) {
@@ -1619,8 +1644,71 @@ class Scene3D {
         }
     }
 
+    toggleMultiSelectTarget(target) {
+        if (!target) return;
+        const idx = this.selectedTargets.indexOf(target);
+        if (idx > -1) {
+            this.selectedTargets.splice(idx, 1);
+        } else {
+            this.selectedTargets.push(target);
+        }
+        this.updateMultiSelection();
+    }
+
+    setMultiSelection(targets) {
+        this.selectedTargets = targets ? [...targets] : [];
+        this.updateMultiSelection();
+    }
+
+    updateMultiSelection() {
+        // Körvonalak törlése
+        this.boardMeshes.forEach(m => {
+            if (m.userData.outlineMesh) {
+                m.userData.outlineMesh.visible = false;
+            }
+        });
+
+        // Kijelölt elemek körvonalainak bekapcsolása
+        const lineColor = (this.selectedTargets.length > 1) ? '#f59e0b' : '#38bdf8';
+        this.selectedTargets.forEach(target => {
+            if (target.isGroup) {
+                target.children.forEach(child => {
+                    if (child.userData && child.userData.outlineMesh) {
+                        child.userData.outlineMesh.visible = true;
+                        if (child.userData.outlineMesh.material) {
+                            child.userData.outlineMesh.material.color.set('#f59e0b');
+                        }
+                    }
+                });
+            } else if (target.userData && target.userData.outlineMesh) {
+                target.userData.outlineMesh.visible = true;
+                if (target.userData.outlineMesh.material) {
+                    target.userData.outlineMesh.material.color.set(lineColor);
+                }
+            }
+        });
+
+        if (this.selectedTargets.length === 1) {
+            this.selectedTarget = this.selectedTargets[0];
+            this.transformControls.attach(this.selectedTarget);
+        } else if (this.selectedTargets.length > 1) {
+            this.selectedTarget = this.selectedTargets[this.selectedTargets.length - 1];
+            this.transformControls.attach(this.selectedTarget);
+        } else {
+            this.selectedTarget = null;
+            this.transformControls.detach();
+        }
+
+        this.updateDimensionVisualizer();
+
+        if (this.onBoardSelected) {
+            this.onBoardSelected(this.selectedTarget, this.selectedTargets);
+        }
+    }
+
     selectBoard(target) {
         this.selectedTarget = target;
+        this.selectedTargets = target ? [target] : [];
 
         // Előző körvonalak törlése
         this.boardMeshes.forEach(m => {
@@ -1632,9 +1720,24 @@ class Scene3D {
         if (target) {
             this.transformControls.attach(target);
 
-            // Ha egyedi Mesh
-            if (target.userData && target.userData.outlineMesh) {
+            const isGroupTarget = target.isGroup && target.userData && (target.userData.isCorpus || target.userData.isCustomGroup);
+            const lineColor = isGroupTarget ? '#f59e0b' : '#38bdf8';
+
+            // Ha Group (Korpusz vagy Csoport)
+            if (target.isGroup) {
+                target.children.forEach(child => {
+                    if (child.userData && child.userData.outlineMesh) {
+                        child.userData.outlineMesh.visible = true;
+                        if (child.userData.outlineMesh.material) {
+                            child.userData.outlineMesh.material.color.set('#f59e0b');
+                        }
+                    }
+                });
+            } else if (target.userData && target.userData.outlineMesh) {
                 target.userData.outlineMesh.visible = true;
+                if (target.userData.outlineMesh.material) {
+                    target.userData.outlineMesh.material.color.set(lineColor);
+                }
             }
         } else {
             this.transformControls.detach();
@@ -1643,7 +1746,7 @@ class Scene3D {
         this.updateDimensionVisualizer();
 
         if (this.onBoardSelected) {
-            this.onBoardSelected(target);
+            this.onBoardSelected(target, this.selectedTargets);
         }
     }
 
@@ -1774,45 +1877,244 @@ class Scene3D {
     }
 
     setCameraView(viewName) {
-        const center = this.calculateFurnitureCenter();
-        const dist = 1600;
+        this.currentViewMode = viewName;
+        const width = this.container.clientWidth || window.innerWidth;
+        const height = this.container.clientHeight || window.innerHeight;
+        const aspect = width / height;
 
-        switch (viewName) {
-            case 'front':
-                this.camera.position.set(center.x, center.y, center.z + dist);
-                break;
-            case 'back':
-                this.camera.position.set(center.x, center.y, center.z - dist);
-                break;
-            case 'top':
-                this.camera.position.set(center.x, center.y + dist, center.z + 0.01);
-                break;
-            case 'right':
-                this.camera.position.set(center.x + dist, center.y, center.z);
-                break;
-            case 'left':
-                this.camera.position.set(center.x - dist, center.y, center.z);
-                break;
-            case 'iso':
-            default:
-                this.camera.position.set(center.x + 1200, center.y + 800, center.z + 1400);
-                break;
+        const bounds = this.calculateFurnitureBounds();
+        const center = bounds.center;
+        const size = bounds.size;
+
+        if (viewName === 'front' || viewName === 'top' || viewName === 'right' || viewName === 'back' || viewName === 'left') {
+            // ORTOGRAFIKUS 2D MŰSZAKI NÉZET
+            this.camera = this.orthoCamera;
+            this.controls.object = this.orthoCamera;
+            this.transformControls.camera = this.orthoCamera;
+            this.controls.enableRotate = false; // 2D nézetben nincs véletlen forgatás, csak pan és zoom
+
+            let maxDimH = 600;
+            let maxDimV = 600;
+
+            if (viewName === 'front' || viewName === 'back') {
+                maxDimH = Math.max(size.x, 500);
+                maxDimV = Math.max(size.y, 500);
+                this.orthoCamera.up.set(0, 1, 0);
+            } else if (viewName === 'top') {
+                maxDimH = Math.max(size.x, 500);
+                maxDimV = Math.max(size.z, 500);
+                // Felülnézetben a képernyő teteje a bútor hátulja felé mutat (-Z)
+                this.orthoCamera.up.set(0, 0, -1);
+            } else if (viewName === 'right' || viewName === 'left') {
+                maxDimH = Math.max(size.z, 500);
+                maxDimV = Math.max(size.y, 500);
+                this.orthoCamera.up.set(0, 1, 0);
+            }
+
+            // Keretezés ráhagyással (1.2x margó)
+            const margin = 1.25;
+            let orthoHalfH = (maxDimV * margin) / 2;
+            let orthoHalfW = (maxDimH * margin) / 2;
+
+            if (orthoHalfW / aspect > orthoHalfH) {
+                orthoHalfH = orthoHalfW / aspect;
+            } else {
+                orthoHalfW = orthoHalfH * aspect;
+            }
+
+            this.orthoCamera.left = -orthoHalfW;
+            this.orthoCamera.right = orthoHalfW;
+            this.orthoCamera.top = orthoHalfH;
+            this.orthoCamera.bottom = -orthoHalfH;
+            this.orthoCamera.updateProjectionMatrix();
+
+            const dist = 3000;
+            switch (viewName) {
+                case 'front':
+                    this.orthoCamera.position.set(center.x, center.y, center.z + dist);
+                    break;
+                case 'back':
+                    this.orthoCamera.position.set(center.x, center.y, center.z - dist);
+                    break;
+                case 'top':
+                    this.orthoCamera.position.set(center.x, center.y + dist, center.z);
+                    break;
+                case 'right':
+                    this.orthoCamera.position.set(center.x + dist, center.y, center.z);
+                    break;
+                case 'left':
+                    this.orthoCamera.position.set(center.x - dist, center.y, center.z);
+                    break;
+            }
+
+            this.controls.target.copy(center);
+            this.orthoCamera.lookAt(center);
+            this.controls.update();
+
+        } else {
+            // SZABAD 3D PERSPEKTIVIKUS NÉZET
+            this.camera = this.perspCamera;
+            this.controls.object = this.perspCamera;
+            this.transformControls.camera = this.perspCamera;
+            this.controls.enableRotate = true;
+            this.perspCamera.up.set(0, 1, 0);
+
+            const maxDim = Math.max(size.x, size.y, size.z, 600);
+            this.perspCamera.position.set(
+                center.x + maxDim * 1.3,
+                center.y + maxDim * 0.9,
+                center.z + maxDim * 1.6
+            );
+            this.controls.target.copy(center);
+            this.perspCamera.lookAt(center);
+            this.controls.update();
         }
-
-        this.controls.target.copy(center);
-        this.camera.lookAt(center);
-        this.controls.update();
     }
 
-    calculateFurnitureCenter() {
+    calculateFurnitureBounds() {
         if (this.boardMeshes.length === 0) {
-            return new THREE.Vector3(0, 400, 0);
+            return {
+                center: new THREE.Vector3(0, 400, 0),
+                size: new THREE.Vector3(800, 800, 600)
+            };
         }
         const box = new THREE.Box3();
         this.boardMeshes.forEach(mesh => box.expandByObject(mesh));
         const center = new THREE.Vector3();
         box.getCenter(center);
-        return center;
+        const size = new THREE.Vector3();
+        box.getSize(size);
+        return { center, size };
+    }
+
+    calculateFurnitureCenter() {
+        return this.calculateFurnitureBounds().center;
+    }
+
+    // ==========================================
+    // VONALVÁZ (WIREFRAME) ÉS STÚDIÓ RENDER MÓD
+    // ==========================================
+
+    toggleWireframeMode() {
+        this.setWireframeMode(!this.isWireframeMode);
+        return this.isWireframeMode;
+    }
+
+    setWireframeMode(enabled) {
+        this.isWireframeMode = enabled;
+        this.applyRenderMode();
+    }
+
+    toggleStudioMode() {
+        this.setStudioMode(!this.isStudioMode);
+        return this.isStudioMode;
+    }
+
+    setStudioMode(enabled) {
+        this.isStudioMode = enabled;
+        this.applyRenderMode();
+    }
+
+    getOrCreateStudioEnvMap() {
+        if (this.studioEnvMap) return this.studioEnvMap;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = 1024;
+        canvas.height = 512;
+        const ctx = canvas.getContext('2d');
+
+        // Stúdió sötét szürke gradiens háttér (Neutral Studio Gradient)
+        const bgGrad = ctx.createLinearGradient(0, 0, 0, 512);
+        bgGrad.addColorStop(0, '#30343f');
+        bgGrad.addColorStop(0.5, '#1e2129');
+        bgGrad.addColorStop(1, '#0f1115');
+        ctx.fillStyle = bgGrad;
+        ctx.fillRect(0, 0, 1024, 512);
+
+        // 1. Fő lágy fényláda (Main Key Softbox - Warm Studio Light)
+        const keyGrad = ctx.createRadialGradient(250, 180, 10, 250, 180, 220);
+        keyGrad.addColorStop(0, 'rgba(255, 250, 240, 1.0)');
+        keyGrad.addColorStop(0.4, 'rgba(255, 240, 220, 0.75)');
+        keyGrad.addColorStop(0.8, 'rgba(255, 230, 200, 0.2)');
+        keyGrad.addColorStop(1, 'rgba(255, 230, 200, 0)');
+        ctx.fillStyle = keyGrad;
+        ctx.beginPath();
+        ctx.ellipse(250, 180, 200, 140, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 2. Derítő fényláda (Fill Softbox - Cool Sky Rim)
+        const fillGrad = ctx.createRadialGradient(800, 220, 10, 800, 220, 180);
+        fillGrad.addColorStop(0, 'rgba(220, 240, 255, 0.9)');
+        fillGrad.addColorStop(0.5, 'rgba(180, 215, 255, 0.45)');
+        fillGrad.addColorStop(1, 'rgba(180, 215, 255, 0)');
+        ctx.fillStyle = fillGrad;
+        ctx.beginPath();
+        ctx.ellipse(800, 220, 170, 120, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 3. Felső diffúz mennyezeti fénysáv (Top Strip Diffuser)
+        const topGrad = ctx.createLinearGradient(0, 0, 0, 120);
+        topGrad.addColorStop(0, 'rgba(255, 255, 255, 0.85)');
+        topGrad.addColorStop(0.6, 'rgba(255, 255, 255, 0.3)');
+        topGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        ctx.fillStyle = topGrad;
+        ctx.fillRect(200, 0, 624, 120);
+
+        const canvasTexture = new THREE.CanvasTexture(canvas);
+        canvasTexture.mapping = THREE.EquirectangularReflectionMapping;
+
+        const pmremGenerator = new THREE.PMREMGenerator(this.renderer);
+        pmremGenerator.compileEquirectangularShader();
+        this.studioEnvMap = pmremGenerator.fromEquirectangular(canvasTexture).texture;
+        pmremGenerator.dispose();
+        canvasTexture.dispose();
+
+        return this.studioEnvMap;
+    }
+
+    applyRenderMode() {
+        // 1. Környezeti térkép és jelenet háttér
+        if (this.isStudioMode) {
+            const env = this.getOrCreateStudioEnvMap();
+            this.scene.environment = env;
+            this.scene.background = new THREE.Color('#14171e');
+            this.renderer.toneMappingExposure = 1.35;
+        } else {
+            this.scene.environment = null;
+            this.scene.background = new THREE.Color('#1e222b');
+            this.renderer.toneMappingExposure = 1.1;
+        }
+
+        // 2. Bútorlapok anyagainak és éleinek frissítése
+        const wireframeMat = new THREE.MeshBasicMaterial({
+            color: '#0f172a',
+            wireframe: true
+        });
+
+        this.scene.traverse(obj => {
+            if (obj.isMesh && obj.userData && (obj.userData.id || obj.userData.isCorpusPart)) {
+                // Élkiemelés megjelenítése vonalváz módban
+                obj.traverse(child => {
+                    if (child.isLineSegments) {
+                        child.visible = this.isWireframeMode;
+                        if (child.material) {
+                            child.material.color.set(this.isWireframeMode ? '#38bdf8' : '#38bdf8');
+                        }
+                    }
+                });
+
+                // Vonalváz vagy normál anyag
+                if (this.isWireframeMode) {
+                    if (!obj.userData.originalMaterial) {
+                        obj.userData.originalMaterial = obj.material;
+                    }
+                    obj.material = wireframeMat;
+                } else if (obj.userData.originalMaterial) {
+                    obj.material = obj.userData.originalMaterial;
+                    obj.material.needsUpdate = true;
+                }
+            }
+        });
     }
 
     updateDimensionVisualizer() {
@@ -1823,10 +2125,24 @@ class Scene3D {
             if (obj.material) obj.material.dispose();
         }
 
-        if (!this.selectedTarget) return;
+        if (!this.selectedTarget && (!this.selectedTargets || this.selectedTargets.length === 0)) return;
 
-        const box = new THREE.Box3().setFromObject(this.selectedTarget);
-        const boxColor = (this.selectedTarget.userData && this.selectedTarget.userData.isCorpus) ? '#f59e0b' : '#38bdf8';
+        const box = new THREE.Box3();
+        if (this.selectedTargets && this.selectedTargets.length > 1) {
+            this.selectedTargets.forEach(t => {
+                if (t) box.expandByObject(t);
+            });
+        } else if (this.selectedTarget) {
+            box.setFromObject(this.selectedTarget);
+        } else {
+            return;
+        }
+
+        const isCorpusOrGroup = (this.selectedTarget && this.selectedTarget.userData && 
+            (this.selectedTarget.userData.isCorpus || this.selectedTarget.userData.isCustomGroup)) ||
+            (this.selectedTargets && this.selectedTargets.length > 1);
+
+        const boxColor = isCorpusOrGroup ? '#f59e0b' : '#38bdf8';
         const boxHelper = new THREE.Box3Helper(box, new THREE.Color(boxColor));
         this.dimensionGroup.add(boxHelper);
     }
@@ -1929,8 +2245,35 @@ class Scene3D {
     onWindowResize() {
         const width = this.container.clientWidth || window.innerWidth;
         const height = this.container.clientHeight || window.innerHeight;
-        this.camera.aspect = width / height;
-        this.camera.updateProjectionMatrix();
+        const aspect = width / height;
+
+        if (this.perspCamera) {
+            this.perspCamera.aspect = aspect;
+            this.perspCamera.updateProjectionMatrix();
+        }
+
+        if (this.orthoCamera) {
+            const bounds = this.calculateFurnitureBounds();
+            const size = bounds.size;
+            let maxDimH = Math.max(size.x, size.z, 500);
+            let maxDimV = Math.max(size.y, size.z, 500);
+            const margin = 1.25;
+            let orthoHalfH = (maxDimV * margin) / 2;
+            let orthoHalfW = (maxDimH * margin) / 2;
+
+            if (orthoHalfW / aspect > orthoHalfH) {
+                orthoHalfH = orthoHalfW / aspect;
+            } else {
+                orthoHalfW = orthoHalfH * aspect;
+            }
+
+            this.orthoCamera.left = -orthoHalfW;
+            this.orthoCamera.right = orthoHalfW;
+            this.orthoCamera.top = orthoHalfH;
+            this.orthoCamera.bottom = -orthoHalfH;
+            this.orthoCamera.updateProjectionMatrix();
+        }
+
         this.renderer.setSize(width, height);
     }
 
@@ -2184,8 +2527,10 @@ class BoardManager {
         this.scene3D = scene3D;
         this.boards = [];   // Egyedi és korpusz alkatrészlapok listája (CutListhez és méretezéshez)
         this.corpora = [];  // Konyha Korpusz egységek listája (THREE.Group)
+        this.customGroups = []; // Egyedi bútorlap csoportok listája (THREE.Group)
         this.boardCounter = 1;
         this.corpusCounter = 1;
+        this.groupCounter = 1;
         this.activeTextureKey = 'oak_natural';
     }
 
@@ -2427,6 +2772,229 @@ class BoardManager {
         this.scene3D.selectBoard(newCorpus);
         this.updateKitchenContinuity();
         return newCorpus;
+    }
+
+    /**
+     * EGYEDI BÚTORLAPOK CSOPORTOSÍTÁSA (Create Group)
+     */
+    createGroup(boardIds, groupName) {
+        if (!boardIds || boardIds.length < 1) return null;
+
+        const targetBoards = this.boards.filter(b => boardIds.includes(b.id) && !b.corpusId);
+        if (targetBoards.length === 0) return null;
+
+        // Számoljuk ki a csoport befoglaló méretét és középpontját
+        const box = new THREE.Box3();
+        targetBoards.forEach(b => {
+            if (b.mesh) {
+                b.mesh.updateWorldMatrix(true, false);
+                box.expandByObject(b.mesh);
+            }
+        });
+
+        const center = new THREE.Vector3();
+        box.getCenter(center);
+        const size = new THREE.Vector3();
+        box.getSize(size);
+
+        const groupId = 'group_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
+        const name = groupName || `Csoport ${this.groupCounter++} (${targetBoards.length} lap)`;
+
+        const group = new THREE.Group();
+        group.position.copy(center);
+        group.userData = {
+            id: groupId,
+            name: name,
+            isCustomGroup: true,
+            isCorpus: false,
+            width: Math.round(size.x),
+            height: Math.round(size.y),
+            depth: Math.round(size.z),
+            x: Math.round(center.x),
+            y: Math.round(center.y),
+            z: Math.round(center.z)
+        };
+
+        this.scene3D.scene.add(group);
+
+        targetBoards.forEach(b => {
+            if (b.parentGroup && b.parentGroup !== group) {
+                b.parentGroup.remove(b.mesh);
+            }
+            group.attach(b.mesh);
+            b.groupId = groupId;
+            b.parentGroup = group;
+        });
+
+        this.customGroups.push(group);
+        this.scene3D.updateDimensionVisualizer();
+        return group;
+    }
+
+    /**
+     * CSOPORT SZÉTBONTÁSA (Ungroup)
+     */
+    ungroup(groupId) {
+        const groupIdx = this.customGroups.findIndex(g => g.userData.id === groupId);
+        if (groupIdx === -1) return [];
+
+        const group = this.customGroups[groupIdx];
+        const childBoards = this.boards.filter(b => b.groupId === groupId);
+
+        const unpackedMeshes = [];
+        childBoards.forEach(b => {
+            if (b.mesh) {
+                this.scene3D.scene.attach(b.mesh);
+                b.groupId = null;
+                b.parentGroup = null;
+                b.x = Math.round(b.mesh.position.x);
+                b.y = Math.round(b.mesh.position.y);
+                b.z = Math.round(b.mesh.position.z);
+                b.rotX = Math.round(THREE.MathUtils.radToDeg(b.mesh.rotation.x));
+                b.rotY = Math.round(THREE.MathUtils.radToDeg(b.mesh.rotation.y));
+                b.rotZ = Math.round(THREE.MathUtils.radToDeg(b.mesh.rotation.z));
+                unpackedMeshes.push(b.mesh);
+            }
+        });
+
+        if (this.scene3D.selectedTarget === group) {
+            this.scene3D.selectBoard(null);
+        }
+
+        this.scene3D.scene.remove(group);
+        this.customGroups.splice(groupIdx, 1);
+        this.scene3D.updateDimensionVisualizer();
+        return unpackedMeshes;
+    }
+
+    /**
+     * LAP KIVÉTELE A CSOPORTBÓL (Extract Single Board)
+     */
+    removeBoardFromGroup(boardId) {
+        const board = this.boards.find(b => b.id === boardId);
+        if (!board || !board.groupId) return null;
+
+        const groupId = board.groupId;
+        const group = this.customGroups.find(g => g.userData.id === groupId);
+
+        if (board.mesh) {
+            this.scene3D.scene.attach(board.mesh);
+            board.groupId = null;
+            board.parentGroup = null;
+            board.x = Math.round(board.mesh.position.x);
+            board.y = Math.round(board.mesh.position.y);
+            board.z = Math.round(board.mesh.position.z);
+            board.rotX = Math.round(THREE.MathUtils.radToDeg(board.mesh.rotation.x));
+            board.rotY = Math.round(THREE.MathUtils.radToDeg(board.mesh.rotation.y));
+            board.rotZ = Math.round(THREE.MathUtils.radToDeg(board.mesh.rotation.z));
+        }
+
+        const remaining = this.boards.filter(b => b.groupId === groupId);
+        if (remaining.length === 0 && group) {
+            const gIdx = this.customGroups.indexOf(group);
+            if (gIdx > -1) this.customGroups.splice(gIdx, 1);
+            this.scene3D.scene.remove(group);
+        } else if (group) {
+            const box = new THREE.Box3();
+            remaining.forEach(b => { if (b.mesh) box.expandByObject(b.mesh); });
+            const size = new THREE.Vector3();
+            box.getSize(size);
+            group.userData.width = Math.round(size.x);
+            group.userData.height = Math.round(size.y);
+            group.userData.depth = Math.round(size.z);
+        }
+
+        this.scene3D.updateDimensionVisualizer();
+        return board;
+    }
+
+    /**
+     * CSOPORT DUPLIKÁLÁSA
+     */
+    duplicateGroup(groupId) {
+        const sourceGroup = this.customGroups.find(g => g.userData.id === groupId);
+        if (!sourceGroup) return null;
+
+        const childBoards = this.boards.filter(b => b.groupId === groupId);
+        const offsetX = 50;
+        const offsetZ = 50;
+
+        const newBoardIds = [];
+        childBoards.forEach(b => {
+            const worldPos = new THREE.Vector3();
+            const worldQuat = new THREE.Quaternion();
+            b.mesh.getWorldPosition(worldPos);
+            b.mesh.getWorldQuaternion(worldQuat);
+            const euler = new THREE.Euler().setFromQuaternion(worldQuat);
+
+            const cloneData = {
+                name: `${b.name} (másolat)`,
+                width: b.width,
+                height: b.height,
+                depth: b.depth,
+                thickness: b.thickness,
+                edgeRadius: b.edgeRadius !== undefined ? b.edgeRadius : 1,
+                type: b.type,
+                textureKey: b.textureKey,
+                edgeBanding: b.edgeBanding,
+                x: worldPos.x + offsetX,
+                y: worldPos.y,
+                z: worldPos.z + offsetZ,
+                rotX: Math.round(THREE.MathUtils.radToDeg(euler.x)),
+                rotY: Math.round(THREE.MathUtils.radToDeg(euler.y)),
+                rotZ: Math.round(THREE.MathUtils.radToDeg(euler.z))
+            };
+
+            const created = this.createBoard(cloneData);
+            newBoardIds.push(created.id);
+        });
+
+        const newGroup = this.createGroup(newBoardIds, `${sourceGroup.userData.name} (másolat)`);
+        if (newGroup) {
+            this.scene3D.selectBoard(newGroup);
+        }
+        return newGroup;
+    }
+
+    /**
+     * CSOPORT ÉS ELEMEINEK TÖRLÉSE
+     */
+    deleteGroup(groupId) {
+        const groupIdx = this.customGroups.findIndex(g => g.userData.id === groupId);
+        if (groupIdx === -1) return;
+
+        const group = this.customGroups[groupIdx];
+        if (this.scene3D.selectedTarget === group) {
+            this.scene3D.selectBoard(null);
+        }
+
+        const childBoards = [...this.boards.filter(b => b.groupId === groupId)];
+        childBoards.forEach(b => {
+            this.deleteBoard(b.id);
+        });
+
+        this.scene3D.scene.remove(group);
+        this.customGroups.splice(groupIdx, 1);
+        this.scene3D.updateDimensionVisualizer();
+    }
+
+    /**
+     * CSOPORT ADATAINAK FRISSÍTÉSE
+     */
+    updateGroup(groupId, newParams) {
+        const group = this.customGroups.find(g => g.userData.id === groupId);
+        if (!group) return null;
+        if (newParams.name) {
+            group.userData.name = newParams.name;
+        }
+        if (newParams.textureKey) {
+            const childBoards = this.boards.filter(b => b.groupId === groupId);
+            childBoards.forEach(b => {
+                b.textureKey = newParams.textureKey;
+                MaterialManager.applyTextureToMesh(b.mesh, newParams.textureKey);
+            });
+        }
+        return group;
     }
 
     /**
@@ -2687,6 +3255,19 @@ class BoardManager {
             board.depth = Math.max(1, Number(newParams.depth));
             geoNeedsUpdate = true;
         }
+        if (newParams.thickness !== undefined && newParams.thickness !== board.thickness) {
+            board.thickness = Math.max(1, Number(newParams.thickness));
+            board.height = board.thickness;
+            geoNeedsUpdate = true;
+        }
+        if (newParams.type !== undefined && newParams.type !== board.type) {
+            board.type = newParams.type;
+            geoNeedsUpdate = true;
+        }
+        if (newParams.isWorktop !== undefined && newParams.isWorktop !== board.isWorktop) {
+            board.isWorktop = newParams.isWorktop;
+            geoNeedsUpdate = true;
+        }
         if (newParams.edgeRadius !== undefined && newParams.edgeRadius !== board.edgeRadius) {
             board.edgeRadius = Math.max(0, Number(newParams.edgeRadius));
             geoNeedsUpdate = true;
@@ -2780,10 +3361,25 @@ class BoardManager {
 
         const board = this.boards[index];
 
-        // Ha korpusz tagja, az egész korpuszt töröljük
+        // Ha konyha korpusz tagja, az egész korpuszt töröljük
         if (board.corpusId) {
             this.deleteCorpus(board.corpusId);
             return;
+        }
+
+        // Ha egyedi csoport tagja, vegyük ki a csoportból
+        if (board.groupId) {
+            const groupId = board.groupId;
+            const group = this.customGroups.find(g => g.userData.id === groupId);
+            if (group) {
+                group.remove(board.mesh);
+                const remaining = this.boards.filter(b => b.groupId === groupId && b.id !== id);
+                if (remaining.length === 0) {
+                    const gIdx = this.customGroups.indexOf(group);
+                    if (gIdx > -1) this.customGroups.splice(gIdx, 1);
+                    this.scene3D.scene.remove(group);
+                }
+            }
         }
 
         if (this.scene3D.selectedTarget === board.mesh) {
@@ -2868,11 +3464,15 @@ class BoardManager {
         while (this.corpora.length > 0) {
             this.deleteCorpus(this.corpora[0].userData.id);
         }
+        while (this.customGroups.length > 0) {
+            this.deleteGroup(this.customGroups[0].userData.id);
+        }
         while (this.boards.length > 0) {
             this.deleteBoard(this.boards[0].id);
         }
         this.boardCounter = 1;
         this.corpusCounter = 1;
+        this.groupCounter = 1;
     }
 
     getCorpusJSON(corpusId) {
@@ -2888,6 +3488,41 @@ class BoardManager {
                 z: 0
             }],
             boards: []
+        };
+    }
+
+    getGroupJSON(groupId) {
+        const group = this.customGroups.find(item => item.userData.id === groupId);
+        if (!group) return null;
+        const childBoards = this.boards.filter(b => b.groupId === groupId);
+        return {
+            corpora: [],
+            customGroups: [{
+                id: group.userData.id,
+                name: group.userData.name,
+                x: 0,
+                y: 0,
+                z: 0
+            }],
+            boards: childBoards.map(b => ({
+                id: b.id,
+                groupId: group.userData.id,
+                name: b.name,
+                width: b.width,
+                height: b.height,
+                depth: b.depth,
+                thickness: b.thickness,
+                edgeRadius: b.edgeRadius !== undefined ? b.edgeRadius : 1,
+                type: b.type,
+                textureKey: b.textureKey,
+                edgeBanding: b.edgeBanding,
+                x: b.mesh.position.x,
+                y: b.mesh.position.y,
+                z: b.mesh.position.z,
+                rotX: Math.round(THREE.MathUtils.radToDeg(b.mesh.rotation.x)),
+                rotY: Math.round(THREE.MathUtils.radToDeg(b.mesh.rotation.y)),
+                rotZ: Math.round(THREE.MathUtils.radToDeg(b.mesh.rotation.z))
+            }))
         };
     }
 
@@ -2926,23 +3561,41 @@ class BoardManager {
                 y: c.position.y,
                 z: c.position.z
             })),
-            boards: this.boards.filter(b => !b.corpusId).map(b => ({
-                name: b.name,
-                width: b.width,
-                height: b.height,
-                depth: b.depth,
-                thickness: b.thickness,
-                edgeRadius: b.edgeRadius !== undefined ? b.edgeRadius : 1,
-                type: b.type,
-                textureKey: b.textureKey,
-                edgeBanding: b.edgeBanding,
-                x: b.x,
-                y: b.y,
-                z: b.z,
-                rotX: b.rotX,
-                rotY: b.rotY,
-                rotZ: b.rotZ
-            }))
+            customGroups: this.customGroups.map(g => ({
+                id: g.userData.id,
+                name: g.userData.name,
+                x: g.position.x,
+                y: g.position.y,
+                z: g.position.z
+            })),
+            boards: this.boards.filter(b => !b.corpusId).map(b => {
+                const worldPos = new THREE.Vector3();
+                const worldQuat = new THREE.Quaternion();
+                if (b.mesh) {
+                    b.mesh.getWorldPosition(worldPos);
+                    b.mesh.getWorldQuaternion(worldQuat);
+                }
+                const euler = new THREE.Euler().setFromQuaternion(worldQuat);
+                return {
+                    id: b.id,
+                    groupId: b.groupId || null,
+                    name: b.name,
+                    width: b.width,
+                    height: b.height,
+                    depth: b.depth,
+                    thickness: b.thickness,
+                    edgeRadius: b.edgeRadius !== undefined ? b.edgeRadius : 1,
+                    type: b.type,
+                    textureKey: b.textureKey,
+                    edgeBanding: b.edgeBanding,
+                    x: b.mesh ? worldPos.x : b.x,
+                    y: b.mesh ? worldPos.y : b.y,
+                    z: b.mesh ? worldPos.z : b.z,
+                    rotX: b.mesh ? Math.round(THREE.MathUtils.radToDeg(euler.x)) : b.rotX,
+                    rotY: b.mesh ? Math.round(THREE.MathUtils.radToDeg(euler.y)) : b.rotY,
+                    rotZ: b.mesh ? Math.round(THREE.MathUtils.radToDeg(euler.z)) : b.rotZ
+                };
+            })
         };
     }
 
@@ -2962,16 +3615,45 @@ class BoardManager {
             return;
         }
 
-        // Új formátum: corpora + boards
+        // Új formátum: corpora + boards + customGroups
         if (data.corpora && Array.isArray(data.corpora)) {
             data.corpora.forEach(c => {
                 this.createCorpus(c.config, c.x || 0, c.y || 0, c.z || 0);
             });
         }
 
+        const createdBoardsMap = {};
         if (data.boards && Array.isArray(data.boards)) {
             data.boards.forEach(b => {
-                this.createBoard(b);
+                const created = this.createBoard(b);
+                if (b.id) createdBoardsMap[b.id] = created;
+                if (b.groupId) created.groupId = b.groupId;
+            });
+        }
+
+        // Csoportok újjáépítése
+        if (data.customGroups && Array.isArray(data.customGroups)) {
+            data.customGroups.forEach(g => {
+                const groupBoards = this.boards.filter(b => b.groupId === g.id);
+                if (groupBoards.length > 0) {
+                    const group = new THREE.Group();
+                    group.position.set(g.x || 0, g.y || 0, g.z || 0);
+                    group.userData = {
+                        id: g.id,
+                        name: g.name || 'Bútor Csoport',
+                        isCustomGroup: true,
+                        isCorpus: false,
+                        x: g.x || 0,
+                        y: g.y || 0,
+                        z: g.z || 0
+                    };
+                    this.scene3D.scene.add(group);
+                    groupBoards.forEach(b => {
+                        group.attach(b.mesh);
+                        b.parentGroup = group;
+                    });
+                    this.customGroups.push(group);
+                }
             });
         }
 
@@ -3331,6 +4013,18 @@ class CatalogManager {
                     d: corpus.userData.depth || 560
                 };
                 boardCount = corpus.children.length;
+            }
+        } else if (savingTarget.type === 'group') {
+            boardsData = this.boardManager.getGroupJSON(savingTarget.id);
+            const grp = this.boardManager.customGroups.find(g => g.userData.id === savingTarget.id);
+            const childBoards = this.boardManager.boards.filter(b => b.groupId === savingTarget.id);
+            if (grp) {
+                dimensions = {
+                    w: grp.userData.width || 600,
+                    h: grp.userData.height || 800,
+                    d: grp.userData.depth || 400
+                };
+                boardCount = childBoards.length;
             }
         } else {
             boardsData = this.boardManager.getSingleBoardJSON(savingTarget.id);
@@ -4347,6 +5041,7 @@ class FurnitureApp {
         this.kitchenPreview = null;
         this.selectedBoard = null;
         this.selectedCorpus = null;
+        this.selectedCustomGroup = null;
         this.editingCorpusId = null;
         this.previewCorpus = null;
         this.newCorpusOffsetX = 0;
@@ -4539,6 +5234,21 @@ class FurnitureApp {
             });
         });
 
+        // --- Jobb oldali Kontextus Fülek váltása ---
+        document.querySelectorAll('.context-tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const tabId = btn.getAttribute('data-context-tab');
+                if (!tabId) return;
+
+                document.querySelectorAll('.context-tab-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.context-tab-pane').forEach(p => p.classList.remove('active'));
+
+                btn.classList.add('active');
+                const targetPane = document.getElementById(tabId);
+                if (targetPane) targetPane.classList.add('active');
+            });
+        });
+
         // --- Új kategória gomb ---
         document.getElementById('btn-add-category-modal').addEventListener('click', () => {
             this.openModal('modal-add-category');
@@ -4615,13 +5325,81 @@ class FurnitureApp {
             });
         }
 
-        document.querySelectorAll('.viewport-view-modes button').forEach(btn => {
-            btn.addEventListener('click', () => {
-                document.querySelectorAll('.viewport-view-modes button').forEach(b => b.classList.remove('active'));
+        // --- Jobb felső Nézet & Megjelenítés Legördülő Menü Események ---
+        const btnViewMenuTrigger = document.getElementById('btn-view-menu-trigger');
+        const viewMenuDropdown = document.getElementById('view-menu-dropdown');
+        const currentViewLabel = document.getElementById('current-view-mode-label');
+
+        if (btnViewMenuTrigger && viewMenuDropdown) {
+            btnViewMenuTrigger.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const isOpen = viewMenuDropdown.classList.toggle('open');
+                btnViewMenuTrigger.classList.toggle('open', isOpen);
+            });
+
+            // Kattintás kívülre bezárja a legördülő nézetmenüt
+            window.addEventListener('click', (e) => {
+                if (!viewMenuDropdown.contains(e.target) && e.target !== btnViewMenuTrigger) {
+                    viewMenuDropdown.classList.remove('open');
+                    btnViewMenuTrigger.classList.remove('open');
+                }
+            });
+        }
+
+        const viewTitles = {
+            'iso': '👁️ Nézet: 📐 3D Tér',
+            'front': '👁️ Nézet: ⬛ Elöl (Ortho)',
+            'top': '👁️ Nézet: ⬜ Felül (Ortho)',
+            'right': '👁️ Nézet: 🔲 Oldal (Ortho)'
+        };
+
+        document.querySelectorAll('.view-menu-item[data-view]').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                document.querySelectorAll('.view-menu-item[data-view]').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
-                this.scene3D.setCameraView(btn.getAttribute('data-view'));
+
+                const viewKey = btn.getAttribute('data-view');
+                this.scene3D.setCameraView(viewKey);
+
+                if (currentViewLabel && viewTitles[viewKey]) {
+                    currentViewLabel.textContent = viewTitles[viewKey];
+                }
+
+                if (viewMenuDropdown) viewMenuDropdown.classList.remove('open');
+                if (btnViewMenuTrigger) btnViewMenuTrigger.classList.remove('open');
             });
         });
+
+        // Vonalváz kapcsoló
+        const checkWireframe = document.getElementById('check-wireframe-mode');
+        const rowWireframe = document.getElementById('toggle-row-wireframe');
+        if (checkWireframe && rowWireframe) {
+            rowWireframe.addEventListener('click', (e) => {
+                if (e.target !== checkWireframe) {
+                    checkWireframe.checked = !checkWireframe.checked;
+                }
+                const isWireframe = this.scene3D.setWireframeMode(checkWireframe.checked);
+            });
+            checkWireframe.addEventListener('change', () => {
+                this.scene3D.setWireframeMode(checkWireframe.checked);
+            });
+        }
+
+        // Stúdió Raytrace Render kapcsoló
+        const checkStudio = document.getElementById('check-studio-render');
+        const rowStudio = document.getElementById('toggle-row-studio');
+        if (checkStudio && rowStudio) {
+            rowStudio.addEventListener('click', (e) => {
+                if (e.target !== checkStudio) {
+                    checkStudio.checked = !checkStudio.checked;
+                }
+                this.scene3D.setStudioMode(checkStudio.checked);
+            });
+            checkStudio.addEventListener('change', () => {
+                this.scene3D.setStudioMode(checkStudio.checked);
+            });
+        }
 
         // --- Robbantott nézet csúszka ---
         const explodeSlider = document.getElementById('exploded-slider');
@@ -4665,22 +5443,13 @@ class FurnitureApp {
         });
 
         // --- Kijelölt lap tulajdonságainak módosítása (Form) ---
-        const propInputs = ['prop-name', 'prop-width', 'prop-height', 'prop-depth', 'prop-pos-x', 'prop-pos-y', 'prop-pos-z', 'prop-rot-x', 'prop-rot-y', 'prop-rot-z', 'prop-edge-radius', 'prop-edgebanding'];
+        const propInputs = ['prop-name', 'prop-width', 'prop-depth', 'prop-thickness', 'prop-pos-x', 'prop-pos-y', 'prop-pos-z', 'prop-rot-x', 'prop-rot-y', 'prop-rot-z', 'prop-edge-radius', 'prop-edgebanding'];
         propInputs.forEach(id => {
             const el = document.getElementById(id);
             if (el) {
                 el.addEventListener('input', () => this.applyPropertiesFormToBoard());
+                el.addEventListener('change', () => this.applyPropertiesFormToBoard());
             }
-        });
-
-        // Gyors vastagság gombok (18, 19, 28, 38, 3 mm)
-        document.querySelectorAll('.btn-quick-th').forEach(btn => {
-            btn.addEventListener('click', () => {
-                if (!this.selectedBoard) return;
-                const th = Number(btn.getAttribute('data-th'));
-                document.getElementById('prop-height').value = th;
-                this.applyPropertiesFormToBoard();
-            });
         });
 
         // Kijelölt lap duplikálása / törlése
@@ -4757,6 +5526,237 @@ class FurnitureApp {
                     this.updateDimensionsBadge();
                     this.renderHierarchyTree();
                     this.updateSnapTargetDropdown();
+                }
+            });
+        }
+
+        // --- Többes Kijelölés & Csoportosítás Gombok ---
+        const btnGroupSelected = document.getElementById('btn-group-selected');
+        if (btnGroupSelected) {
+            btnGroupSelected.addEventListener('click', () => {
+                const targets = this.scene3D.selectedTargets;
+                if (!targets || targets.length < 1) return;
+
+                const boardIds = [];
+                targets.forEach(t => {
+                    if (t.userData && t.userData.isCustomGroup) {
+                        const children = this.boardManager.boards.filter(b => b.groupId === t.userData.id);
+                        children.forEach(c => {
+                            if (!boardIds.includes(c.id)) boardIds.push(c.id);
+                        });
+                    } else {
+                        const b = this.boardManager.boards.find(x => x.mesh === t);
+                        if (b && !b.corpusId && !boardIds.includes(b.id)) {
+                            boardIds.push(b.id);
+                        }
+                    }
+                });
+
+                if (boardIds.length === 0) {
+                    alert('Nincs érvényes egyedi bútorlap kijelölve a csoportosításhoz.');
+                    return;
+                }
+
+                const group = this.boardManager.createGroup(boardIds);
+                if (group) {
+                    this.scene3D.selectBoard(group);
+                    this.updateDimensionsBadge();
+                    this.renderHierarchyTree();
+                    this.updateSnapTargetDropdown();
+                }
+            });
+        }
+
+        const btnDupMulti = document.getElementById('btn-duplicate-multi');
+        if (btnDupMulti) {
+            btnDupMulti.addEventListener('click', () => {
+                const targets = [...this.scene3D.selectedTargets];
+                const newTargets = [];
+                targets.forEach(t => {
+                    if (t.userData && t.userData.isCustomGroup) {
+                        const dupG = this.boardManager.duplicateGroup(t.userData.id);
+                        if (dupG) newTargets.push(dupG);
+                    } else if (t.userData && t.userData.isCorpus) {
+                        const dupC = this.boardManager.duplicateCorpus(t.userData.id);
+                        if (dupC) newTargets.push(dupC);
+                    } else {
+                        const b = this.boardManager.boards.find(x => x.mesh === t);
+                        if (b) {
+                            const dupB = this.boardManager.duplicateBoard(b.id);
+                            if (dupB) newTargets.push(dupB.mesh);
+                        }
+                    }
+                });
+                if (newTargets.length > 0) {
+                    this.scene3D.setMultiSelection(newTargets);
+                }
+                this.updateDimensionsBadge();
+                this.renderHierarchyTree();
+                this.updateSnapTargetDropdown();
+            });
+        }
+
+        const btnDelMulti = document.getElementById('btn-delete-multi');
+        if (btnDelMulti) {
+            btnDelMulti.addEventListener('click', () => {
+                const targets = [...this.scene3D.selectedTargets];
+                targets.forEach(t => {
+                    if (t.userData && t.userData.isCustomGroup) {
+                        this.boardManager.deleteGroup(t.userData.id);
+                    } else if (t.userData && t.userData.isCorpus) {
+                        this.boardManager.deleteCorpus(t.userData.id);
+                    } else {
+                        const b = this.boardManager.boards.find(x => x.mesh === t);
+                        if (b) {
+                            this.boardManager.deleteBoard(b.id);
+                        }
+                    }
+                });
+                this.scene3D.selectBoard(null);
+                this.updateDimensionsBadge();
+                this.renderHierarchyTree();
+                this.updateSnapTargetDropdown();
+            });
+        }
+
+        // --- Bútor Csoport Műveletek (Ungroup, Duplicate, Delete, Rename) ---
+        const btnUngroup = document.getElementById('btn-ungroup');
+        if (btnUngroup) {
+            btnUngroup.addEventListener('click', () => {
+                if (this.selectedCustomGroup) {
+                    const unpacked = this.boardManager.ungroup(this.selectedCustomGroup.userData.id);
+                    if (unpacked && unpacked.length > 0) {
+                        this.scene3D.setMultiSelection(unpacked);
+                    }
+                    this.updateDimensionsBadge();
+                    this.renderHierarchyTree();
+                    this.updateSnapTargetDropdown();
+                }
+            });
+        }
+
+        const btnDupGroup = document.getElementById('btn-duplicate-group');
+        if (btnDupGroup) {
+            btnDupGroup.addEventListener('click', () => {
+                if (this.selectedCustomGroup) {
+                    this.boardManager.duplicateGroup(this.selectedCustomGroup.userData.id);
+                    this.updateDimensionsBadge();
+                    this.renderHierarchyTree();
+                    this.updateSnapTargetDropdown();
+                }
+            });
+        }
+
+        const btnDelGroup = document.getElementById('btn-delete-group');
+        if (btnDelGroup) {
+            btnDelGroup.addEventListener('click', () => {
+                if (this.selectedCustomGroup) {
+                    this.boardManager.deleteGroup(this.selectedCustomGroup.userData.id);
+                    this.onBoardSelected(null);
+                    this.updateDimensionsBadge();
+                    this.renderHierarchyTree();
+                    this.updateSnapTargetDropdown();
+                }
+            });
+        }
+
+        const propGroupName = document.getElementById('prop-group-name');
+        if (propGroupName) {
+            propGroupName.addEventListener('input', (e) => {
+                if (this.selectedCustomGroup) {
+                    this.boardManager.updateGroup(this.selectedCustomGroup.userData.id, { name: e.target.value });
+                    this.renderHierarchyTree();
+                }
+            });
+        }
+
+        const btnExtractSelected = document.getElementById('btn-extract-selected-board');
+        if (btnExtractSelected) {
+            btnExtractSelected.addEventListener('click', () => {
+                if (this.selectedBoard && this.selectedBoard.groupId) {
+                    this.boardManager.removeBoardFromGroup(this.selectedBoard.id);
+                    this.onBoardSelected(this.selectedBoard.mesh);
+                    this.renderHierarchyTree();
+                    this.updateSnapTargetDropdown();
+                }
+            });
+        }
+
+        const btnCreateGroupFromSingle = document.getElementById('btn-create-group-from-single');
+        if (btnCreateGroupFromSingle) {
+            btnCreateGroupFromSingle.addEventListener('click', () => {
+                if (this.selectedBoard) {
+                    const group = this.boardManager.createGroup([this.selectedBoard.id]);
+                    if (group) {
+                        this.scene3D.selectBoard(group);
+                        this.updateDimensionsBadge();
+                        this.renderHierarchyTree();
+                        this.updateSnapTargetDropdown();
+                        this.switchContextTab('ctx-tab-group');
+                    }
+                }
+            });
+        }
+
+        const btnSelectParentGroup = document.getElementById('btn-select-parent-group');
+        if (btnSelectParentGroup) {
+            btnSelectParentGroup.addEventListener('click', () => {
+                if (this.selectedBoard && this.selectedBoard.groupId) {
+                    const grp = this.boardManager.customGroups.find(g => g.userData.id === this.selectedBoard.groupId);
+                    if (grp) {
+                        this.scene3D.selectBoard(grp);
+                        this.switchContextTab('ctx-tab-group');
+                    }
+                }
+            });
+        }
+
+        const btnExtractSingleBoard = document.getElementById('btn-extract-single-board');
+        if (btnExtractSingleBoard) {
+            btnExtractSingleBoard.addEventListener('click', () => {
+                if (this.selectedBoard && this.selectedBoard.groupId) {
+                    this.boardManager.removeBoardFromGroup(this.selectedBoard.id);
+                    this.onBoardSelected(this.selectedBoard.mesh);
+                    this.renderHierarchyTree();
+                    this.updateSnapTargetDropdown();
+                    this.switchContextTab('ctx-tab-group');
+                }
+            });
+        }
+
+        const btnSelectAllGroupable = document.getElementById('btn-select-all-groupable');
+        if (btnSelectAllGroupable) {
+            btnSelectAllGroupable.addEventListener('click', () => {
+                const checkboxes = document.querySelectorAll('.group-check-item');
+                const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+                checkboxes.forEach(cb => { cb.checked = !allChecked; });
+
+                const checkedIds = Array.from(document.querySelectorAll('.group-check-item:checked')).map(cb => cb.getAttribute('data-id'));
+                const checkedMeshes = this.boardManager.boards.filter(b => checkedIds.includes(b.id)).map(b => b.mesh).filter(Boolean);
+                if (checkedMeshes.length > 1) {
+                    this.scene3D.setMultiSelection(checkedMeshes);
+                } else if (checkedMeshes.length === 1) {
+                    this.scene3D.selectBoard(checkedMeshes[0]);
+                }
+            });
+        }
+
+        const btnCreateGroupFromChecklist = document.getElementById('btn-create-group-from-checklist');
+        if (btnCreateGroupFromChecklist) {
+            btnCreateGroupFromChecklist.addEventListener('click', () => {
+                const checkboxes = document.querySelectorAll('.group-check-item:checked');
+                const checkedIds = Array.from(checkboxes).map(cb => cb.getAttribute('data-id'));
+                if (checkedIds.length === 0) {
+                    alert('Kérlek jelölj be legalább egy bútorlapot a csoportosításhoz!');
+                    return;
+                }
+                const group = this.boardManager.createGroup(checkedIds);
+                if (group) {
+                    this.scene3D.selectBoard(group);
+                    this.updateDimensionsBadge();
+                    this.renderHierarchyTree();
+                    this.updateSnapTargetDropdown();
+                    this.switchContextTab('ctx-tab-group');
                 }
             });
         }
@@ -5138,19 +6138,84 @@ class FurnitureApp {
         }
     }
 
-    onBoardSelected(target) {
+    switchContextTab(tabId) {
+        document.querySelectorAll('.context-tab-btn').forEach(b => {
+            b.classList.toggle('active', b.getAttribute('data-context-tab') === tabId);
+        });
+        document.querySelectorAll('.context-tab-pane').forEach(p => {
+            p.classList.toggle('active', p.id === tabId);
+        });
+    }
+
+    onBoardSelected(target, selectedTargets = []) {
+        const contextTabsBar = document.getElementById('context-tabs-bar');
+        const contextTabContainer = document.getElementById('context-tab-content-container');
+        const btnTabSnap = document.getElementById('btn-tab-snap');
+        const btnTabGroup = document.getElementById('btn-tab-group');
+        const btnTabDims = document.querySelector('.context-tab-btn[data-context-tab="ctx-tab-dims"]');
+
         const corpusPanel = document.getElementById('corpus-properties-panel');
         const boardPanel = document.getElementById('board-properties-panel');
+        const groupPanel = document.getElementById('group-properties-panel');
+        const multiPanel = document.getElementById('multi-selection-panel');
+        const singleBoardGroupPanel = document.getElementById('single-board-group-panel');
+        const singleBoardInGroupView = document.getElementById('single-board-in-group-view');
+        const singleBoardNoGroupView = document.getElementById('single-board-no-group-view');
+        const singleBoardGroupTitle = document.getElementById('single-board-group-title');
+
         const noBoardMsg = document.getElementById('no-board-selected-msg');
         const boardForm = document.getElementById('board-selected-form');
         const snappingPanel = document.getElementById('snapping-panel');
         const texturesPanel = document.getElementById('textures-panel');
 
+        // 1. TÖBBES KIJELÖLÉS ESETE (Multi-select: 2 vagy több elem kijelölve)
+        if (selectedTargets && selectedTargets.length > 1) {
+            this.selectedBoard = null;
+            this.selectedCorpus = null;
+            this.selectedCustomGroup = null;
+
+            if (contextTabsBar) contextTabsBar.style.display = 'flex';
+            if (contextTabContainer) contextTabContainer.style.display = 'flex';
+
+            if (btnTabDims) btnTabDims.style.display = 'none';
+            if (btnTabSnap) btnTabSnap.style.display = 'none';
+            if (btnTabGroup) btnTabGroup.style.display = 'flex';
+
+            if (corpusPanel) corpusPanel.style.display = 'none';
+            if (boardPanel) boardPanel.style.display = 'none';
+            if (groupPanel) groupPanel.style.display = 'none';
+            if (singleBoardGroupPanel) singleBoardGroupPanel.style.display = 'none';
+            if (snappingPanel) snappingPanel.style.display = 'none';
+            if (multiPanel) {
+                multiPanel.style.display = 'block';
+                const countBadge = document.getElementById('multi-selection-count-badge');
+                if (countBadge) countBadge.textContent = `${selectedTargets.length} db`;
+            }
+            if (texturesPanel) texturesPanel.style.display = 'block';
+
+            const activeBtn = document.querySelector('.context-tab-btn.active');
+            if (!activeBtn || activeBtn === btnTabDims || activeBtn === btnTabSnap) {
+                this.switchContextTab('ctx-tab-group');
+            }
+
+            this.highlightHierarchyItem(null);
+            return;
+        }
+
+        // 2. HA NINCS KIJELÖLÉS
         if (!target) {
             this.selectedBoard = null;
             this.selectedCorpus = null;
+            this.selectedCustomGroup = null;
+
+            if (contextTabsBar) contextTabsBar.style.display = 'none';
+            if (contextTabContainer) contextTabContainer.style.display = 'none';
+
             if (corpusPanel) corpusPanel.style.display = 'none';
             if (boardPanel) boardPanel.style.display = 'none';
+            if (groupPanel) groupPanel.style.display = 'none';
+            if (multiPanel) multiPanel.style.display = 'none';
+            if (singleBoardGroupPanel) singleBoardGroupPanel.style.display = 'none';
             if (noBoardMsg) noBoardMsg.style.display = 'none';
             if (boardForm) boardForm.style.display = 'none';
             if (snappingPanel) snappingPanel.style.display = 'none';
@@ -5159,13 +6224,84 @@ class FurnitureApp {
             return;
         }
 
-        // Ha Konyha Korpusz egység (THREE.Group)
+        if (contextTabsBar) contextTabsBar.style.display = 'flex';
+        if (contextTabContainer) contextTabContainer.style.display = 'flex';
+        if (multiPanel) multiPanel.style.display = 'none';
+
+        // 3. HA EGYEDI BÚTOR CSOPORT (THREE.Group isCustomGroup)
+        if (target.userData && target.userData.isCustomGroup) {
+            this.selectedBoard = null;
+            this.selectedCorpus = null;
+            this.selectedCustomGroup = target;
+
+            if (btnTabDims) btnTabDims.style.display = 'none';
+            if (btnTabSnap) btnTabSnap.style.display = 'none';
+            if (btnTabGroup) btnTabGroup.style.display = 'flex';
+
+            if (corpusPanel) corpusPanel.style.display = 'none';
+            if (boardPanel) boardPanel.style.display = 'none';
+            if (singleBoardGroupPanel) singleBoardGroupPanel.style.display = 'none';
+            if (groupPanel) groupPanel.style.display = 'block';
+            if (snappingPanel) snappingPanel.style.display = 'none';
+            if (texturesPanel) texturesPanel.style.display = 'block';
+
+            const nameInput = document.getElementById('prop-group-name');
+            const dimsEl = document.getElementById('group-prop-dims');
+            const countEl = document.getElementById('group-prop-count');
+            const childrenListEl = document.getElementById('group-children-list');
+
+            if (nameInput) nameInput.value = target.userData.name || 'Bútor Csoport';
+            if (dimsEl) dimsEl.textContent = `${target.userData.width || 0} × ${target.userData.height || 0} × ${target.userData.depth || 0} mm`;
+
+            const childBoards = this.boardManager.boards.filter(b => b.groupId === target.userData.id);
+            if (countEl) countEl.textContent = `${childBoards.length} db bútorlap a csoportban`;
+
+            if (childrenListEl) {
+                childrenListEl.innerHTML = '';
+                childBoards.forEach(b => {
+                    const row = document.createElement('div');
+                    row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; background:var(--bg-card); padding:5px 8px; border-radius:var(--radius-sm); border:1px solid var(--border-color); font-size:11px;';
+                    row.innerHTML = `
+                        <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:170px;">
+                            <span style="font-weight:600; color:#fff;">${b.name}</span>
+                            <span style="color:var(--text-muted); font-size:10px;"> (${Math.round(b.width)}×${Math.round(b.height)})</span>
+                        </div>
+                        <button class="btn btn-sm btn-extract-child" data-id="${b.id}" style="padding:1px 6px; font-size:10px; background:#10b981; color:#fff; border:none; cursor:pointer;" title="Lap leválasztása a csoportról">⏏️ Kivétel</button>
+                    `;
+                    row.querySelector('.btn-extract-child').addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        this.boardManager.removeBoardFromGroup(b.id);
+                        this.scene3D.selectBoard(b.mesh);
+                        this.renderHierarchyTree();
+                    });
+                    childrenListEl.appendChild(row);
+                });
+            }
+
+            const activeBtn = document.querySelector('.context-tab-btn.active');
+            if (!activeBtn || activeBtn === btnTabDims || activeBtn === btnTabSnap) {
+                this.switchContextTab('ctx-tab-group');
+            }
+
+            this.highlightHierarchyItem(target.userData.id);
+            this.updateSnapTargetDropdown();
+            return;
+        }
+
+        // 4. HA KONYHA KORPUSZ EGYSÉG (THREE.Group isCorpus)
         if (target.userData && target.userData.isCorpus) {
             this.selectedBoard = null;
             this.selectedCorpus = target;
+            this.selectedCustomGroup = null;
+
+            if (btnTabDims) btnTabDims.style.display = 'flex';
+            if (btnTabSnap) btnTabSnap.style.display = 'none';
+            if (btnTabGroup) btnTabGroup.style.display = 'none';
 
             if (corpusPanel) corpusPanel.style.display = 'block';
             if (boardPanel) boardPanel.style.display = 'none';
+            if (groupPanel) groupPanel.style.display = 'none';
+            if (singleBoardGroupPanel) singleBoardGroupPanel.style.display = 'none';
             if (snappingPanel) snappingPanel.style.display = 'none';
             if (texturesPanel) texturesPanel.style.display = 'block';
 
@@ -5174,28 +6310,101 @@ class FurnitureApp {
             if (nameEl) nameEl.textContent = target.userData.name || 'Konyha Korpusz';
             if (dimsEl) dimsEl.textContent = `${target.userData.width} × ${target.userData.height} × ${target.userData.depth} mm`;
 
+            const activeBtn = document.querySelector('.context-tab-btn.active');
+            if (!activeBtn || activeBtn === btnTabSnap || activeBtn === btnTabGroup) {
+                this.switchContextTab('ctx-tab-dims');
+            }
+
             this.highlightHierarchyItem(target.userData.id);
             this.updateSnapTargetDropdown();
             return;
         }
 
-        // Ha egyedi bútorlap (THREE.Mesh)
+        // 5. HA EGYEDI BÚTORLAP (THREE.Mesh)
         const board = this.boardManager.boards.find(b => b.mesh === target);
         if (board) {
             this.selectedBoard = board;
             this.selectedCorpus = null;
+            this.selectedCustomGroup = null;
+
+            if (btnTabDims) btnTabDims.style.display = 'flex';
+            if (btnTabSnap) btnTabSnap.style.display = 'flex';
+            if (btnTabGroup) btnTabGroup.style.display = 'flex';
 
             if (corpusPanel) corpusPanel.style.display = 'none';
             if (boardPanel) boardPanel.style.display = 'block';
+            if (groupPanel) groupPanel.style.display = 'none';
             if (noBoardMsg) noBoardMsg.style.display = 'none';
             if (boardForm) boardForm.style.display = 'block';
             if (snappingPanel) snappingPanel.style.display = 'block';
             if (texturesPanel) texturesPanel.style.display = 'block';
 
+            // Csoport tagság és Csoport fül nézet beállítása
+            if (singleBoardGroupPanel) singleBoardGroupPanel.style.display = 'block';
+            const groupNotice = document.getElementById('board-in-group-notice');
+            const groupNameLabel = document.getElementById('board-group-name-label');
+
+            if (board.groupId) {
+                const grp = this.boardManager.customGroups.find(g => g.userData.id === board.groupId);
+                const gName = grp ? grp.userData.name : 'Csoport';
+                if (groupNotice) groupNotice.style.display = 'flex';
+                if (groupNameLabel) groupNameLabel.textContent = gName;
+                if (singleBoardInGroupView) singleBoardInGroupView.style.display = 'block';
+                if (singleBoardNoGroupView) singleBoardNoGroupView.style.display = 'none';
+                if (singleBoardGroupTitle) singleBoardGroupTitle.textContent = gName;
+            } else {
+                if (groupNotice) groupNotice.style.display = 'none';
+                if (singleBoardInGroupView) singleBoardInGroupView.style.display = 'none';
+                if (singleBoardNoGroupView) singleBoardNoGroupView.style.display = 'block';
+                this.renderGroupBoardChecklist();
+            }
+
             this.updatePropertiesForm(board);
             this.highlightHierarchyItem(board.id);
             this.updateSnapTargetDropdown();
         }
+    }
+
+    renderGroupBoardChecklist() {
+        const checklist = document.getElementById('group-board-checklist');
+        if (!checklist) return;
+        checklist.innerHTML = '';
+
+        const standaloneBoards = this.boardManager.boards.filter(b => !b.corpusId && !b.groupId);
+        if (standaloneBoards.length === 0) {
+            checklist.innerHTML = '<div style="font-size:11px; color:var(--text-muted); padding:4px;">Nincs elérhető önálló bútorlap.</div>';
+            return;
+        }
+
+        standaloneBoards.forEach(b => {
+            const isCurrentlySelected = (this.selectedBoard && this.selectedBoard.id === b.id) ||
+                (this.scene3D.selectedTargets && this.scene3D.selectedTargets.some(t => t === b.mesh || (t.userData && t.userData.id === b.id)));
+
+            const row = document.createElement('label');
+            row.style.cssText = 'display:flex; align-items:center; gap:8px; padding:4px 6px; background:var(--bg-panel); border-radius:4px; font-size:11px; cursor:pointer; user-select:none;';
+
+            row.innerHTML = `
+                <input type="checkbox" class="group-check-item" data-id="${b.id}" ${isCurrentlySelected ? 'checked' : ''} style="cursor:pointer; accent-color:#f59e0b;">
+                <div style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                    <span style="font-weight:600; color:#fff;">${b.name}</span>
+                    <span style="color:var(--text-muted); font-size:10px;"> (${Math.round(b.width)}×${Math.round(b.height)})</span>
+                </div>
+            `;
+
+            row.querySelector('.group-check-item').addEventListener('change', () => {
+                const checkedBoxes = document.querySelectorAll('.group-check-item:checked');
+                const checkedIds = Array.from(checkedBoxes).map(cb => cb.getAttribute('data-id'));
+                const checkedMeshes = this.boardManager.boards.filter(b => checkedIds.includes(b.id)).map(b => b.mesh).filter(Boolean);
+
+                if (checkedMeshes.length > 1) {
+                    this.scene3D.setMultiSelection(checkedMeshes);
+                } else if (checkedMeshes.length === 1) {
+                    this.scene3D.selectBoard(checkedMeshes[0]);
+                }
+            });
+
+            checklist.appendChild(row);
+        });
     }
 
     onBoardTransformed(target) {
@@ -5311,8 +6520,18 @@ class FurnitureApp {
         if (!board) return;
         document.getElementById('prop-name').value = board.name;
         document.getElementById('prop-width').value = Math.round(board.width);
-        document.getElementById('prop-height').value = Math.round(board.height);
         document.getElementById('prop-depth').value = Math.round(board.depth);
+
+        const thSelect = document.getElementById('prop-thickness');
+        if (thSelect) {
+            const thVal = String(board.thickness || (board.height > 0 && board.height < 50 ? board.height : 18));
+            if (thSelect.querySelector(`option[value="${thVal}"]`)) {
+                thSelect.value = thVal;
+            } else {
+                thSelect.value = '18';
+            }
+        }
+
         document.getElementById('prop-pos-x').value = Math.round(board.mesh.position.x);
         document.getElementById('prop-pos-y').value = Math.round(board.mesh.position.y);
         document.getElementById('prop-pos-z').value = Math.round(board.mesh.position.z);
@@ -5326,11 +6545,18 @@ class FurnitureApp {
     applyPropertiesFormToBoard() {
         if (!this.selectedBoard) return;
 
+        const th = Number(document.getElementById('prop-thickness').value) || 18;
+        const isBack = (th === 3);
+        const isWorktop = (th === 28 || th === 38);
+
         const updatedParams = {
             name: document.getElementById('prop-name').value,
-            width: Number(document.getElementById('prop-width').value),
-            height: Number(document.getElementById('prop-height').value),
-            depth: Number(document.getElementById('prop-depth').value),
+            width: Math.max(1, Number(document.getElementById('prop-width').value)),
+            depth: Math.max(1, Number(document.getElementById('prop-depth').value)),
+            thickness: th,
+            height: th,
+            type: isBack ? 'back' : (isWorktop ? 'worktop' : (this.selectedBoard.type || 'horizontal')),
+            isWorktop: isWorktop,
             edgeRadius: Number(document.getElementById('prop-edge-radius').value),
             x: Number(document.getElementById('prop-pos-x').value),
             y: Number(document.getElementById('prop-pos-y').value),
@@ -5408,7 +6634,18 @@ class FurnitureApp {
         if (this.applyTextureTarget === 'all') {
             this.boardManager.applyTextureToAll(textureKey);
         } else {
-            if (this.selectedBoard) {
+            if (this.selectedCustomGroup) {
+                this.boardManager.updateGroup(this.selectedCustomGroup.userData.id, { textureKey: textureKey });
+            } else if (this.scene3D.selectedTargets && this.scene3D.selectedTargets.length > 1) {
+                this.scene3D.selectedTargets.forEach(t => {
+                    if (t.userData && t.userData.isCustomGroup) {
+                        this.boardManager.updateGroup(t.userData.id, { textureKey: textureKey });
+                    } else {
+                        const b = this.boardManager.boards.find(x => x.mesh === t);
+                        if (b) this.boardManager.updateBoard(b.id, { textureKey: textureKey });
+                    }
+                });
+            } else if (this.selectedBoard) {
                 this.boardManager.updateBoard(this.selectedBoard.id, { textureKey: textureKey });
             } else {
                 this.boardManager.activeTextureKey = textureKey;
@@ -5619,14 +6856,103 @@ class FurnitureApp {
             container.appendChild(item);
         });
 
-        // 2. Önálló bútorlapok
-        const standaloneBoards = this.boardManager.boards.filter(b => !b.corpusId);
+        // 2. Egyedi Bútor Csoportok
+        this.boardManager.customGroups.forEach((g) => {
+            const isGroupActive = (this.selectedCustomGroup && this.selectedCustomGroup.userData.id === g.userData.id);
+            const childBoards = this.boardManager.boards.filter(b => b.groupId === g.userData.id);
+
+            const groupContainer = document.createElement('div');
+            groupContainer.style.cssText = 'background:rgba(16,185,129,0.06); border:1px solid rgba(16,185,129,0.25); border-radius:var(--radius-sm); margin-bottom:8px; overflow:hidden;';
+
+            const groupHeader = document.createElement('div');
+            groupHeader.className = `hierarchy-item ${isGroupActive ? 'active' : ''}`;
+            groupHeader.style.cssText = 'border:none; border-bottom:1px solid rgba(16,185,129,0.2); background:transparent; margin:0;';
+
+            groupHeader.innerHTML = `
+                <div>
+                    <div class="hierarchy-title" style="color:#10b981; font-weight:700;">📦 ${g.userData.name}</div>
+                    <div class="hierarchy-sub" style="color:#6ee7b7;">${g.userData.width || 0} × ${g.userData.height || 0} × ${g.userData.depth || 0} mm (${childBoards.length} lap)</div>
+                </div>
+                <div style="display:flex; gap:4px;">
+                    <button class="btn btn-sm btn-icon btn-group-ungroup" title="Csoport Szétbontása" style="color:#10b981;">🔓</button>
+                    <button class="btn btn-sm btn-icon btn-group-delete" title="Csoport Törlése" style="color:#ef4444;">✕</button>
+                </div>
+            `;
+
+            groupHeader.addEventListener('click', (e) => {
+                if (e.target.closest('.btn-group-ungroup')) {
+                    this.boardManager.ungroup(g.userData.id);
+                    this.updateDimensionsBadge();
+                    this.renderHierarchyTree();
+                    this.updateSnapTargetDropdown();
+                    return;
+                }
+                if (e.target.closest('.btn-group-delete')) {
+                    this.boardManager.deleteGroup(g.userData.id);
+                    this.onBoardSelected(null);
+                    this.updateDimensionsBadge();
+                    this.renderHierarchyTree();
+                    this.updateSnapTargetDropdown();
+                    return;
+                }
+                if (e.shiftKey || e.ctrlKey || e.metaKey) {
+                    this.scene3D.toggleMultiSelectTarget(g);
+                } else {
+                    this.scene3D.selectBoard(g);
+                }
+            });
+
+            groupContainer.appendChild(groupHeader);
+
+            // Belső lapok listája
+            const childrenWrapper = document.createElement('div');
+            childrenWrapper.style.cssText = 'padding:4px 6px 6px 14px; display:flex; flex-direction:column; gap:4px;';
+
+            childBoards.forEach(b => {
+                const isChildActive = (this.selectedBoard && this.selectedBoard.id === b.id);
+                const childItem = document.createElement('div');
+                childItem.className = `hierarchy-item ${isChildActive ? 'active' : ''}`;
+                childItem.style.cssText = 'padding:4px 8px; margin:0; background:var(--bg-card); font-size:11px;';
+
+                childItem.innerHTML = `
+                    <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1;">
+                        <span style="font-weight:600; color:#fff;">📄 ${b.name}</span>
+                        <span style="color:var(--text-muted); font-size:10px;"> (${Math.round(b.width)}×${Math.round(b.height)})</span>
+                    </div>
+                    <div style="display:flex; gap:4px;">
+                        <button class="btn btn-sm btn-child-extract" title="Lap leválasztása a csoportról" style="padding:1px 5px; font-size:10px; background:#10b981; color:#fff; border:none; cursor:pointer;">⏏️</button>
+                    </div>
+                `;
+
+                childItem.addEventListener('click', (e) => {
+                    if (e.target.closest('.btn-child-extract')) {
+                        this.boardManager.removeBoardFromGroup(b.id);
+                        this.scene3D.selectBoard(b.mesh);
+                        this.renderHierarchyTree();
+                        this.updateSnapTargetDropdown();
+                        return;
+                    }
+                    if (e.shiftKey || e.ctrlKey || e.metaKey) {
+                        this.scene3D.toggleMultiSelectTarget(b.mesh);
+                    } else {
+                        this.scene3D.selectBoard(b.mesh);
+                    }
+                });
+
+                childrenWrapper.appendChild(childItem);
+            });
+
+            groupContainer.appendChild(childrenWrapper);
+            container.appendChild(groupContainer);
+        });
+
+        // 3. Önálló (nem csoportosított) bútorlapok
+        const standaloneBoards = this.boardManager.boards.filter(b => !b.corpusId && !b.groupId);
         standaloneBoards.forEach((b, index) => {
+            const isCurrentlySelected = (this.selectedBoard && this.selectedBoard.id === b.id) ||
+                (this.scene3D.selectedTargets && this.scene3D.selectedTargets.some(t => t === b.mesh || (t.userData && t.userData.id === b.id)));
             const item = document.createElement('div');
-            item.className = 'hierarchy-item';
-            if (this.selectedBoard && this.selectedBoard.id === b.id) {
-                item.classList.add('active');
-            }
+            item.className = `hierarchy-item ${isCurrentlySelected ? 'active' : ''}`;
 
             item.innerHTML = `
                 <div>
@@ -5647,7 +6973,11 @@ class FurnitureApp {
                     this.updateSnapTargetDropdown();
                     return;
                 }
-                this.scene3D.selectBoard(b.mesh);
+                if (e.shiftKey || e.ctrlKey || e.metaKey) {
+                    this.scene3D.toggleMultiSelectTarget(b.mesh);
+                } else {
+                    this.scene3D.selectBoard(b.mesh);
+                }
             });
 
             container.appendChild(item);
@@ -5681,8 +7011,8 @@ class FurnitureApp {
             return;
         }
 
-        // Kijelölt elem vagy korpusz meghatározása
-        let target = this.selectedCorpus || (this.selectedBoard ? this.selectedBoard.mesh : null);
+        // Kijelölt elem vagy korpusz vagy csoport meghatározása
+        let target = this.selectedCustomGroup || this.selectedCorpus || (this.selectedBoard ? this.selectedBoard.mesh : null);
         if (!target && this.scene3D.selectedTarget) {
             target = this.scene3D.selectedTarget;
         }
@@ -5700,17 +7030,21 @@ class FurnitureApp {
             if (this.boardManager.corpora.length === 1 && this.boardManager.boards.filter(b => !b.corpusId).length === 0) {
                 target = this.boardManager.corpora[0];
                 this.scene3D.selectBoard(target);
-            } else if (this.boardManager.corpora.length === 0 && this.boardManager.boards.length === 1) {
+            } else if (this.boardManager.customGroups.length === 1 && this.boardManager.boards.filter(b => !b.groupId).length === 0) {
+                target = this.boardManager.customGroups[0];
+                this.scene3D.selectBoard(target);
+            } else if (this.boardManager.corpora.length === 0 && this.boardManager.customGroups.length === 0 && this.boardManager.boards.length === 1) {
                 target = this.boardManager.boards[0].mesh;
                 this.scene3D.selectBoard(target);
             } else {
-                alert('Kérlek kattints rá a 3D térben arra a korpuszra vagy bútorlapra, amelyet el szeretnél menteni a katalógusba!');
+                alert('Kérlek kattints rá a 3D térben arra a csoportra, korpuszra vagy bútorlapra, amelyet el szeretnél menteni a katalógusba!');
                 return;
             }
         }
 
         const isCorpus = target.userData && target.userData.isCorpus;
-        const targetId = target.userData.id;
+        const isCustomGroup = target.userData && target.userData.isCustomGroup;
+        const targetId = target.userData ? target.userData.id : null;
         let defaultName = '';
         let targetInfoText = '';
         let defaultCat = 'cat_kitchen';
@@ -5720,6 +7054,11 @@ class FurnitureApp {
             defaultName = target.userData.name || 'Konyha Korpusz';
             targetInfoText = `🍳 Kijelölt korpusz: ${target.userData.name} (${target.userData.width}×${target.userData.height}×${target.userData.depth} mm)`;
             defaultCat = 'cat_kitchen';
+        } else if (isCustomGroup) {
+            this.savingTarget = { type: 'group', id: targetId, target: target, name: target.userData.name };
+            defaultName = target.userData.name || 'Bútor Csoport';
+            targetInfoText = `📦 Kijelölt csoport: ${target.userData.name} (${target.userData.width}×${target.userData.height}×${target.userData.depth} mm)`;
+            defaultCat = 'cat_living';
         } else {
             const board = this.boardManager.boards.find(b => b.id === targetId || b.mesh === target);
             const bId = board ? board.id : targetId;

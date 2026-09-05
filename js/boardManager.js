@@ -212,8 +212,10 @@ export class BoardManager {
         this.scene3D = scene3D;
         this.boards = [];   // Egyedi és korpusz alkatrészlapok listája (CutListhez és méretezéshez)
         this.corpora = [];  // Konyha Korpusz egységek listája (THREE.Group)
+        this.customGroups = []; // Egyedi bútorlap csoportok listája (THREE.Group)
         this.boardCounter = 1;
         this.corpusCounter = 1;
+        this.groupCounter = 1;
         this.activeTextureKey = 'oak_natural';
     }
 
@@ -455,6 +457,229 @@ export class BoardManager {
         this.scene3D.selectBoard(newCorpus);
         this.updateKitchenContinuity();
         return newCorpus;
+    }
+
+    /**
+     * EGYEDI BÚTORLAPOK CSOPORTOSÍTÁSA (Create Group)
+     */
+    createGroup(boardIds, groupName) {
+        if (!boardIds || boardIds.length < 1) return null;
+
+        const targetBoards = this.boards.filter(b => boardIds.includes(b.id) && !b.corpusId);
+        if (targetBoards.length === 0) return null;
+
+        // Számoljuk ki a csoport befoglaló méretét és középpontját
+        const box = new THREE.Box3();
+        targetBoards.forEach(b => {
+            if (b.mesh) {
+                b.mesh.updateWorldMatrix(true, false);
+                box.expandByObject(b.mesh);
+            }
+        });
+
+        const center = new THREE.Vector3();
+        box.getCenter(center);
+        const size = new THREE.Vector3();
+        box.getSize(size);
+
+        const groupId = 'group_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
+        const name = groupName || `Csoport ${this.groupCounter++} (${targetBoards.length} lap)`;
+
+        const group = new THREE.Group();
+        group.position.copy(center);
+        group.userData = {
+            id: groupId,
+            name: name,
+            isCustomGroup: true,
+            isCorpus: false,
+            width: Math.round(size.x),
+            height: Math.round(size.y),
+            depth: Math.round(size.z),
+            x: Math.round(center.x),
+            y: Math.round(center.y),
+            z: Math.round(center.z)
+        };
+
+        this.scene3D.scene.add(group);
+
+        targetBoards.forEach(b => {
+            if (b.parentGroup && b.parentGroup !== group) {
+                b.parentGroup.remove(b.mesh);
+            }
+            group.attach(b.mesh);
+            b.groupId = groupId;
+            b.parentGroup = group;
+        });
+
+        this.customGroups.push(group);
+        this.scene3D.updateDimensionVisualizer();
+        return group;
+    }
+
+    /**
+     * CSOPORT SZÉTBONTÁSA (Ungroup)
+     */
+    ungroup(groupId) {
+        const groupIdx = this.customGroups.findIndex(g => g.userData.id === groupId);
+        if (groupIdx === -1) return [];
+
+        const group = this.customGroups[groupIdx];
+        const childBoards = this.boards.filter(b => b.groupId === groupId);
+
+        const unpackedMeshes = [];
+        childBoards.forEach(b => {
+            if (b.mesh) {
+                this.scene3D.scene.attach(b.mesh);
+                b.groupId = null;
+                b.parentGroup = null;
+                b.x = Math.round(b.mesh.position.x);
+                b.y = Math.round(b.mesh.position.y);
+                b.z = Math.round(b.mesh.position.z);
+                b.rotX = Math.round(THREE.MathUtils.radToDeg(b.mesh.rotation.x));
+                b.rotY = Math.round(THREE.MathUtils.radToDeg(b.mesh.rotation.y));
+                b.rotZ = Math.round(THREE.MathUtils.radToDeg(b.mesh.rotation.z));
+                unpackedMeshes.push(b.mesh);
+            }
+        });
+
+        if (this.scene3D.selectedTarget === group) {
+            this.scene3D.selectBoard(null);
+        }
+
+        this.scene3D.scene.remove(group);
+        this.customGroups.splice(groupIdx, 1);
+        this.scene3D.updateDimensionVisualizer();
+        return unpackedMeshes;
+    }
+
+    /**
+     * LAP KIVÉTELE A CSOPORTBÓL (Extract Single Board)
+     */
+    removeBoardFromGroup(boardId) {
+        const board = this.boards.find(b => b.id === boardId);
+        if (!board || !board.groupId) return null;
+
+        const groupId = board.groupId;
+        const group = this.customGroups.find(g => g.userData.id === groupId);
+
+        if (board.mesh) {
+            this.scene3D.scene.attach(board.mesh);
+            board.groupId = null;
+            board.parentGroup = null;
+            board.x = Math.round(board.mesh.position.x);
+            board.y = Math.round(board.mesh.position.y);
+            board.z = Math.round(board.mesh.position.z);
+            board.rotX = Math.round(THREE.MathUtils.radToDeg(board.mesh.rotation.x));
+            board.rotY = Math.round(THREE.MathUtils.radToDeg(board.mesh.rotation.y));
+            board.rotZ = Math.round(THREE.MathUtils.radToDeg(board.mesh.rotation.z));
+        }
+
+        const remaining = this.boards.filter(b => b.groupId === groupId);
+        if (remaining.length === 0 && group) {
+            const gIdx = this.customGroups.indexOf(group);
+            if (gIdx > -1) this.customGroups.splice(gIdx, 1);
+            this.scene3D.scene.remove(group);
+        } else if (group) {
+            const box = new THREE.Box3();
+            remaining.forEach(b => { if (b.mesh) box.expandByObject(b.mesh); });
+            const size = new THREE.Vector3();
+            box.getSize(size);
+            group.userData.width = Math.round(size.x);
+            group.userData.height = Math.round(size.y);
+            group.userData.depth = Math.round(size.z);
+        }
+
+        this.scene3D.updateDimensionVisualizer();
+        return board;
+    }
+
+    /**
+     * CSOPORT DUPLIKÁLÁSA
+     */
+    duplicateGroup(groupId) {
+        const sourceGroup = this.customGroups.find(g => g.userData.id === groupId);
+        if (!sourceGroup) return null;
+
+        const childBoards = this.boards.filter(b => b.groupId === groupId);
+        const offsetX = 50;
+        const offsetZ = 50;
+
+        const newBoardIds = [];
+        childBoards.forEach(b => {
+            const worldPos = new THREE.Vector3();
+            const worldQuat = new THREE.Quaternion();
+            b.mesh.getWorldPosition(worldPos);
+            b.mesh.getWorldQuaternion(worldQuat);
+            const euler = new THREE.Euler().setFromQuaternion(worldQuat);
+
+            const cloneData = {
+                name: `${b.name} (másolat)`,
+                width: b.width,
+                height: b.height,
+                depth: b.depth,
+                thickness: b.thickness,
+                edgeRadius: b.edgeRadius !== undefined ? b.edgeRadius : 1,
+                type: b.type,
+                textureKey: b.textureKey,
+                edgeBanding: b.edgeBanding,
+                x: worldPos.x + offsetX,
+                y: worldPos.y,
+                z: worldPos.z + offsetZ,
+                rotX: Math.round(THREE.MathUtils.radToDeg(euler.x)),
+                rotY: Math.round(THREE.MathUtils.radToDeg(euler.y)),
+                rotZ: Math.round(THREE.MathUtils.radToDeg(euler.z))
+            };
+
+            const created = this.createBoard(cloneData);
+            newBoardIds.push(created.id);
+        });
+
+        const newGroup = this.createGroup(newBoardIds, `${sourceGroup.userData.name} (másolat)`);
+        if (newGroup) {
+            this.scene3D.selectBoard(newGroup);
+        }
+        return newGroup;
+    }
+
+    /**
+     * CSOPORT ÉS ELEMEINEK TÖRLÉSE
+     */
+    deleteGroup(groupId) {
+        const groupIdx = this.customGroups.findIndex(g => g.userData.id === groupId);
+        if (groupIdx === -1) return;
+
+        const group = this.customGroups[groupIdx];
+        if (this.scene3D.selectedTarget === group) {
+            this.scene3D.selectBoard(null);
+        }
+
+        const childBoards = [...this.boards.filter(b => b.groupId === groupId)];
+        childBoards.forEach(b => {
+            this.deleteBoard(b.id);
+        });
+
+        this.scene3D.scene.remove(group);
+        this.customGroups.splice(groupIdx, 1);
+        this.scene3D.updateDimensionVisualizer();
+    }
+
+    /**
+     * CSOPORT ADATAINAK FRISSÍTÉSE
+     */
+    updateGroup(groupId, newParams) {
+        const group = this.customGroups.find(g => g.userData.id === groupId);
+        if (!group) return null;
+        if (newParams.name) {
+            group.userData.name = newParams.name;
+        }
+        if (newParams.textureKey) {
+            const childBoards = this.boards.filter(b => b.groupId === groupId);
+            childBoards.forEach(b => {
+                b.textureKey = newParams.textureKey;
+                MaterialManager.applyTextureToMesh(b.mesh, newParams.textureKey);
+            });
+        }
+        return group;
     }
 
     /**
@@ -715,6 +940,19 @@ export class BoardManager {
             board.depth = Math.max(1, Number(newParams.depth));
             geoNeedsUpdate = true;
         }
+        if (newParams.thickness !== undefined && newParams.thickness !== board.thickness) {
+            board.thickness = Math.max(1, Number(newParams.thickness));
+            board.height = board.thickness;
+            geoNeedsUpdate = true;
+        }
+        if (newParams.type !== undefined && newParams.type !== board.type) {
+            board.type = newParams.type;
+            geoNeedsUpdate = true;
+        }
+        if (newParams.isWorktop !== undefined && newParams.isWorktop !== board.isWorktop) {
+            board.isWorktop = newParams.isWorktop;
+            geoNeedsUpdate = true;
+        }
         if (newParams.edgeRadius !== undefined && newParams.edgeRadius !== board.edgeRadius) {
             board.edgeRadius = Math.max(0, Number(newParams.edgeRadius));
             geoNeedsUpdate = true;
@@ -808,10 +1046,25 @@ export class BoardManager {
 
         const board = this.boards[index];
 
-        // Ha korpusz tagja, az egész korpuszt töröljük
+        // Ha konyha korpusz tagja, az egész korpuszt töröljük
         if (board.corpusId) {
             this.deleteCorpus(board.corpusId);
             return;
+        }
+
+        // Ha egyedi csoport tagja, vegyük ki a csoportból
+        if (board.groupId) {
+            const groupId = board.groupId;
+            const group = this.customGroups.find(g => g.userData.id === groupId);
+            if (group) {
+                group.remove(board.mesh);
+                const remaining = this.boards.filter(b => b.groupId === groupId && b.id !== id);
+                if (remaining.length === 0) {
+                    const gIdx = this.customGroups.indexOf(group);
+                    if (gIdx > -1) this.customGroups.splice(gIdx, 1);
+                    this.scene3D.scene.remove(group);
+                }
+            }
         }
 
         if (this.scene3D.selectedTarget === board.mesh) {
@@ -896,11 +1149,15 @@ export class BoardManager {
         while (this.corpora.length > 0) {
             this.deleteCorpus(this.corpora[0].userData.id);
         }
+        while (this.customGroups.length > 0) {
+            this.deleteGroup(this.customGroups[0].userData.id);
+        }
         while (this.boards.length > 0) {
             this.deleteBoard(this.boards[0].id);
         }
         this.boardCounter = 1;
         this.corpusCounter = 1;
+        this.groupCounter = 1;
     }
 
     getCorpusJSON(corpusId) {
@@ -916,6 +1173,41 @@ export class BoardManager {
                 z: 0
             }],
             boards: []
+        };
+    }
+
+    getGroupJSON(groupId) {
+        const group = this.customGroups.find(item => item.userData.id === groupId);
+        if (!group) return null;
+        const childBoards = this.boards.filter(b => b.groupId === groupId);
+        return {
+            corpora: [],
+            customGroups: [{
+                id: group.userData.id,
+                name: group.userData.name,
+                x: 0,
+                y: 0,
+                z: 0
+            }],
+            boards: childBoards.map(b => ({
+                id: b.id,
+                groupId: group.userData.id,
+                name: b.name,
+                width: b.width,
+                height: b.height,
+                depth: b.depth,
+                thickness: b.thickness,
+                edgeRadius: b.edgeRadius !== undefined ? b.edgeRadius : 1,
+                type: b.type,
+                textureKey: b.textureKey,
+                edgeBanding: b.edgeBanding,
+                x: b.mesh.position.x,
+                y: b.mesh.position.y,
+                z: b.mesh.position.z,
+                rotX: Math.round(THREE.MathUtils.radToDeg(b.mesh.rotation.x)),
+                rotY: Math.round(THREE.MathUtils.radToDeg(b.mesh.rotation.y)),
+                rotZ: Math.round(THREE.MathUtils.radToDeg(b.mesh.rotation.z))
+            }))
         };
     }
 
@@ -954,23 +1246,41 @@ export class BoardManager {
                 y: c.position.y,
                 z: c.position.z
             })),
-            boards: this.boards.filter(b => !b.corpusId).map(b => ({
-                name: b.name,
-                width: b.width,
-                height: b.height,
-                depth: b.depth,
-                thickness: b.thickness,
-                edgeRadius: b.edgeRadius !== undefined ? b.edgeRadius : 1,
-                type: b.type,
-                textureKey: b.textureKey,
-                edgeBanding: b.edgeBanding,
-                x: b.x,
-                y: b.y,
-                z: b.z,
-                rotX: b.rotX,
-                rotY: b.rotY,
-                rotZ: b.rotZ
-            }))
+            customGroups: this.customGroups.map(g => ({
+                id: g.userData.id,
+                name: g.userData.name,
+                x: g.position.x,
+                y: g.position.y,
+                z: g.position.z
+            })),
+            boards: this.boards.filter(b => !b.corpusId).map(b => {
+                const worldPos = new THREE.Vector3();
+                const worldQuat = new THREE.Quaternion();
+                if (b.mesh) {
+                    b.mesh.getWorldPosition(worldPos);
+                    b.mesh.getWorldQuaternion(worldQuat);
+                }
+                const euler = new THREE.Euler().setFromQuaternion(worldQuat);
+                return {
+                    id: b.id,
+                    groupId: b.groupId || null,
+                    name: b.name,
+                    width: b.width,
+                    height: b.height,
+                    depth: b.depth,
+                    thickness: b.thickness,
+                    edgeRadius: b.edgeRadius !== undefined ? b.edgeRadius : 1,
+                    type: b.type,
+                    textureKey: b.textureKey,
+                    edgeBanding: b.edgeBanding,
+                    x: b.mesh ? worldPos.x : b.x,
+                    y: b.mesh ? worldPos.y : b.y,
+                    z: b.mesh ? worldPos.z : b.z,
+                    rotX: b.mesh ? Math.round(THREE.MathUtils.radToDeg(euler.x)) : b.rotX,
+                    rotY: b.mesh ? Math.round(THREE.MathUtils.radToDeg(euler.y)) : b.rotY,
+                    rotZ: b.mesh ? Math.round(THREE.MathUtils.radToDeg(euler.z)) : b.rotZ
+                };
+            })
         };
     }
 
@@ -990,16 +1300,45 @@ export class BoardManager {
             return;
         }
 
-        // Új formátum: corpora + boards
+        // Új formátum: corpora + boards + customGroups
         if (data.corpora && Array.isArray(data.corpora)) {
             data.corpora.forEach(c => {
                 this.createCorpus(c.config, c.x || 0, c.y || 0, c.z || 0);
             });
         }
 
+        const createdBoardsMap = {};
         if (data.boards && Array.isArray(data.boards)) {
             data.boards.forEach(b => {
-                this.createBoard(b);
+                const created = this.createBoard(b);
+                if (b.id) createdBoardsMap[b.id] = created;
+                if (b.groupId) created.groupId = b.groupId;
+            });
+        }
+
+        // Csoportok újjáépítése
+        if (data.customGroups && Array.isArray(data.customGroups)) {
+            data.customGroups.forEach(g => {
+                const groupBoards = this.boards.filter(b => b.groupId === g.id);
+                if (groupBoards.length > 0) {
+                    const group = new THREE.Group();
+                    group.position.set(g.x || 0, g.y || 0, g.z || 0);
+                    group.userData = {
+                        id: g.id,
+                        name: g.name || 'Bútor Csoport',
+                        isCustomGroup: true,
+                        isCorpus: false,
+                        x: g.x || 0,
+                        y: g.y || 0,
+                        z: g.z || 0
+                    };
+                    this.scene3D.scene.add(group);
+                    groupBoards.forEach(b => {
+                        group.attach(b.mesh);
+                        b.parentGroup = group;
+                    });
+                    this.customGroups.push(group);
+                }
             });
         }
 

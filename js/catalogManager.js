@@ -147,6 +147,18 @@ export class CatalogManager {
                 };
                 boardCount = corpus.children.length;
             }
+        } else if (savingTarget.type === 'group') {
+            boardsData = this.boardManager.getGroupJSON(savingTarget.id);
+            const grp = this.boardManager.customGroups.find(g => g.userData.id === savingTarget.id);
+            const childBoards = this.boardManager.boards.filter(b => b.groupId === savingTarget.id);
+            if (grp) {
+                dimensions = {
+                    w: grp.userData.width || 600,
+                    h: grp.userData.height || 800,
+                    d: grp.userData.depth || 400
+                };
+                boardCount = childBoards.length;
+            }
         } else {
             boardsData = this.boardManager.getSingleBoardJSON(savingTarget.id);
             const board = this.boardManager.boards.find(b => b.id === savingTarget.id);

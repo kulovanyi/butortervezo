@@ -13,6 +13,15 @@ export class Scene3D {
 
         this.scene = null;
         this.camera = null;
+        this.perspCamera = null;
+        this.orthoCamera = null;
+        this.currentViewMode = 'iso';
+        this.isWireframeMode = false;
+        this.isStudioMode = false;
+        this.studioEnvMap = null;
+        this.defaultEnvMap = null;
+        this.studioLights = [];
+        this.defaultLights = [];
         this.renderer = null;
         this.controls = null;
         this.transformControls = null;
@@ -35,7 +44,8 @@ export class Scene3D {
 
         this.dimensionGroup = null;
         this.boardMeshes = [];
-        this.selectedTarget = null; // Mesh VAGY Group (Korpusz)
+        this.selectedTarget = null; // Mesh VAGY Group (Korpusz / Bútor Csoport)
+        this.selectedTargets = []; // Többes kijelölés listája
         this.snapDistance = 10; // mm
         this.magneticSnapDistance = 30; // Mágneses vonzás alapértelmezett értéke (mm)
         this.boardManager = null;
@@ -46,14 +56,25 @@ export class Scene3D {
     init() {
         const width = this.container.clientWidth || window.innerWidth;
         const height = this.container.clientHeight || window.innerHeight;
+        const aspect = width / height;
 
         // 1. Jelenet
         this.scene = new THREE.Scene();
         this.scene.background = new THREE.Color('#1e222b');
 
-        // 2. Kamera
-        this.camera = new THREE.PerspectiveCamera(45, width / height, 1, 20000);
-        this.camera.position.set(1200, 900, 1600);
+        // 2. Dual Kamerarendszer: Perspektivikus (3D) + Ortografikus (2D Műszaki rajz torzításmentes)
+        this.perspCamera = new THREE.PerspectiveCamera(45, aspect, 1, 30000);
+        this.perspCamera.position.set(1200, 900, 1600);
+
+        const orthoSize = 1000;
+        this.orthoCamera = new THREE.OrthographicCamera(
+            -orthoSize * aspect, orthoSize * aspect,
+            orthoSize, -orthoSize,
+            -20000, 30000
+        );
+        this.orthoCamera.position.set(0, 400, 2000);
+
+        this.camera = this.perspCamera;
 
         // 3. Renderelő
         this.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
@@ -342,13 +363,17 @@ export class Scene3D {
         this.raycaster.setFromCamera(this.mouse, this.camera);
         const intersects = this.raycaster.intersectObjects(this.boardMeshes, false);
 
+        const isMultiModifier = event.shiftKey || event.ctrlKey || event.metaKey;
+
         if (intersects.length > 0) {
             const hitMesh = intersects[0].object;
-            // Ha a lap egy Konyha Korpusz része, a teljes Korpusz egységet jelöljük ki!
-            if (hitMesh.userData && hitMesh.userData.parentGroup) {
-                this.selectBoard(hitMesh.userData.parentGroup);
+            // Ha a lap egy Konyha Korpusz vagy Csoport része, alapértelmezetten a szülő csoportot célozzuk
+            const target = (hitMesh.userData && hitMesh.userData.parentGroup) ? hitMesh.userData.parentGroup : hitMesh;
+
+            if (isMultiModifier) {
+                this.toggleMultiSelectTarget(target);
             } else {
-                this.selectBoard(hitMesh);
+                this.selectBoard(target);
             }
         } else {
             if (!this.transformControls.dragging) {
@@ -357,8 +382,71 @@ export class Scene3D {
         }
     }
 
+    toggleMultiSelectTarget(target) {
+        if (!target) return;
+        const idx = this.selectedTargets.indexOf(target);
+        if (idx > -1) {
+            this.selectedTargets.splice(idx, 1);
+        } else {
+            this.selectedTargets.push(target);
+        }
+        this.updateMultiSelection();
+    }
+
+    setMultiSelection(targets) {
+        this.selectedTargets = targets ? [...targets] : [];
+        this.updateMultiSelection();
+    }
+
+    updateMultiSelection() {
+        // Körvonalak törlése
+        this.boardMeshes.forEach(m => {
+            if (m.userData.outlineMesh) {
+                m.userData.outlineMesh.visible = false;
+            }
+        });
+
+        // Kijelölt elemek körvonalainak bekapcsolása
+        const lineColor = (this.selectedTargets.length > 1) ? '#f59e0b' : '#38bdf8';
+        this.selectedTargets.forEach(target => {
+            if (target.isGroup) {
+                target.children.forEach(child => {
+                    if (child.userData && child.userData.outlineMesh) {
+                        child.userData.outlineMesh.visible = true;
+                        if (child.userData.outlineMesh.material) {
+                            child.userData.outlineMesh.material.color.set('#f59e0b');
+                        }
+                    }
+                });
+            } else if (target.userData && target.userData.outlineMesh) {
+                target.userData.outlineMesh.visible = true;
+                if (target.userData.outlineMesh.material) {
+                    target.userData.outlineMesh.material.color.set(lineColor);
+                }
+            }
+        });
+
+        if (this.selectedTargets.length === 1) {
+            this.selectedTarget = this.selectedTargets[0];
+            this.transformControls.attach(this.selectedTarget);
+        } else if (this.selectedTargets.length > 1) {
+            this.selectedTarget = this.selectedTargets[this.selectedTargets.length - 1];
+            this.transformControls.attach(this.selectedTarget);
+        } else {
+            this.selectedTarget = null;
+            this.transformControls.detach();
+        }
+
+        this.updateDimensionVisualizer();
+
+        if (this.onBoardSelected) {
+            this.onBoardSelected(this.selectedTarget, this.selectedTargets);
+        }
+    }
+
     selectBoard(target) {
         this.selectedTarget = target;
+        this.selectedTargets = target ? [target] : [];
 
         // Előző körvonalak törlése
         this.boardMeshes.forEach(m => {
@@ -370,9 +458,24 @@ export class Scene3D {
         if (target) {
             this.transformControls.attach(target);
 
-            // Ha egyedi Mesh
-            if (target.userData && target.userData.outlineMesh) {
+            const isGroupTarget = target.isGroup && target.userData && (target.userData.isCorpus || target.userData.isCustomGroup);
+            const lineColor = isGroupTarget ? '#f59e0b' : '#38bdf8';
+
+            // Ha Group (Korpusz vagy Csoport)
+            if (target.isGroup) {
+                target.children.forEach(child => {
+                    if (child.userData && child.userData.outlineMesh) {
+                        child.userData.outlineMesh.visible = true;
+                        if (child.userData.outlineMesh.material) {
+                            child.userData.outlineMesh.material.color.set('#f59e0b');
+                        }
+                    }
+                });
+            } else if (target.userData && target.userData.outlineMesh) {
                 target.userData.outlineMesh.visible = true;
+                if (target.userData.outlineMesh.material) {
+                    target.userData.outlineMesh.material.color.set(lineColor);
+                }
             }
         } else {
             this.transformControls.detach();
@@ -381,7 +484,7 @@ export class Scene3D {
         this.updateDimensionVisualizer();
 
         if (this.onBoardSelected) {
-            this.onBoardSelected(target);
+            this.onBoardSelected(target, this.selectedTargets);
         }
     }
 
@@ -512,45 +615,244 @@ export class Scene3D {
     }
 
     setCameraView(viewName) {
-        const center = this.calculateFurnitureCenter();
-        const dist = 1600;
+        this.currentViewMode = viewName;
+        const width = this.container.clientWidth || window.innerWidth;
+        const height = this.container.clientHeight || window.innerHeight;
+        const aspect = width / height;
 
-        switch (viewName) {
-            case 'front':
-                this.camera.position.set(center.x, center.y, center.z + dist);
-                break;
-            case 'back':
-                this.camera.position.set(center.x, center.y, center.z - dist);
-                break;
-            case 'top':
-                this.camera.position.set(center.x, center.y + dist, center.z + 0.01);
-                break;
-            case 'right':
-                this.camera.position.set(center.x + dist, center.y, center.z);
-                break;
-            case 'left':
-                this.camera.position.set(center.x - dist, center.y, center.z);
-                break;
-            case 'iso':
-            default:
-                this.camera.position.set(center.x + 1200, center.y + 800, center.z + 1400);
-                break;
+        const bounds = this.calculateFurnitureBounds();
+        const center = bounds.center;
+        const size = bounds.size;
+
+        if (viewName === 'front' || viewName === 'top' || viewName === 'right' || viewName === 'back' || viewName === 'left') {
+            // ORTOGRAFIKUS 2D MŰSZAKI NÉZET
+            this.camera = this.orthoCamera;
+            this.controls.object = this.orthoCamera;
+            this.transformControls.camera = this.orthoCamera;
+            this.controls.enableRotate = false; // 2D nézetben nincs véletlen forgatás, csak pan és zoom
+
+            let maxDimH = 600;
+            let maxDimV = 600;
+
+            if (viewName === 'front' || viewName === 'back') {
+                maxDimH = Math.max(size.x, 500);
+                maxDimV = Math.max(size.y, 500);
+                this.orthoCamera.up.set(0, 1, 0);
+            } else if (viewName === 'top') {
+                maxDimH = Math.max(size.x, 500);
+                maxDimV = Math.max(size.z, 500);
+                // Felülnézetben a képernyő teteje a bútor hátulja felé mutat (-Z)
+                this.orthoCamera.up.set(0, 0, -1);
+            } else if (viewName === 'right' || viewName === 'left') {
+                maxDimH = Math.max(size.z, 500);
+                maxDimV = Math.max(size.y, 500);
+                this.orthoCamera.up.set(0, 1, 0);
+            }
+
+            // Keretezés ráhagyással (1.2x margó)
+            const margin = 1.25;
+            let orthoHalfH = (maxDimV * margin) / 2;
+            let orthoHalfW = (maxDimH * margin) / 2;
+
+            if (orthoHalfW / aspect > orthoHalfH) {
+                orthoHalfH = orthoHalfW / aspect;
+            } else {
+                orthoHalfW = orthoHalfH * aspect;
+            }
+
+            this.orthoCamera.left = -orthoHalfW;
+            this.orthoCamera.right = orthoHalfW;
+            this.orthoCamera.top = orthoHalfH;
+            this.orthoCamera.bottom = -orthoHalfH;
+            this.orthoCamera.updateProjectionMatrix();
+
+            const dist = 3000;
+            switch (viewName) {
+                case 'front':
+                    this.orthoCamera.position.set(center.x, center.y, center.z + dist);
+                    break;
+                case 'back':
+                    this.orthoCamera.position.set(center.x, center.y, center.z - dist);
+                    break;
+                case 'top':
+                    this.orthoCamera.position.set(center.x, center.y + dist, center.z);
+                    break;
+                case 'right':
+                    this.orthoCamera.position.set(center.x + dist, center.y, center.z);
+                    break;
+                case 'left':
+                    this.orthoCamera.position.set(center.x - dist, center.y, center.z);
+                    break;
+            }
+
+            this.controls.target.copy(center);
+            this.orthoCamera.lookAt(center);
+            this.controls.update();
+
+        } else {
+            // SZABAD 3D PERSPEKTIVIKUS NÉZET
+            this.camera = this.perspCamera;
+            this.controls.object = this.perspCamera;
+            this.transformControls.camera = this.perspCamera;
+            this.controls.enableRotate = true;
+            this.perspCamera.up.set(0, 1, 0);
+
+            const maxDim = Math.max(size.x, size.y, size.z, 600);
+            this.perspCamera.position.set(
+                center.x + maxDim * 1.3,
+                center.y + maxDim * 0.9,
+                center.z + maxDim * 1.6
+            );
+            this.controls.target.copy(center);
+            this.perspCamera.lookAt(center);
+            this.controls.update();
         }
-
-        this.controls.target.copy(center);
-        this.camera.lookAt(center);
-        this.controls.update();
     }
 
-    calculateFurnitureCenter() {
+    calculateFurnitureBounds() {
         if (this.boardMeshes.length === 0) {
-            return new THREE.Vector3(0, 400, 0);
+            return {
+                center: new THREE.Vector3(0, 400, 0),
+                size: new THREE.Vector3(800, 800, 600)
+            };
         }
         const box = new THREE.Box3();
         this.boardMeshes.forEach(mesh => box.expandByObject(mesh));
         const center = new THREE.Vector3();
         box.getCenter(center);
-        return center;
+        const size = new THREE.Vector3();
+        box.getSize(size);
+        return { center, size };
+    }
+
+    calculateFurnitureCenter() {
+        return this.calculateFurnitureBounds().center;
+    }
+
+    // ==========================================
+    // VONALVÁZ (WIREFRAME) ÉS STÚDIÓ RENDER MÓD
+    // ==========================================
+
+    toggleWireframeMode() {
+        this.setWireframeMode(!this.isWireframeMode);
+        return this.isWireframeMode;
+    }
+
+    setWireframeMode(enabled) {
+        this.isWireframeMode = enabled;
+        this.applyRenderMode();
+    }
+
+    toggleStudioMode() {
+        this.setStudioMode(!this.isStudioMode);
+        return this.isStudioMode;
+    }
+
+    setStudioMode(enabled) {
+        this.isStudioMode = enabled;
+        this.applyRenderMode();
+    }
+
+    getOrCreateStudioEnvMap() {
+        if (this.studioEnvMap) return this.studioEnvMap;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = 1024;
+        canvas.height = 512;
+        const ctx = canvas.getContext('2d');
+
+        // Stúdió sötét szürke gradiens háttér (Neutral Studio Gradient)
+        const bgGrad = ctx.createLinearGradient(0, 0, 0, 512);
+        bgGrad.addColorStop(0, '#30343f');
+        bgGrad.addColorStop(0.5, '#1e2129');
+        bgGrad.addColorStop(1, '#0f1115');
+        ctx.fillStyle = bgGrad;
+        ctx.fillRect(0, 0, 1024, 512);
+
+        // 1. Fő lágy fényláda (Main Key Softbox - Warm Studio Light)
+        const keyGrad = ctx.createRadialGradient(250, 180, 10, 250, 180, 220);
+        keyGrad.addColorStop(0, 'rgba(255, 250, 240, 1.0)');
+        keyGrad.addColorStop(0.4, 'rgba(255, 240, 220, 0.75)');
+        keyGrad.addColorStop(0.8, 'rgba(255, 230, 200, 0.2)');
+        keyGrad.addColorStop(1, 'rgba(255, 230, 200, 0)');
+        ctx.fillStyle = keyGrad;
+        ctx.beginPath();
+        ctx.ellipse(250, 180, 200, 140, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 2. Derítő fényláda (Fill Softbox - Cool Sky Rim)
+        const fillGrad = ctx.createRadialGradient(800, 220, 10, 800, 220, 180);
+        fillGrad.addColorStop(0, 'rgba(220, 240, 255, 0.9)');
+        fillGrad.addColorStop(0.5, 'rgba(180, 215, 255, 0.45)');
+        fillGrad.addColorStop(1, 'rgba(180, 215, 255, 0)');
+        ctx.fillStyle = fillGrad;
+        ctx.beginPath();
+        ctx.ellipse(800, 220, 170, 120, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 3. Felső diffúz mennyezeti fénysáv (Top Strip Diffuser)
+        const topGrad = ctx.createLinearGradient(0, 0, 0, 120);
+        topGrad.addColorStop(0, 'rgba(255, 255, 255, 0.85)');
+        topGrad.addColorStop(0.6, 'rgba(255, 255, 255, 0.3)');
+        topGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        ctx.fillStyle = topGrad;
+        ctx.fillRect(200, 0, 624, 120);
+
+        const canvasTexture = new THREE.CanvasTexture(canvas);
+        canvasTexture.mapping = THREE.EquirectangularReflectionMapping;
+
+        const pmremGenerator = new THREE.PMREMGenerator(this.renderer);
+        pmremGenerator.compileEquirectangularShader();
+        this.studioEnvMap = pmremGenerator.fromEquirectangular(canvasTexture).texture;
+        pmremGenerator.dispose();
+        canvasTexture.dispose();
+
+        return this.studioEnvMap;
+    }
+
+    applyRenderMode() {
+        // 1. Környezeti térkép és jelenet háttér
+        if (this.isStudioMode) {
+            const env = this.getOrCreateStudioEnvMap();
+            this.scene.environment = env;
+            this.scene.background = new THREE.Color('#14171e');
+            this.renderer.toneMappingExposure = 1.35;
+        } else {
+            this.scene.environment = null;
+            this.scene.background = new THREE.Color('#1e222b');
+            this.renderer.toneMappingExposure = 1.1;
+        }
+
+        // 2. Bútorlapok anyagainak és éleinek frissítése
+        const wireframeMat = new THREE.MeshBasicMaterial({
+            color: '#0f172a',
+            wireframe: true
+        });
+
+        this.scene.traverse(obj => {
+            if (obj.isMesh && obj.userData && (obj.userData.id || obj.userData.isCorpusPart)) {
+                // Élkiemelés megjelenítése vonalváz módban
+                obj.traverse(child => {
+                    if (child.isLineSegments) {
+                        child.visible = this.isWireframeMode;
+                        if (child.material) {
+                            child.material.color.set(this.isWireframeMode ? '#38bdf8' : '#38bdf8');
+                        }
+                    }
+                });
+
+                // Vonalváz vagy normál anyag
+                if (this.isWireframeMode) {
+                    if (!obj.userData.originalMaterial) {
+                        obj.userData.originalMaterial = obj.material;
+                    }
+                    obj.material = wireframeMat;
+                } else if (obj.userData.originalMaterial) {
+                    obj.material = obj.userData.originalMaterial;
+                    obj.material.needsUpdate = true;
+                }
+            }
+        });
     }
 
     updateDimensionVisualizer() {
@@ -561,10 +863,24 @@ export class Scene3D {
             if (obj.material) obj.material.dispose();
         }
 
-        if (!this.selectedTarget) return;
+        if (!this.selectedTarget && (!this.selectedTargets || this.selectedTargets.length === 0)) return;
 
-        const box = new THREE.Box3().setFromObject(this.selectedTarget);
-        const boxColor = (this.selectedTarget.userData && this.selectedTarget.userData.isCorpus) ? '#f59e0b' : '#38bdf8';
+        const box = new THREE.Box3();
+        if (this.selectedTargets && this.selectedTargets.length > 1) {
+            this.selectedTargets.forEach(t => {
+                if (t) box.expandByObject(t);
+            });
+        } else if (this.selectedTarget) {
+            box.setFromObject(this.selectedTarget);
+        } else {
+            return;
+        }
+
+        const isCorpusOrGroup = (this.selectedTarget && this.selectedTarget.userData && 
+            (this.selectedTarget.userData.isCorpus || this.selectedTarget.userData.isCustomGroup)) ||
+            (this.selectedTargets && this.selectedTargets.length > 1);
+
+        const boxColor = isCorpusOrGroup ? '#f59e0b' : '#38bdf8';
         const boxHelper = new THREE.Box3Helper(box, new THREE.Color(boxColor));
         this.dimensionGroup.add(boxHelper);
     }
@@ -667,8 +983,35 @@ export class Scene3D {
     onWindowResize() {
         const width = this.container.clientWidth || window.innerWidth;
         const height = this.container.clientHeight || window.innerHeight;
-        this.camera.aspect = width / height;
-        this.camera.updateProjectionMatrix();
+        const aspect = width / height;
+
+        if (this.perspCamera) {
+            this.perspCamera.aspect = aspect;
+            this.perspCamera.updateProjectionMatrix();
+        }
+
+        if (this.orthoCamera) {
+            const bounds = this.calculateFurnitureBounds();
+            const size = bounds.size;
+            let maxDimH = Math.max(size.x, size.z, 500);
+            let maxDimV = Math.max(size.y, size.z, 500);
+            const margin = 1.25;
+            let orthoHalfH = (maxDimV * margin) / 2;
+            let orthoHalfW = (maxDimH * margin) / 2;
+
+            if (orthoHalfW / aspect > orthoHalfH) {
+                orthoHalfH = orthoHalfW / aspect;
+            } else {
+                orthoHalfW = orthoHalfH * aspect;
+            }
+
+            this.orthoCamera.left = -orthoHalfW;
+            this.orthoCamera.right = orthoHalfW;
+            this.orthoCamera.top = orthoHalfH;
+            this.orthoCamera.bottom = -orthoHalfH;
+            this.orthoCamera.updateProjectionMatrix();
+        }
+
         this.renderer.setSize(width, height);
     }
 
