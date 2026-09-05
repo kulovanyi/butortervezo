@@ -14,7 +14,7 @@ export class KitchenCorpusGenerator {
             // Korpusz fő befoglaló méretek (az oldallapok és fenéklap adják a fő méretet)
             width: 600,
             height: 720,      // Korpusz magassága lábak nélkül
-            depth: 560,       // Korpusz mélysége (oldallapok mélysége)
+            depth: 505,       // Korpusz mélysége (oldallapok mélysége) - alapértelmezetten 505 mm
             thickness: 18,    // Lapvastagság (korpusz)
             textureKey: 'front_k001',
 
@@ -93,15 +93,15 @@ export class KitchenCorpusGenerator {
                 enabled: true,
                 thickness: 38,        // 28mm vagy 38mm
                 depth: 600,           // Munkalap teljes mélysége (mm)
-                overhangFront: 25,    // Elülső túllógás a korpusz frontján túl (mm)
-                overhangBack: 15,     // Hátsó túllógás a korpusz hátulján túl (mm)
+                overhangFront: 45,    // Elülső túllógás a korpusz frontján túl (mm)
+                overhangBack: 50,     // Hátsó túllógás a korpusz hátulján túl (505 + 45 + 50 = 600mm)
                 overhangLeft: 0,
                 overhangRight: 0,
                 edgeRadius: 3,        // 38mm-es munkalap 3mm lekerekítéssel
                 textureKey: 'wt_3025',
                 // Munkalap hátfal (fali panel / csempepótló)
                 splashback: {
-                    enabled: false,   // Bekapcsolható a varázslóban
+                    enabled: true,    // Bekapcsolva alapértelmezetten
                     height: 600,      // 60 cm (600 mm)
                     thickness: 5,     // 0.5 cm (5 mm mélység/vastagság)
                     textureKey: 'wt_3025'
@@ -281,15 +281,17 @@ export class KitchenCorpusGenerator {
         }
 
         // ----------------------------------------------------
-        // 4. HÁTFAL (HDF / Bútorlap)
+        // 4. HÁTFAL (HDF / Bútorlap) - Mindig rajta van alapértelmezetten
         // ----------------------------------------------------
-        if (cfg.backPanel && cfg.backPanel.enabled) {
-            const backTh = Number(cfg.backPanel.thickness) || 3;
-            const backType = cfg.backPanel.type || 'surface';
-            const insetBack = Number(cfg.backPanel.insetBack) || 20;
-            const gap = cfg.backPanel.gap !== undefined && cfg.backPanel.gap !== null ? Number(cfg.backPanel.gap) : 2.5;
-            const customH = (cfg.backPanel.height !== undefined && cfg.backPanel.height !== null && cfg.backPanel.height !== '') ? Number(cfg.backPanel.height) : null;
-            const offsetY = Number(cfg.backPanel.offsetY) || 0;
+        const backCfg = cfg.backPanel || cfg.back || { enabled: true };
+        const backEnabled = backCfg.enabled !== false;
+        if (backEnabled) {
+            const backTh = Number(backCfg.thickness) || 3;
+            const backType = backCfg.type || 'surface';
+            const insetBack = Number(backCfg.insetBack) || 20;
+            const gap = backCfg.gap !== undefined && backCfg.gap !== null ? Number(backCfg.gap) : 2.5;
+            const customH = (backCfg.height !== undefined && backCfg.height !== null && backCfg.height !== '') ? Number(backCfg.height) : null;
+            const offsetY = Number(backCfg.offsetY) || 0;
 
             let backW = innerW;
             let backH = (customH && customH > 0) ? customH : H;
@@ -321,7 +323,7 @@ export class KitchenCorpusGenerator {
                 depth: backTh,
                 thickness: backTh,
                 type: 'back',
-                textureKey: cfg.backPanel.textureKey || 'white_matte',
+                textureKey: backCfg.textureKey || 'white_matte',
                 x: 0,
                 y: Math.round(backY),
                 z: backZ,
@@ -377,13 +379,26 @@ export class KitchenCorpusGenerator {
             const insetX = Number(cfg.legs.insetX) || 50;
             const insetZ = Number(cfg.legs.insetZ) || 50;
             const legSize = Number(cfg.legs.diameter) || 45;
+            const legModel = cfg.legs.model || 'lab_01';
 
-            const legPositions = [
-                { name: 'Bal Első Láb', x: -W / 2 + insetX, z: D / 2 - insetZ },
-                { name: 'Jobb Első Láb', x: W / 2 - insetX, z: D / 2 - insetZ },
-                { name: 'Bal Hátsó Láb', x: -W / 2 + insetX, z: -D / 2 + insetZ },
-                { name: 'Jobb Hátsó Láb', x: W / 2 - insetX, z: -D / 2 + insetZ }
-            ];
+            const insetFrontZ = insetZ + 10; // Első lábak 1cm-el hátrébb
+            const insetBackZ = insetZ;
+
+            let legPositions = [];
+            if (W <= 300) {
+                // 30cm vagy kisebb elemnél 2 láb középen (elöl és hátul)
+                legPositions = [
+                    { name: 'Középső Első Láb', x: 0, z: D / 2 - insetFrontZ },
+                    { name: 'Középső Hátsó Láb', x: 0, z: -D / 2 + insetBackZ }
+                ];
+            } else {
+                legPositions = [
+                    { name: 'Bal Első Láb', x: -W / 2 + insetX, z: D / 2 - insetFrontZ },
+                    { name: 'Jobb Első Láb', x: W / 2 - insetX, z: D / 2 - insetFrontZ },
+                    { name: 'Bal Hátsó Láb', x: -W / 2 + insetX, z: -D / 2 + insetBackZ },
+                    { name: 'Jobb Hátsó Láb', x: W / 2 - insetX, z: -D / 2 + insetBackZ }
+                ];
+            }
 
             legPositions.forEach(pos => {
                 boards.push({
@@ -392,7 +407,11 @@ export class KitchenCorpusGenerator {
                     height: legH,
                     depth: legSize,
                     thickness: legSize,
-                    type: 'horizontal',
+                    type: 'hardware',
+                    isHardware: true,
+                    isLeg: true,
+                    hardwareType: 'leg',
+                    modelId: legModel,
                     textureKey: 'metal_chrome',
                     x: pos.x,
                     y: legH / 2,
@@ -432,8 +451,8 @@ export class KitchenCorpusGenerator {
         // ----------------------------------------------------
         if (cfg.worktop && cfg.worktop.enabled) {
             const wtTh = Number(cfg.worktop.thickness) || 38;
-            const overhangF = Number(cfg.worktop.overhangFront) || 25;
-            const overhangB = Number(cfg.worktop.overhangBack) || 15;
+            const overhangF = Number(cfg.worktop.overhangFront !== undefined ? cfg.worktop.overhangFront : 45);
+            const overhangB = Number(cfg.worktop.overhangBack !== undefined ? cfg.worktop.overhangBack : 50);
             const overhangL = Number(cfg.worktop.overhangLeft) || 0;
             const overhangR = Number(cfg.worktop.overhangRight) || 0;
             const wtRadius = cfg.worktop?.edgeRadius !== undefined ? Number(cfg.worktop.edgeRadius) : 3;
@@ -523,6 +542,8 @@ export class KitchenCorpusGenerator {
                             type: 'door',
                             isDoor: true,
                             doorType: 'lift_up',
+                            frontId: `front_${elemIdx}`,
+                            hingePivot: { x: 0, y: centerY + actualH / 2, z: frontZ - frontTh / 2 },
                             textureKey: frontTex,
                             x: 0,
                             y: centerY,
@@ -542,23 +563,24 @@ export class KitchenCorpusGenerator {
                             Th
                         });
 
-                        // Fogantyú: alul középen vízszintesen
+                        // Fogantyú
                         if (hasHandle) {
-                            const handleW = Math.min(160, Math.max(80, actualW - 120));
-                            boards.push({
+                            KitchenCorpusGenerator.addDoorHandle(boards, {
                                 name: 'Felnyíló Ajtó Fogantyú',
-                                width: handleW,
-                                height: 12,
-                                depth: 25,
-                                thickness: 12,
-                                type: 'hardware',
-                                isHardware: true,
-                                isHandle: true,
-                                textureKey: 'metal_chrome',
-                                x: 0,
-                                y: centerY - (actualH / 2) + 35,
-                                z: frontZ + frontTh / 2 + 12.5,
-                                edgeBanding: 'Nincs'
+                                doorX: 0,
+                                doorY: centerY,
+                                doorW: actualW,
+                                doorH: actualH,
+                                frontZ,
+                                frontTh,
+                                frontId: `front_${elemIdx}`,
+                                handleModel: elem.handleModel || 'fogo_01',
+                                handlePosV: elem.handlePosV || 'bottom',
+                                handlePosH: elem.handlePosH || 'center',
+                                handleOrientation: elem.handleOrientation || 'horizontal',
+                                handleOffsetV: elem.handleOffsetV !== undefined ? elem.handleOffsetV : 40,
+                                handleOffsetH: elem.handleOffsetH !== undefined ? elem.handleOffsetH : 40,
+                                side: 'center'
                             });
                         }
                     } else if (doorType === 'double') {
@@ -577,6 +599,8 @@ export class KitchenCorpusGenerator {
                             type: 'door',
                             isDoor: true,
                             doorType: 'single_left',
+                            frontId: `front_${elemIdx}_left`,
+                            hingePivot: { x: leftDoorX - doubleDoorW / 2, y: centerY, z: frontZ - frontTh / 2 },
                             textureKey: frontTex,
                             x: leftDoorX,
                             y: centerY,
@@ -594,6 +618,8 @@ export class KitchenCorpusGenerator {
                             type: 'door',
                             isDoor: true,
                             doorType: 'single_right',
+                            frontId: `front_${elemIdx}_right`,
+                            hingePivot: { x: rightDoorX + doubleDoorW / 2, y: centerY, z: frontZ - frontTh / 2 },
                             textureKey: frontTex,
                             x: rightDoorX,
                             y: centerY,
@@ -611,7 +637,8 @@ export class KitchenCorpusGenerator {
                             D,
                             W,
                             Th,
-                            side: 'left'
+                            side: 'left',
+                            frontId: `front_${elemIdx}_left`
                         });
                         KitchenCorpusGenerator.addConcealedHinges(boards, {
                             doorX: rightDoorX,
@@ -622,44 +649,53 @@ export class KitchenCorpusGenerator {
                             D,
                             W,
                             Th,
-                            side: 'right'
+                            side: 'right',
+                            frontId: `front_${elemIdx}_right`
                         });
 
-                        // Fogantyúk
+                        // Fogantyúk a két szárnyhoz
                         if (hasHandle) {
-                            boards.push({
+                            KitchenCorpusGenerator.addDoorHandle(boards, {
                                 name: 'Bal Ajtó Fogantyú',
-                                width: 12,
-                                height: 140,
-                                depth: 25,
-                                thickness: 12,
-                                type: 'hardware',
-                                isHardware: true,
-                                isHandle: true,
-                                textureKey: 'metal_chrome',
-                                x: -20,
-                                y: centerY,
-                                z: frontZ + frontTh / 2 + 12.5,
-                                edgeBanding: 'Nincs'
+                                doorX: leftDoorX,
+                                doorY: centerY,
+                                doorW: doubleDoorW,
+                                doorH: actualH,
+                                frontZ,
+                                frontTh,
+                                frontId: `front_${elemIdx}_left`,
+                                handleModel: elem.handleModel || 'fogo_01',
+                                handlePosV: elem.handlePosV || 'top',
+                                handlePosH: elem.handlePosH || 'center',
+                                handleOrientation: elem.handleOrientation || 'horizontal',
+                                handleOffsetV: elem.handleOffsetV !== undefined ? elem.handleOffsetV : 40,
+                                handleOffsetH: elem.handleOffsetH !== undefined ? elem.handleOffsetH : 40,
+                                side: 'right'
                             });
-                            boards.push({
+
+                            KitchenCorpusGenerator.addDoorHandle(boards, {
                                 name: 'Jobb Ajtó Fogantyú',
-                                width: 12,
-                                height: 140,
-                                depth: 25,
-                                thickness: 12,
-                                type: 'hardware',
-                                isHardware: true,
-                                isHandle: true,
-                                textureKey: 'metal_chrome',
-                                x: 20,
-                                y: centerY,
-                                z: frontZ + frontTh / 2 + 12.5,
-                                edgeBanding: 'Nincs'
+                                doorX: rightDoorX,
+                                doorY: centerY,
+                                doorW: doubleDoorW,
+                                doorH: actualH,
+                                frontZ,
+                                frontTh,
+                                frontId: `front_${elemIdx}_right`,
+                                handleModel: elem.handleModel || 'fogo_01',
+                                handlePosV: elem.handlePosV || 'top',
+                                handlePosH: elem.handlePosH || 'center',
+                                handleOrientation: elem.handleOrientation || 'horizontal',
+                                handleOffsetV: elem.handleOffsetV !== undefined ? elem.handleOffsetV : 40,
+                                handleOffsetH: elem.handleOffsetH !== undefined ? elem.handleOffsetH : 40,
+                                side: 'left'
                             });
                         }
                     } else {
                         // 3. EGYSZÁRNYÚ AJTÓ (Single Door: Balos vagy Jobbos)
+                        const isLeftHinged = doorType !== 'single_right';
+                        const pivotX = isLeftHinged ? (-actualW / 2) : (actualW / 2);
+
                         boards.push({
                             name: `Ajtó Front (${Math.round(actualW)}×${Math.round(actualH)})`,
                             width: Math.round(actualW),
@@ -669,6 +705,8 @@ export class KitchenCorpusGenerator {
                             type: 'door',
                             isDoor: true,
                             doorType: doorType,
+                            frontId: `front_${elemIdx}`,
+                            hingePivot: { x: pivotX, y: centerY, z: frontZ - frontTh / 2 },
                             textureKey: frontTex,
                             x: 0,
                             y: centerY,
@@ -677,7 +715,6 @@ export class KitchenCorpusGenerator {
                         });
 
                         // 3D Kivetőpántok
-                        const isLeft = doorType !== 'single_right';
                         KitchenCorpusGenerator.addConcealedHinges(boards, {
                             doorX: 0,
                             doorY: centerY,
@@ -687,25 +724,27 @@ export class KitchenCorpusGenerator {
                             D,
                             W,
                             Th,
-                            side: isLeft ? 'left' : 'right'
+                            side: isLeftHinged ? 'left' : 'right',
+                            frontId: `front_${elemIdx}`
                         });
 
                         if (hasHandle) {
-                            const handleX = (doorType === 'single_right') ? (-actualW / 2 + 35) : (actualW / 2 - 35);
-                            boards.push({
-                                name: 'Ajtó Rúdfogantyú',
-                                width: 12,
-                                height: 140,
-                                depth: 25,
-                                thickness: 12,
-                                type: 'hardware',
-                                isHardware: true,
-                                isHandle: true,
-                                textureKey: 'metal_chrome',
-                                x: handleX,
-                                y: centerY,
-                                z: frontZ + frontTh / 2 + 12.5,
-                                edgeBanding: 'Nincs'
+                            KitchenCorpusGenerator.addDoorHandle(boards, {
+                                name: 'Ajtó Fogantyú',
+                                doorX: 0,
+                                doorY: centerY,
+                                doorW: actualW,
+                                doorH: actualH,
+                                frontZ,
+                                frontTh,
+                                frontId: `front_${elemIdx}`,
+                                handleModel: elem.handleModel || 'fogo_01',
+                                handlePosV: elem.handlePosV || 'top',
+                                handlePosH: elem.handlePosH || 'center',
+                                handleOrientation: elem.handleOrientation || 'horizontal',
+                                handleOffsetV: elem.handleOffsetV !== undefined ? elem.handleOffsetV : 40,
+                                handleOffsetH: elem.handleOffsetH !== undefined ? elem.handleOffsetH : 40,
+                                side: isLeftHinged ? 'right' : 'left'
                             });
                         }
                     }
@@ -721,6 +760,8 @@ export class KitchenCorpusGenerator {
                         thickness: frontTh,
                         type: 'drawer',
                         isDrawer: true,
+                        frontId: `front_${elemIdx}`,
+                        slideDist: Math.min(350, Math.max(150, D * 0.7)),
                         textureKey: frontTex,
                         x: 0,
                         y: centerY,
@@ -729,21 +770,22 @@ export class KitchenCorpusGenerator {
                     });
 
                     if (hasHandle) {
-                        const handleW = Math.min(160, Math.max(80, actualW - 80));
-                        boards.push({
+                        KitchenCorpusGenerator.addDoorHandle(boards, {
                             name: `Fiók Fogantyú ${elemIdx + 1}`,
-                            width: handleW,
-                            height: 12,
-                            depth: 25,
-                            thickness: 12,
-                            type: 'hardware',
-                            isHardware: true,
-                            isHandle: true,
-                            textureKey: 'metal_chrome',
-                            x: 0,
-                            y: centerY,
-                            z: frontZ + frontTh / 2 + 12.5,
-                            edgeBanding: 'Nincs'
+                            doorX: 0,
+                            doorY: centerY,
+                            doorW: actualW,
+                            doorH: actualH,
+                            frontZ,
+                            frontTh,
+                            frontId: `front_${elemIdx}`,
+                            handleModel: elem.handleModel || 'fogo_01',
+                            handlePosV: elem.handlePosV || 'center',
+                            handlePosH: elem.handlePosH || 'center',
+                            handleOrientation: elem.handleOrientation || 'horizontal',
+                            handleOffsetV: elem.handleOffsetV !== undefined ? elem.handleOffsetV : 40,
+                            handleOffsetH: elem.handleOffsetH !== undefined ? elem.handleOffsetH : 40,
+                            side: 'center'
                         });
                     }
                 } else if (elemType === 'oven') {
@@ -822,7 +864,7 @@ export class KitchenCorpusGenerator {
                         const wtTh = Number(cfg.worktop.thickness) || 38;
                         const cookW = Math.min(590, Math.max(280, W - 10));
                         const cookD = Math.min(520, Math.max(280, (Number(cfg.worktop.depth) || 600) - 50));
-                        const wtZ = (Number(cfg.worktop.overhangFront || 25) - Number(cfg.worktop.overhangBack || 15)) / 2;
+                        const wtZ = (Number(cfg.worktop.overhangFront !== undefined ? cfg.worktop.overhangFront : 45) - Number(cfg.worktop.overhangBack !== undefined ? cfg.worktop.overhangBack : 50)) / 2;
 
                         boards.push({
                             name: `Indukciós Főzőlap (${cookW}×${cookD} mm)`,
@@ -882,54 +924,28 @@ export class KitchenCorpusGenerator {
                 const plateX = isLeft ? (-W / 2 + Th + 2) : (W / 2 - Th - 2);
                 const armX = (cupX + plateX) / 2;
 
-                // 1. Pántedény (Ø35mm csésze az ajtó belső felületén)
+                // Integrált 3D Blum/Hettich Stílusú Kivetőpánt (Pántedény + Csuklós Kar + Kereszttalp)
                 boards.push({
-                    name: `Pántedény Ø35mm ${isLeft ? 'Bal' : 'Jobb'} ${hIdx + 1}`,
+                    name: `Kivetőpánt Ø35mm ${isLeft ? 'Bal' : 'Jobb'} ${hIdx + 1}`,
                     width: 35,
                     height: 35,
-                    depth: 6,
-                    thickness: 6,
-                    type: 'hardware',
-                    isHardware: true,
-                    isHinge: true,
-                    textureKey: 'metal_chrome',
-                    x: cupX,
-                    y: hY,
-                    z: (D / 2) - 1,
-                    edgeBanding: 'Nincs'
-                });
-
-                // 2. Csuklós Pántkar (fém kar állítócsavarral)
-                boards.push({
-                    name: `Pántkar ${isLeft ? 'Bal' : 'Jobb'} ${hIdx + 1}`,
-                    width: Math.max(12, Math.abs(cupX - plateX)),
-                    height: 18,
-                    depth: 28,
+                    depth: 46,
                     thickness: 18,
                     type: 'hardware',
                     isHardware: true,
                     isHinge: true,
+                    hardwareType: 'hinge',
+                    modelId: 'pant_01',
+                    side: side,
+                    frontId: p.frontId,
+                    doorX: doorX,
+                    cupX: cupX,
+                    plateX: plateX,
+                    wallX: isLeft ? (-W / 2 + Th) : (W / 2 - Th),
                     textureKey: 'metal_chrome',
                     x: armX,
                     y: hY,
-                    z: (D / 2) - 14,
-                    edgeBanding: 'Nincs'
-                });
-
-                // 3. Szerelőtalp (a korpusz belső oldalán, 37mm-re elölről)
-                boards.push({
-                    name: `Pánt Szerelőtalp ${isLeft ? 'Bal' : 'Jobb'} ${hIdx + 1}`,
-                    width: 4,
-                    height: 32,
-                    depth: 37,
-                    thickness: 4,
-                    type: 'hardware',
-                    isHardware: true,
-                    isHinge: true,
-                    textureKey: 'metal_chrome',
-                    x: plateX,
-                    y: hY,
-                    z: (D / 2) - 18.5,
+                    z: (D / 2),
                     edgeBanding: 'Nincs'
                 });
             }
@@ -1037,4 +1053,89 @@ export class KitchenCorpusGenerator {
             });
         });
     }
+
+    /**
+     * 3D Fogantyú hozzáadása front elemhez (ajtó vagy fiók)
+     * Vízszintes / Függőleges tájolás, állítható távolság a tetejétől/aljától (alapértelmezetten 40mm),
+     * és a szélétől (alapértelmezetten 40mm), vagy pontosan az ajtófront közepére pozicionálva.
+     */
+    static addDoorHandle(boards, options) {
+        const {
+            name = 'Fogantyú',
+            doorX = 0,
+            doorY = 0,
+            doorW = 600,
+            doorH = 720,
+            frontZ = 0,
+            frontTh = 18,
+            handleModel = 'fogo_01',
+            handlePosV = 'top', // 'top', 'center', 'bottom'
+            handlePosH = 'center', // 'auto', 'center', 'left', 'right'
+            handleOrientation = 'horizontal', // 'horizontal', 'vertical'
+            handleOffsetV = 40, // mm a bútorlap tetejétől vagy aljától
+            handleOffsetH = 40, // mm a szélétől / nyitási oldaltól
+            side = 'center'      // 'left', 'right', 'center' (alapértelmezett nyitási oldal)
+        } = options;
+
+        if (handleModel === 'none') return;
+
+        // Függőleges pozíció (Y)
+        const offsetV = Number(handleOffsetV) !== undefined && !isNaN(Number(handleOffsetV)) ? Number(handleOffsetV) : 40;
+        let hy = doorY;
+        if (handlePosV === 'top') {
+            hy = doorY + (doorH / 2) - offsetV;
+        } else if (handlePosV === 'bottom') {
+            hy = doorY - (doorH / 2) + offsetV;
+        } else {
+            hy = doorY;
+        }
+
+        // Vízszintes pozíció (X)
+        const offsetH = Number(handleOffsetH) !== undefined && !isNaN(Number(handleOffsetH)) ? Number(handleOffsetH) : 40;
+        
+        let targetSide = handlePosH;
+        if (!targetSide || targetSide === 'auto') {
+            targetSide = side; // Nyitási oldal használata
+        }
+
+        let hx = doorX;
+        if (targetSide === 'left') {
+            // Nyitás/elhelyezés a bal oldalon -> eltolás a bal széltől jobbra
+            hx = doorX - (doorW / 2) + offsetH;
+        } else if (targetSide === 'right') {
+            // Nyitás/elhelyezés a jobb oldalon -> eltolás a jobb széltől balra
+            hx = doorX + (doorW / 2) - offsetH;
+        } else {
+            // 'center': Pontosan a front vízszintes közepe
+            hx = doorX;
+        }
+
+        const isHorizontal = handleOrientation === 'horizontal';
+        const handleLength = (handleModel === 'fogo_02' || handleModel === 'fogo_03') ? 200 : 160;
+
+        boards.push({
+            name: name,
+            width: isHorizontal ? handleLength : 20,
+            height: isHorizontal ? 20 : handleLength,
+            depth: 25,
+            thickness: 12,
+            type: 'hardware',
+            isHardware: true,
+            isHandle: true,
+            frontId: options.frontId,
+            hardwareType: 'handle',
+            modelId: handleModel,
+            handleOrientation: handleOrientation,
+            handlePosV: handlePosV,
+            handlePosH: targetSide,
+            handleOffsetV: offsetV,
+            handleOffsetH: offsetH,
+            textureKey: 'metal_chrome',
+            x: hx,
+            y: hy,
+            z: frontZ + frontTh / 2,
+            edgeBanding: 'Nincs'
+        });
+    }
 }
+

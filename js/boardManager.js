@@ -5,6 +5,7 @@
 
 import { MaterialManager } from './textures.js';
 import { KitchenCorpusGenerator } from './kitchenCorpusGenerator.js';
+import { ModelManager } from './modelManager.js';
 
 /**
  * Box / Triplanar UV leképezés generátor
@@ -195,6 +196,8 @@ export function createBoardGeometry(boardData) {
     const depth = Number(boardData.depth) || 400;
     const isSplashback = boardData.isSplashback || (boardData.name && boardData.name.includes('Hátfalpanel'));
     const isWorktop = !isSplashback && (boardData.isWorktop || boardData.type === 'worktop' || (boardData.name && boardData.name.includes('Munkalap')));
+    const isPlinth = boardData.isPlinth || boardData.type === 'plinth' || (boardData.name && boardData.name.includes('Szokli'));
+
     if (boardData.isHardware || boardData.type === 'hardware') {
         const geo = new THREE.BoxGeometry(width, height, depth);
         applyBoxUVs(geo, width, height, depth, 400);
@@ -205,10 +208,10 @@ export function createBoardGeometry(boardData) {
         const rad = boardData.edgeRadius !== undefined ? Number(boardData.edgeRadius) : 3;
         return createWorktopGeometry(width, height, depth, rad);
     }
-    if (isPlinth || isSplashback) {
+    if (isPlinth || isSplashback || boardData.type === 'back' || boardData.isBack || depth <= 4) {
         const geo = new THREE.BoxGeometry(width, height, depth);
         applyBoxUVs(geo, width, height, depth, 800);
-        geo.parameters = { width, height, depth, isPlinth: !!isPlinth, isSplashback: !!isSplashback };
+        geo.parameters = { width, height, depth, isPlinth: !!isPlinth, isSplashback: !!isSplashback, isBack: boardData.type === 'back' || boardData.isBack };
         return geo;
     }
     const rad = boardData.edgeRadius !== undefined ? Number(boardData.edgeRadius) : 1;
@@ -329,11 +332,21 @@ export class BoardManager {
 
         generatedBoards.forEach((boardData, index) => {
             const bId = `${corpusId}_b_${index}`;
-            const geometry = createBoardGeometry(boardData);
-            const material = MaterialManager.createMaterial(boardData.textureKey || config.textureKey || 'white_matte');
+            let mesh;
 
-            const mesh = new THREE.Mesh(geometry, material);
-            mesh.position.set(boardData.x, boardData.y, boardData.z);
+            if (boardData.isHardware && boardData.isHandle && boardData.modelId && ModelManager.hasModel(boardData.modelId)) {
+                mesh = ModelManager.createHandleMesh(boardData);
+            } else if (boardData.isHardware && boardData.isLeg && boardData.modelId && ModelManager.hasModel(boardData.modelId)) {
+                mesh = ModelManager.createLegMesh(boardData);
+            } else if (boardData.isHardware && boardData.isHinge) {
+                mesh = ModelManager.createHingeMesh(boardData);
+            } else {
+                const geometry = createBoardGeometry(boardData);
+                const material = MaterialManager.createMaterial(boardData.textureKey || config.textureKey || 'white_matte');
+                mesh = new THREE.Mesh(geometry, material);
+                mesh.position.set(boardData.x, boardData.y, boardData.z);
+            }
+
             mesh.castShadow = true;
             mesh.receiveShadow = true;
 
@@ -370,9 +383,23 @@ export class BoardManager {
         const oldChildren = [...corpusGroup.children];
         oldChildren.forEach(mesh => {
             corpusGroup.remove(mesh);
-            mesh.geometry.dispose();
-            if (mesh.material.map) mesh.material.map.dispose();
-            mesh.material.dispose();
+            if (mesh.isGroup) {
+                mesh.traverse(child => {
+                    if (child.isMesh) {
+                        if (child.geometry) child.geometry.dispose();
+                        if (child.material) {
+                            if (child.material.map) child.material.map.dispose();
+                            child.material.dispose();
+                        }
+                    }
+                });
+            } else {
+                if (mesh.geometry) mesh.geometry.dispose();
+                if (mesh.material) {
+                    if (mesh.material.map) mesh.material.map.dispose();
+                    mesh.material.dispose();
+                }
+            }
 
             const meshIdx = this.scene3D.boardMeshes.indexOf(mesh);
             if (meshIdx > -1) this.scene3D.boardMeshes.splice(meshIdx, 1);
@@ -392,11 +419,21 @@ export class BoardManager {
 
         generatedBoards.forEach((boardData, index) => {
             const bId = `${corpusId}_b_${index}`;
-            const geometry = createBoardGeometry(boardData);
-            const material = MaterialManager.createMaterial(boardData.textureKey || newConfig.textureKey || 'white_matte');
+            let mesh;
 
-            const mesh = new THREE.Mesh(geometry, material);
-            mesh.position.set(boardData.x, boardData.y, boardData.z);
+            if (boardData.isHardware && boardData.isHandle && boardData.modelId && ModelManager.hasModel(boardData.modelId)) {
+                mesh = ModelManager.createHandleMesh(boardData);
+            } else if (boardData.isHardware && boardData.isLeg && boardData.modelId && ModelManager.hasModel(boardData.modelId)) {
+                mesh = ModelManager.createLegMesh(boardData);
+            } else if (boardData.isHardware && boardData.isHinge) {
+                mesh = ModelManager.createHingeMesh(boardData);
+            } else {
+                const geometry = createBoardGeometry(boardData);
+                const material = MaterialManager.createMaterial(boardData.textureKey || newConfig.textureKey || 'white_matte');
+                mesh = new THREE.Mesh(geometry, material);
+                mesh.position.set(boardData.x, boardData.y, boardData.z);
+            }
+
             mesh.castShadow = true;
             mesh.receiveShadow = true;
 
@@ -502,9 +539,37 @@ export class BoardManager {
         const children = [...corpusGroup.children];
         children.forEach(mesh => {
             corpusGroup.remove(mesh);
-            mesh.geometry.dispose();
-            if (mesh.material.map) mesh.material.map.dispose();
-            mesh.material.dispose();
+            if (mesh.isGroup || (mesh.children && mesh.children.length > 0)) {
+                mesh.traverse(child => {
+                    if (child.isMesh) {
+                        if (child.geometry) child.geometry.dispose();
+                        if (child.material) {
+                            if (Array.isArray(child.material)) {
+                                child.material.forEach(m => {
+                                    if (m.map) m.map.dispose();
+                                    m.dispose();
+                                });
+                            } else {
+                                if (child.material.map) child.material.map.dispose();
+                                child.material.dispose();
+                            }
+                        }
+                    }
+                });
+            } else {
+                if (mesh.geometry) mesh.geometry.dispose();
+                if (mesh.material) {
+                    if (Array.isArray(mesh.material)) {
+                        mesh.material.forEach(m => {
+                            if (m.map) m.map.dispose();
+                            m.dispose();
+                        });
+                    } else {
+                        if (mesh.material.map) mesh.material.map.dispose();
+                        mesh.material.dispose();
+                    }
+                }
+            }
 
             const meshIdx = this.scene3D.boardMeshes.indexOf(mesh);
             if (meshIdx > -1) this.scene3D.boardMeshes.splice(meshIdx, 1);
@@ -1262,14 +1327,44 @@ export class BoardManager {
             this.scene3D.selectBoard(null);
         }
 
-        this.scene3D.scene.remove(board.mesh);
-        board.mesh.geometry.dispose();
-        if (board.mesh.material.map) board.mesh.material.map.dispose();
-        board.mesh.material.dispose();
+        if (board.mesh) {
+            this.scene3D.scene.remove(board.mesh);
+            if (board.mesh.isGroup || (board.mesh.children && board.mesh.children.length > 0)) {
+                board.mesh.traverse(child => {
+                    if (child.isMesh) {
+                        if (child.geometry) child.geometry.dispose();
+                        if (child.material) {
+                            if (Array.isArray(child.material)) {
+                                child.material.forEach(m => {
+                                    if (m.map) m.map.dispose();
+                                    m.dispose();
+                                });
+                            } else {
+                                if (child.material.map) child.material.map.dispose();
+                                child.material.dispose();
+                            }
+                        }
+                    }
+                });
+            } else {
+                if (board.mesh.geometry) board.mesh.geometry.dispose();
+                if (board.mesh.material) {
+                    if (Array.isArray(board.mesh.material)) {
+                        board.mesh.material.forEach(m => {
+                            if (m.map) m.map.dispose();
+                            m.dispose();
+                        });
+                    } else {
+                        if (board.mesh.material.map) board.mesh.material.map.dispose();
+                        board.mesh.material.dispose();
+                    }
+                }
+            }
+        }
 
         if (board.outlineMesh) {
-            board.outlineMesh.geometry.dispose();
-            board.outlineMesh.material.dispose();
+            if (board.outlineMesh.geometry) board.outlineMesh.geometry.dispose();
+            if (board.outlineMesh.material) board.outlineMesh.material.dispose();
         }
 
         const meshIdx = this.scene3D.boardMeshes.indexOf(board.mesh);

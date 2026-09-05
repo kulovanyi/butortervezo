@@ -131,8 +131,9 @@ export const MaterialManager = {
      * Képfájl (JPG/PNG/WEBP) textúra létrehozása Three.js-hez
      */
     createFileTexture(options) {
+        const dataUrl = (typeof EMBEDDED_TEXTURES !== 'undefined' && EMBEDDED_TEXTURES[options.id]) ? EMBEDDED_TEXTURES[options.id] : options.path;
         const loader = new THREE.TextureLoader();
-        const texture = loader.load(options.path, (tex) => {
+        const texture = loader.load(dataUrl, (tex) => {
             tex.wrapS = THREE.RepeatWrapping;
             tex.wrapT = THREE.RepeatWrapping;
             tex.generateMipmaps = true;
@@ -147,7 +148,7 @@ export const MaterialManager = {
             id: options.id,
             name: options.name,
             texture: texture,
-            dataUrl: options.path,
+            dataUrl: dataUrl,
             roughness: options.roughness !== undefined ? options.roughness : 0.65,
             metalness: options.metalness !== undefined ? options.metalness : 0.05,
             category: options.category || 'front',
@@ -157,11 +158,16 @@ export const MaterialManager = {
 
     /**
      * Textúrák szűrése kategória alapján ('front' vagy 'worktop')
+     * Csak a feltöltött front és munkalap textúrákat adja vissza
      */
     getTexturesByCategory(category = 'front') {
         const result = {};
         Object.keys(this.textures).forEach(k => {
             const t = this.textures[k];
+            if (!t) return;
+            if (t.category === 'appliance' || t.type === 'glass' || t.type === 'metal' || k === 'white_matte' || k === 'stainless_steel' || k === 'oven_black_glass' || k === 'cooktop_glass' || k === 'metal_chrome') {
+                return;
+            }
             if (category === 'all' || t.category === category) {
                 result[k] = t;
             }
@@ -427,7 +433,8 @@ export const MaterialManager = {
         const mat = new THREE.MeshStandardMaterial({
             map: texInfo ? texInfo.texture : null,
             roughness: texInfo && texInfo.roughness !== undefined ? texInfo.roughness : 0.65,
-            metalness: texInfo && texInfo.metalness !== undefined ? texInfo.metalness : 0.05
+            metalness: texInfo && texInfo.metalness !== undefined ? texInfo.metalness : 0.05,
+            side: THREE.DoubleSide
         });
 
         mat.userData = {

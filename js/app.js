@@ -11,6 +11,7 @@ import { CatalogManager } from './catalogManager.js';
 import { CutListManager } from './cutListManager.js';
 import { PresetFurniture } from './presetFurniture.js';
 import { KitchenCorpusGenerator } from './kitchenCorpusGenerator.js';
+import { ModelManager } from './modelManager.js';
 
 /**
  * 3D Élőkép és Előnézet kezelő a Konyha Korpusz Varázsló jobb oldalán
@@ -88,6 +89,17 @@ export class KitchenPreview3D {
         this.previewGroup = new THREE.Group();
         this.scene.add(this.previewGroup);
 
+        if (window.ResizeObserver && this.container) {
+            this.resizeObserver = new ResizeObserver(() => {
+                this.resize();
+            });
+            this.resizeObserver.observe(this.container);
+        }
+
+        window.addEventListener('resize', () => {
+            this.resize();
+        });
+
         this.startLoop();
     }
 
@@ -112,13 +124,13 @@ export class KitchenPreview3D {
 
     resize() {
         if (!this.container || !this.renderer || !this.camera) return;
-        const width = this.container.clientWidth || 400;
-        const height = this.container.clientHeight || 420;
+        const width = this.container.clientWidth;
+        const height = this.container.clientHeight;
         if (width <= 0 || height <= 0) return;
 
         this.camera.aspect = width / height;
         this.camera.updateProjectionMatrix();
-        this.renderer.setSize(width, height);
+        this.renderer.setSize(width, height, true);
     }
 
     update(config) {
@@ -129,10 +141,22 @@ export class KitchenPreview3D {
         while (this.previewGroup.children.length > 0) {
             const child = this.previewGroup.children[0];
             this.previewGroup.remove(child);
-            if (child.geometry) child.geometry.dispose();
-            if (child.material) {
-                if (child.material.map) child.material.map.dispose();
-                child.material.dispose();
+            if (child.isGroup) {
+                child.traverse(c => {
+                    if (c.isMesh) {
+                        if (c.geometry) c.geometry.dispose();
+                        if (c.material) {
+                            if (c.material.map) c.material.map.dispose();
+                            c.material.dispose();
+                        }
+                    }
+                });
+            } else {
+                if (child.geometry) child.geometry.dispose();
+                if (child.material) {
+                    if (child.material.map) child.material.map.dispose();
+                    child.material.dispose();
+                }
             }
         }
 
@@ -140,22 +164,32 @@ export class KitchenPreview3D {
         const corpusTexKey = config.textureKey || 'white_matte';
 
         boards.forEach(boardData => {
-            const bRadius = boardData.edgeRadius !== undefined ? Number(boardData.edgeRadius) : (boardData.isWorktop ? 3 : (config.edgeRadius || 1));
-            const geometry = createBoardGeometry({ ...boardData, edgeRadius: bRadius });
-            const texKey = boardData.textureKey || corpusTexKey;
-            const material = MaterialManager.createMaterial(texKey);
+            let mesh;
 
-            const mesh = new THREE.Mesh(geometry, material);
-            mesh.position.set(boardData.x, boardData.y, boardData.z);
-            mesh.castShadow = true;
-            mesh.receiveShadow = true;
+            if (boardData.isHardware && boardData.isHandle && boardData.modelId && ModelManager.hasModel(boardData.modelId)) {
+                mesh = ModelManager.createHandleMesh(boardData);
+            } else if (boardData.isHardware && boardData.isLeg && boardData.modelId && ModelManager.hasModel(boardData.modelId)) {
+                mesh = ModelManager.createLegMesh(boardData);
+            } else if (boardData.isHardware && boardData.isHinge) {
+                mesh = ModelManager.createHingeMesh(boardData);
+            } else {
+                const bRadius = boardData.edgeRadius !== undefined ? Number(boardData.edgeRadius) : (boardData.isWorktop ? 3 : (config.edgeRadius || 1));
+                const geometry = createBoardGeometry({ ...boardData, edgeRadius: bRadius });
+                const texKey = boardData.textureKey || corpusTexKey;
+                const material = MaterialManager.createMaterial(texKey);
 
-            const edges = new THREE.EdgesGeometry(geometry, 20);
-            const lineMat = new THREE.LineBasicMaterial({ color: '#38bdf8', linewidth: 1.5 });
-            const outlineMesh = new THREE.LineSegments(edges, lineMat);
-            outlineMesh.name = 'outline';
-            outlineMesh.visible = this.showWireframe;
-            mesh.add(outlineMesh);
+                mesh = new THREE.Mesh(geometry, material);
+                mesh.position.set(boardData.x, boardData.y, boardData.z);
+                mesh.castShadow = true;
+                mesh.receiveShadow = true;
+
+                const edges = new THREE.EdgesGeometry(geometry, 20);
+                const lineMat = new THREE.LineBasicMaterial({ color: '#38bdf8', linewidth: 1.5 });
+                const outlineMesh = new THREE.LineSegments(edges, lineMat);
+                outlineMesh.name = 'outline';
+                outlineMesh.visible = this.showWireframe;
+                mesh.add(outlineMesh);
+            }
 
             this.previewGroup.add(mesh);
         });
@@ -226,8 +260,9 @@ class FurnitureApp {
     }
 
     init() {
-        // 1. Textúrák előkészítése
+        // 1. Textúrák és 3D Hardver modellek előkészítése
         MaterialManager.init();
+        ModelManager.init();
 
         // 2. 3D Jelenet inicializálása
         const canvasContainer = document.getElementById('canvas-container');
@@ -290,6 +325,13 @@ class FurnitureApp {
         // --- Fejléc gombok ---
         document.getElementById('btn-new-project').addEventListener('click', () => {
             if (confirm('Biztosan új projektet kezdesz? A nem mentett bútorlapok törlődnek.')) {
+                if (this.scene3D && this.scene3D.resetDoors) {
+                    this.scene3D.resetDoors();
+                    const text = document.getElementById('btn-toggle-doors-text');
+                    const btn = document.getElementById('btn-toggle-doors');
+                    if (text) text.textContent = 'Ajtók Nyitása';
+                    if (btn) btn.classList.remove('btn-primary');
+                }
                 this.boardManager.clearAll();
                 this.onBoardSelected(null);
                 this.updateDimensionsBadge();
@@ -297,6 +339,22 @@ class FurnitureApp {
                 this.updateSnapTargetDropdown();
             }
         });
+
+        const btnToggleDoors = document.getElementById('btn-toggle-doors');
+        if (btnToggleDoors) {
+            btnToggleDoors.addEventListener('click', () => {
+                if (!this.scene3D) return;
+                const isOpen = this.scene3D.toggleDoors();
+                const text = document.getElementById('btn-toggle-doors-text');
+                if (isOpen) {
+                    if (text) text.textContent = 'Ajtók Becsukása';
+                    btnToggleDoors.classList.add('btn-primary');
+                } else {
+                    if (text) text.textContent = 'Ajtók Nyitása';
+                    btnToggleDoors.classList.remove('btn-primary');
+                }
+            });
+        }
 
         document.getElementById('preset-selector').addEventListener('change', (e) => {
             const presetId = e.target.value;
@@ -1079,6 +1137,8 @@ class FurnitureApp {
             if (btnConfirm) btnConfirm.innerHTML = '➕ Konyha Elem Hozzáadása';
 
             this.openModal('modal-kitchen-generator');
+            document.querySelectorAll('.wizard-accordion-item').forEach(item => item.classList.remove('is-open'));
+            this.applyKitchenTypePreset(document.getElementById('kc-cabinet-type')?.value || 'base');
             this.syncKitchenWorktopMath();
 
             // Új előnézeti korpusz azonnali létrehozása a jelenetben
@@ -1256,6 +1316,19 @@ class FurnitureApp {
             });
         });
 
+        // Konyha Varázsló Összecsukható Kategóriák (Accordion menü)
+        document.querySelectorAll('.wizard-accordion-header').forEach(header => {
+            header.addEventListener('click', (e) => {
+                if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'BUTTON' || e.target.closest('label')) {
+                    return;
+                }
+                const item = header.closest('.wizard-accordion-item');
+                if (item) {
+                    item.classList.toggle('is-open');
+                }
+            });
+        });
+
         // Konyha generálás / Mentés jóváhagyása
         const btnConfirmKitchen = document.getElementById('btn-confirm-kitchen');
         if (btnConfirmKitchen) {
@@ -1311,7 +1384,21 @@ class FurnitureApp {
         document.querySelectorAll('.modal-overlay').forEach(overlay => {
             overlay.addEventListener('click', (e) => {
                 if (e.target === overlay) {
-                    overlay.classList.remove('open');
+                    const modalId = overlay.id;
+                    if (modalId === 'modal-kitchen-generator') {
+                        if (this.editingCorpusId && this.kitchenBackupConfig) {
+                            this.boardManager.updateCorpus(this.editingCorpusId, this.kitchenBackupConfig);
+                            this.editingCorpusId = null;
+                            this.kitchenBackupConfig = null;
+                        } else if (this.previewCorpus) {
+                            this.boardManager.deleteCorpus(this.previewCorpus.userData.id);
+                            this.previewCorpus = null;
+                            this.onBoardSelected(null);
+                        }
+                        this.updateDimensionsBadge();
+                        this.renderHierarchyTree();
+                    }
+                    this.closeModal(modalId);
                 }
             });
         });
@@ -1699,6 +1786,7 @@ class FurnitureApp {
         if (btnConfirm) btnConfirm.innerHTML = '💾 Módosítás Mentése';
 
         this.openModal('modal-kitchen-generator');
+        document.querySelectorAll('.wizard-accordion-item').forEach(item => item.classList.remove('is-open'));
         this.syncKitchenWorktopMath();
 
         setTimeout(() => {
@@ -1743,7 +1831,7 @@ class FurnitureApp {
         }
 
         if (config.backPanel) {
-            document.getElementById('kc-back-enabled').checked = !!config.backPanel.enabled;
+            document.getElementById('kc-back-enabled').checked = config.backPanel.enabled !== false;
             const bType = config.backPanel.type || 'surface';
             document.getElementById('kc-back-type').value = bType;
             const isSurface = bType === 'surface';
@@ -1765,11 +1853,16 @@ class FurnitureApp {
             if (config.backPanel.offsetY !== undefined) document.getElementById('kc-back-offset-y').value = config.backPanel.offsetY;
             if (config.backPanel.thickness !== undefined) document.getElementById('kc-back-th').value = config.backPanel.thickness;
             if (config.backPanel.insetBack !== undefined) document.getElementById('kc-back-inset').value = config.backPanel.insetBack;
+        } else {
+            document.getElementById('kc-back-enabled').checked = true;
         }
 
         if (config.legs) {
             document.getElementById('kc-legs-enabled').checked = !!config.legs.enabled;
             if (config.legs.height !== undefined) document.getElementById('kc-legs-height').value = config.legs.height;
+            if (config.legs.model && document.getElementById('kc-legs-model')) {
+                document.getElementById('kc-legs-model').value = config.legs.model;
+            }
         }
 
         if (config.plinth) {
@@ -1918,10 +2011,18 @@ class FurnitureApp {
             btn.classList.toggle('btn-primary', btnCat === cat);
         });
 
-        // Csak a feltöltött front és worktop textúrák megjelenítése (készülékeket és a belső fehér hátfalat nem jelenítjük meg a palettán)
+        // Csak a feltöltött front és worktop textúrák megjelenítése (készülékeket, fémeket, üvegeket és belső fehér hátfalat kizárjuk)
         Object.keys(MaterialManager.textures).forEach(key => {
             const tex = MaterialManager.textures[key];
-            if (!tex || tex.category === 'appliance' || key === 'white_matte') {
+            if (!tex) return;
+            if (tex.category === 'appliance' || 
+                tex.type === 'glass' || 
+                tex.type === 'metal' || 
+                key === 'white_matte' || 
+                key === 'stainless_steel' || 
+                key === 'oven_black_glass' || 
+                key === 'cooktop_glass' || 
+                key === 'metal_chrome') {
                 return;
             }
 
@@ -2653,10 +2754,18 @@ class FurnitureApp {
     // ==========================================
 
     applyKitchenTypePreset(type) {
+        document.querySelectorAll('.kc-preset-btn').forEach(b => {
+            if (b.getAttribute('data-type') === type) {
+                b.classList.add('btn-primary');
+            } else {
+                b.classList.remove('btn-primary');
+            }
+        });
+
         if (type === 'base') {
             document.getElementById('kc-width').value = 600;
             document.getElementById('kc-height').value = 720;
-            document.getElementById('kc-depth').value = 560;
+            document.getElementById('kc-depth').value = 505;
             if (document.getElementById('kc-edge-radius')) document.getElementById('kc-edge-radius').value = 1;
             document.getElementById('kc-top-type').value = 'stretchers';
             document.getElementById('kc-stretchers-settings').style.display = 'block';
@@ -2664,6 +2773,7 @@ class FurnitureApp {
             document.getElementById('kc-fs-inset').value = 0;
             document.getElementById('kc-bs-enabled').checked = true;
             document.getElementById('kc-bs-inset').value = 0;
+            document.getElementById('kc-back-enabled').checked = true;
             document.getElementById('kc-back-type').value = 'surface';
             if (document.getElementById('kc-back-gap')) document.getElementById('kc-back-gap').value = 2.5;
             if (document.getElementById('kc-back-height')) document.getElementById('kc-back-height').value = 715;
@@ -2681,12 +2791,12 @@ class FurnitureApp {
             document.getElementById('kc-worktop-enabled').checked = true;
             document.getElementById('kc-worktop-depth').value = 600;
             if (document.getElementById('kc-worktop-edge-radius')) document.getElementById('kc-worktop-edge-radius').value = 3;
-            document.getElementById('kc-worktop-overhang-front').value = 25;
-            document.getElementById('kc-worktop-overhang-back').value = 15;
+            document.getElementById('kc-worktop-overhang-front').value = 45;
+            document.getElementById('kc-worktop-overhang-back').value = 50;
             if (document.getElementById('kc-worktop-splashback-enabled')) {
-                document.getElementById('kc-worktop-splashback-enabled').checked = false;
+                document.getElementById('kc-worktop-splashback-enabled').checked = true;
                 const sbSettings = document.getElementById('kc-worktop-splashback-settings');
-                if (sbSettings) sbSettings.style.display = 'none';
+                if (sbSettings) sbSettings.style.display = 'grid';
                 document.getElementById('kc-worktop-splashback-height').value = 600;
                 document.getElementById('kc-worktop-splashback-depth').value = 5;
             }
@@ -2712,10 +2822,17 @@ class FurnitureApp {
             if (document.getElementById('kc-edge-radius')) document.getElementById('kc-edge-radius').value = 1;
             document.getElementById('kc-top-type').value = 'full_top';
             document.getElementById('kc-stretchers-settings').style.display = 'none';
+            document.getElementById('kc-back-enabled').checked = true;
             document.getElementById('kc-back-type').value = 'surface';
             if (document.getElementById('kc-back-gap')) document.getElementById('kc-back-gap').value = 2.5;
             if (document.getElementById('kc-back-height')) document.getElementById('kc-back-height').value = 715;
             if (document.getElementById('kc-back-offset-y')) document.getElementById('kc-back-offset-y').value = 0;
+            const gapContainer = document.getElementById('kc-back-gap-container');
+            const insetContainer = document.getElementById('kc-back-inset-container');
+            const surfaceNotice = document.getElementById('kc-back-surface-notice');
+            if (gapContainer) gapContainer.style.display = 'block';
+            if (insetContainer) insetContainer.style.display = 'none';
+            if (surfaceNotice) surfaceNotice.style.display = 'block';
             document.getElementById('kc-legs-enabled').checked = false;
             document.getElementById('kc-plinth-enabled').checked = false;
             document.getElementById('kc-worktop-enabled').checked = false;
@@ -2747,10 +2864,17 @@ class FurnitureApp {
             if (document.getElementById('kc-edge-radius')) document.getElementById('kc-edge-radius').value = 1;
             document.getElementById('kc-top-type').value = 'full_top';
             document.getElementById('kc-stretchers-settings').style.display = 'none';
+            document.getElementById('kc-back-enabled').checked = true;
             document.getElementById('kc-back-type').value = 'surface';
             if (document.getElementById('kc-back-gap')) document.getElementById('kc-back-gap').value = 2.5;
             if (document.getElementById('kc-back-height')) document.getElementById('kc-back-height').value = 1995;
             if (document.getElementById('kc-back-offset-y')) document.getElementById('kc-back-offset-y').value = 0;
+            const gapContainer = document.getElementById('kc-back-gap-container');
+            const insetContainer = document.getElementById('kc-back-inset-container');
+            const surfaceNotice = document.getElementById('kc-back-surface-notice');
+            if (gapContainer) gapContainer.style.display = 'block';
+            if (insetContainer) insetContainer.style.display = 'none';
+            if (surfaceNotice) surfaceNotice.style.display = 'block';
             document.getElementById('kc-legs-enabled').checked = true;
             document.getElementById('kc-legs-height').value = 100;
             document.getElementById('kc-plinth-enabled').checked = true;
@@ -2855,7 +2979,7 @@ class FurnitureApp {
     }
 
     syncKitchenWorktopMath(trigger = 'front') {
-        const corpusDepth = Number(document.getElementById('kc-depth').value) || 560;
+        const corpusDepth = Number(document.getElementById('kc-depth').value) || 505;
         let worktopDepth = Number(document.getElementById('kc-worktop-depth').value) || 600;
         let frontOverhang = Number(document.getElementById('kc-worktop-overhang-front').value) || 0;
         let backOverhang = Number(document.getElementById('kc-worktop-overhang-back').value) || 0;
@@ -2900,14 +3024,16 @@ class FurnitureApp {
         const texKey = document.getElementById('kc-texture').value || 'white_matte';
         const backHInput = document.getElementById('kc-back-height')?.value;
         const customBackH = (backHInput !== undefined && backHInput !== null && backHInput !== '') ? Number(backHInput) : null;
+        const currentType = document.querySelector('.kc-preset-btn.btn-primary')?.getAttribute('data-type') || 'base';
 
         return {
+            type: currentType,
             width: Number(document.getElementById('kc-width').value) || 600,
             height: Number(document.getElementById('kc-height').value) || 720,
-            depth: Number(document.getElementById('kc-depth').value) || 560,
+            depth: Number(document.getElementById('kc-depth').value) || 505,
             thickness: Number(document.getElementById('kc-thickness').value) || 18,
             textureKey: texKey,
-            edgeRadius: Number(document.getElementById('kc-edge-radius')?.value) !== undefined ? Number(document.getElementById('kc-edge-radius').value) : 1,
+            edgeRadius: Number(document.getElementById('kc-edge-radius')?.value || 1),
 
             sides: {
                 enabled: true,
@@ -2927,7 +3053,7 @@ class FurnitureApp {
                 enabled: document.getElementById('kc-fs-enabled').checked,
                 width: Number(document.getElementById('kc-fs-width').value) || 80,
                 orientation: document.getElementById('kc-fs-orient').value || 'flat',
-                insetFront: Number(document.getElementById('kc-fs-inset')?.value !== undefined ? document.getElementById('kc-fs-inset').value : 0),
+                insetFront: Number(document.getElementById('kc-fs-inset')?.value || 0),
                 textureKey: texKey
             },
 
@@ -2935,15 +3061,15 @@ class FurnitureApp {
                 enabled: document.getElementById('kc-bs-enabled').checked,
                 width: Number(document.getElementById('kc-bs-width').value) || 80,
                 orientation: document.getElementById('kc-bs-orient').value || 'flat',
-                insetBack: Number(document.getElementById('kc-bs-inset')?.value !== undefined ? document.getElementById('kc-bs-inset').value : 0),
+                insetBack: Number(document.getElementById('kc-bs-inset')?.value || 0),
                 textureKey: texKey
             },
 
             backPanel: {
-                enabled: document.getElementById('kc-back-enabled').checked,
+                enabled: document.getElementById('kc-back-enabled') ? document.getElementById('kc-back-enabled').checked : true,
                 type: document.getElementById('kc-back-type').value || 'surface',
                 thickness: Number(document.getElementById('kc-back-th').value) || 3,
-                gap: Number(document.getElementById('kc-back-gap')?.value !== undefined ? document.getElementById('kc-back-gap').value : 2.5),
+                gap: Number(document.getElementById('kc-back-gap')?.value || 2.5),
                 height: customBackH,
                 offsetY: Number(document.getElementById('kc-back-offset-y')?.value || 0),
                 insetBack: Number(document.getElementById('kc-back-inset')?.value || 20),
@@ -2953,6 +3079,7 @@ class FurnitureApp {
             legs: {
                 enabled: document.getElementById('kc-legs-enabled').checked,
                 height: Number(document.getElementById('kc-legs-height').value) || 100,
+                model: document.getElementById('kc-legs-model')?.value || 'lab_01',
                 diameter: 45,
                 insetX: 50,
                 insetZ: 50
@@ -2962,7 +3089,7 @@ class FurnitureApp {
                 enabled: document.getElementById('kc-plinth-enabled').checked,
                 height: Number(document.getElementById('kc-legs-height').value) || 100,
                 thickness: 18,
-                insetFront: Number(document.getElementById('kc-plinth-inset')?.value) !== undefined ? Number(document.getElementById('kc-plinth-inset').value) : 20,
+                insetFront: Number(document.getElementById('kc-plinth-inset')?.value || 20),
                 textureKey: texKey
             },
 
@@ -2970,14 +3097,14 @@ class FurnitureApp {
                 enabled: document.getElementById('kc-worktop-enabled').checked,
                 thickness: Number(document.getElementById('kc-worktop-th').value) || 38,
                 depth: Number(document.getElementById('kc-worktop-depth').value) || 600,
-                edgeRadius: Number(document.getElementById('kc-worktop-edge-radius')?.value) !== undefined ? Number(document.getElementById('kc-worktop-edge-radius').value) : 3,
-                overhangFront: Number(document.getElementById('kc-worktop-overhang-front').value) || 25,
-                overhangBack: Number(document.getElementById('kc-worktop-overhang-back').value) || 15,
+                edgeRadius: Number(document.getElementById('kc-worktop-edge-radius')?.value || 3),
+                overhangFront: Number(document.getElementById('kc-worktop-overhang-front').value) || 45,
+                overhangBack: Number(document.getElementById('kc-worktop-overhang-back').value) || 50,
                 textureKey: document.getElementById('kc-worktop-texture')?.value || 'wt_k002',
                 splashback: {
-                    enabled: document.getElementById('kc-worktop-splashback-enabled') ? document.getElementById('kc-worktop-splashback-enabled').checked : false,
+                    enabled: document.getElementById('kc-worktop-splashback-enabled') ? document.getElementById('kc-worktop-splashback-enabled').checked : true,
                     height: Number(document.getElementById('kc-worktop-splashback-height')?.value) || 600,
-                    thickness: Number(document.getElementById('kc-worktop-splashback-depth')?.value !== undefined ? document.getElementById('kc-worktop-splashback-depth').value : 5),
+                    thickness: Number(document.getElementById('kc-worktop-splashback-depth')?.value || 5),
                     textureKey: document.getElementById('kc-worktop-texture')?.value || 'wt_k002'
                 }
             },
@@ -3014,7 +3141,13 @@ class FurnitureApp {
                 doorType: 'lift_up',
                 thickness: 18,
                 textureKey: document.getElementById('kc-texture').value || 'front_k001',
-                hasHandle: true
+                hasHandle: true,
+                handleModel: 'fogo_01',
+                handlePosV: 'bottom',
+                handlePosH: 'center',
+                handleOrientation: 'horizontal',
+                handleOffsetV: 40,
+                handleOffsetH: 40
             });
         } else if (type === 'door') {
             const doorH = (this.kitchenElements.length === 0) ? corpusHeight : remainingH;
@@ -3027,7 +3160,13 @@ class FurnitureApp {
                 doorType: (Number(document.getElementById('kc-width').value) >= 800) ? 'double' : 'single_left',
                 thickness: 18,
                 textureKey: document.getElementById('kc-texture').value || 'front_k001',
-                hasHandle: true
+                hasHandle: true,
+                handleModel: 'fogo_01',
+                handlePosV: 'top',
+                handlePosH: 'center',
+                handleOrientation: 'horizontal',
+                handleOffsetV: 40,
+                handleOffsetH: 40
             });
         } else if (type === 'drawer') {
             const drawerH = Math.min(280, remainingH > 150 ? (remainingH > 300 ? 140 : remainingH) : 140);
@@ -3039,7 +3178,13 @@ class FurnitureApp {
                 gap: 3,
                 thickness: 18,
                 textureKey: document.getElementById('kc-texture').value || 'front_k001',
-                hasHandle: true
+                hasHandle: true,
+                handleModel: 'fogo_01',
+                handlePosV: 'center',
+                handlePosH: 'center',
+                handleOrientation: 'horizontal',
+                handleOffsetV: 40,
+                handleOffsetH: 40
             });
         } else if (type === 'oven') {
             this.kitchenElements.push({
@@ -3102,12 +3247,91 @@ class FurnitureApp {
             let typeTitle = 'Ajtó';
             let specificControls = '';
 
+            const isDoor = elem.type === 'door';
+            const isDrawer = elem.type === 'drawer';
+            const hasHandle = elem.hasHandle !== false;
+            const handleModel = elem.handleModel || 'fogo_01';
+            const handlePosV = elem.handlePosV || (isDrawer ? 'center' : (elem.doorType === 'lift_up' ? 'bottom' : 'top'));
+            const handlePosH = elem.handlePosH || 'center';
+            const handleOrientation = elem.handleOrientation || 'horizontal';
+            const handleOffsetVCm = (elem.handleOffsetV !== undefined ? elem.handleOffsetV / 10 : 4.0).toFixed(1);
+            const handleOffsetHCm = (elem.handleOffsetH !== undefined ? elem.handleOffsetH / 10 : 4.0).toFixed(1);
+
+            let handleControlsHtml = '';
+            if (isDoor || isDrawer) {
+                handleControlsHtml = `
+                    <div class="kc-handle-panel" style="grid-column: span 2; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.08); border-radius: var(--radius-sm); padding: 8px; margin-top: 4px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px;">
+                            <label style="font-size:11px; font-weight:700; color:#38bdf8; display:flex; align-items:center; gap:6px; cursor:pointer;">
+                                <input type="checkbox" class="elem-prop-handle" data-id="${elem.id}" ${hasHandle ? 'checked' : ''}> 🔩 3D Fogantyú
+                            </label>
+                        </div>
+
+                        <div class="kc-handle-settings" style="display: ${hasHandle ? 'grid' : 'none'}; grid-template-columns: 1fr 1fr; gap: 6px;">
+                            <div>
+                                <label class="form-label" style="font-size:10px;">Fogantyú Modell</label>
+                                <select class="form-control elem-prop-handle-model" data-id="${elem.id}" style="font-size:11px; padding:2px 4px;">
+                                    <option value="fogo_01" ${handleModel === 'fogo_01' || handleModel === 'handle_01' ? 'selected' : ''}>Fogantyú 01 (160mm króm)</option>
+                                    <option value="fogo_02" ${handleModel === 'fogo_02' || handleModel === 'handle_02' ? 'selected' : ''}>Fogantyú 02 (200mm kéttónusú)</option>
+                                    <option value="fogo_03" ${handleModel === 'fogo_03' || handleModel === 'handle_03' ? 'selected' : ''}>Fogantyú 03 (200mm króm íves)</option>
+                                    <option value="fogo_04" ${handleModel === 'fogo_04' || handleModel === 'handle_04' ? 'selected' : ''}>Fogantyú 04 (160mm fekete fém)</option>
+                                    <option value="bar" ${handleModel === 'bar' ? 'selected' : ''}>Standard fém rúd</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label class="form-label" style="font-size:10px; color:#f59e0b; font-weight:600;">🔄 Tájolás (Forgatás)</label>
+                                <select class="form-control elem-prop-handle-orient" data-id="${elem.id}" style="font-size:11px; padding:2px 4px;">
+                                    <option value="horizontal" ${handleOrientation === 'horizontal' ? 'selected' : ''}>Vízszintes</option>
+                                    <option value="vertical" ${handleOrientation === 'vertical' ? 'selected' : ''}>Függőleges (90°)</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label class="form-label" style="font-size:10px;">Függőleges Hely</label>
+                                <select class="form-control elem-prop-handle-posv" data-id="${elem.id}" style="font-size:11px; padding:2px 4px;">
+                                    <option value="top" ${handlePosV === 'top' ? 'selected' : ''}>Felül</option>
+                                    <option value="center" ${handlePosV === 'center' ? 'selected' : ''}>Középen</option>
+                                    <option value="bottom" ${handlePosV === 'bottom' ? 'selected' : ''}>Alul</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label class="form-label" style="font-size:10px; color:#f59e0b;">⚡ Táv. Fent/Lent (cm)</label>
+                                <div class="input-with-unit">
+                                    <input type="number" class="form-control elem-prop-handle-offsetv" data-id="${elem.id}" value="${handleOffsetVCm}" step="0.5" min="0" style="font-size:11px; padding:2px 4px;">
+                                    <span class="input-unit" style="font-size:9px;">cm</span>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label class="form-label" style="font-size:10px;">Vízszintes Hely</label>
+                                <select class="form-control elem-prop-handle-posh" data-id="${elem.id}" style="font-size:11px; padding:2px 4px;">
+                                    <option value="auto" ${handlePosH === 'auto' ? 'selected' : ''}>Nyitási oldalon (Szélen)</option>
+                                    <option value="center" ${handlePosH === 'center' ? 'selected' : ''}>Középen (Front közepe)</option>
+                                    <option value="left" ${handlePosH === 'left' ? 'selected' : ''}>Bal szélen</option>
+                                    <option value="right" ${handlePosH === 'right' ? 'selected' : ''}>Jobb szélen</option>
+                                </select>
+                            </div>
+
+                            <div class="kc-handle-offseth-container" style="${handlePosH === 'center' ? 'opacity:0.4; pointer-events:none;' : ''}">
+                                <label class="form-label" style="font-size:10px; color:#f59e0b;">⚡ Távolság szélétől (cm)</label>
+                                <div class="input-with-unit">
+                                    <input type="number" class="form-control elem-prop-handle-offseth" data-id="${elem.id}" value="${handleOffsetHCm}" step="0.5" min="0" ${handlePosH === 'center' ? 'disabled' : ''} style="font-size:11px; padding:2px 4px;">
+                                    <span class="input-unit" style="font-size:9px;">cm</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
             if (elem.type === 'door') {
                 const isLiftUp = elem.doorType === 'lift_up';
                 typeIcon = isLiftUp ? '⬆️' : '🚪';
                 typeTitle = isLiftUp ? `Felnyíló Ajtó ${index + 1}` : `Ajtó ${index + 1}`;
                 specificControls = `
-                    <div>
+                    <div style="grid-column: span 2;">
                         <label class="form-label" style="font-size:10px;">Nyitás / Típus</label>
                         <select class="form-control elem-prop-doortype" data-id="${elem.id}" style="font-size:11px; padding:3px 6px;">
                             <option value="single_left" ${elem.doorType === 'single_left' || !elem.doorType ? 'selected' : ''}>Balos nyíló</option>
@@ -3116,26 +3340,21 @@ class FurnitureApp {
                             <option value="lift_up" ${elem.doorType === 'lift_up' ? 'selected' : ''}>⬆️ Felnyíló ajtó (Gázteleszkópos)</option>
                         </select>
                     </div>
-                    <div style="display:flex; align-items:center; gap:6px; margin-top:16px;">
-                        <label style="font-size:11px; display:flex; align-items:center; gap:4px; cursor:pointer;">
-                            <input type="checkbox" class="elem-prop-handle" data-id="${elem.id}" ${elem.hasHandle !== false ? 'checked' : ''}> Fém Fogantyú
-                        </label>
-                    </div>
+                    ${handleControlsHtml}
                 `;
             } else if (elem.type === 'drawer') {
                 typeIcon = '🗄️';
                 typeTitle = `Fiók ${index + 1}`;
                 specificControls = `
-                    <div style="grid-column: span 2; display:flex; align-items:center; justify-content:space-between;">
-                        <label style="font-size:11px; display:flex; align-items:center; gap:4px; cursor:pointer;">
-                            <input type="checkbox" class="elem-prop-handle" data-id="${elem.id}" ${elem.hasHandle !== false ? 'checked' : ''}> Fém Fogantyú
-                        </label>
+                    <div style="grid-column: span 2; display:flex; align-items:center; justify-content:flex-end;">
                         <div style="display:flex; gap:3px;">
+                            <span style="font-size:10px; color:var(--text-muted); align-self:center; margin-right:4px;">Gyorsméret:</span>
                             <button type="button" class="quick-dim-btn btn-quick-drawer-h" data-id="${elem.id}" data-val="140">140</button>
                             <button type="button" class="quick-dim-btn btn-quick-drawer-h" data-id="${elem.id}" data-val="280">280</button>
                             <button type="button" class="quick-dim-btn btn-quick-drawer-h" data-id="${elem.id}" data-val="355">355</button>
                         </div>
                     </div>
+                    ${handleControlsHtml}
                 `;
             } else if (elem.type === 'oven') {
                 typeIcon = '🍳';
@@ -3198,14 +3417,90 @@ class FurnitureApp {
             if (doorTypeSelect) {
                 doorTypeSelect.addEventListener('change', (e) => {
                     elem.doorType = e.target.value;
+                    if (elem.doorType === 'lift_up') {
+                        elem.handlePosV = 'bottom';
+                        elem.handlePosH = 'center';
+                        elem.handleOrientation = 'horizontal';
+                    }
+                    this.renderKitchenElementsUI();
                     this.updateKitchenLivePreview();
                 });
             }
 
             const handleCheck = card.querySelector('.elem-prop-handle');
+            const handleSettingsDiv = card.querySelector('.kc-handle-settings');
             if (handleCheck) {
                 handleCheck.addEventListener('change', (e) => {
                     elem.hasHandle = e.target.checked;
+                    if (handleSettingsDiv) handleSettingsDiv.style.display = elem.hasHandle ? 'grid' : 'none';
+                    this.updateKitchenLivePreview();
+                });
+            }
+
+            const handleModelSelect = card.querySelector('.elem-prop-handle-model');
+            if (handleModelSelect) {
+                handleModelSelect.addEventListener('change', (e) => {
+                    elem.handleModel = e.target.value;
+                    this.updateKitchenLivePreview();
+                });
+            }
+
+            const handlePosVSelect = card.querySelector('.elem-prop-handle-posv');
+            if (handlePosVSelect) {
+                handlePosVSelect.addEventListener('change', (e) => {
+                    elem.handlePosV = e.target.value;
+                    if (elem.handlePosV === 'top' || elem.handlePosV === 'bottom') {
+                        elem.handleOrientation = 'horizontal';
+                        const orientSel = card.querySelector('.elem-prop-handle-orient');
+                        if (orientSel) orientSel.value = 'horizontal';
+                    }
+                    this.updateKitchenLivePreview();
+                });
+            }
+
+            const handlePosHSelect = card.querySelector('.elem-prop-handle-posh');
+            if (handlePosHSelect) {
+                handlePosHSelect.addEventListener('change', (e) => {
+                    elem.handlePosH = e.target.value;
+                    const offsetHCont = card.querySelector('.kc-handle-offseth-container');
+                    const offsetHInp = card.querySelector('.elem-prop-handle-offseth');
+                    if (offsetHCont && offsetHInp) {
+                        if (elem.handlePosH === 'center') {
+                            offsetHCont.style.opacity = '0.4';
+                            offsetHCont.style.pointerEvents = 'none';
+                            offsetHInp.disabled = true;
+                        } else {
+                            offsetHCont.style.opacity = '1';
+                            offsetHCont.style.pointerEvents = 'auto';
+                            offsetHInp.disabled = false;
+                        }
+                    }
+                    this.updateKitchenLivePreview();
+                });
+            }
+
+            const handleOrientSelect = card.querySelector('.elem-prop-handle-orient');
+            if (handleOrientSelect) {
+                handleOrientSelect.addEventListener('change', (e) => {
+                    elem.handleOrientation = e.target.value;
+                    this.updateKitchenLivePreview();
+                });
+            }
+
+            const handleOffsetVInput = card.querySelector('.elem-prop-handle-offsetv');
+            if (handleOffsetVInput) {
+                handleOffsetVInput.addEventListener('input', (e) => {
+                    const cmVal = Number(e.target.value) || 0;
+                    elem.handleOffsetV = Math.round(cmVal * 10);
+                    this.updateKitchenLivePreview();
+                });
+            }
+
+            const handleOffsetHInput = card.querySelector('.elem-prop-handle-offseth');
+            if (handleOffsetHInput) {
+                handleOffsetHInput.addEventListener('input', (e) => {
+                    const cmVal = Number(e.target.value) || 0;
+                    elem.handleOffsetH = Math.round(cmVal * 10);
                     this.updateKitchenLivePreview();
                 });
             }

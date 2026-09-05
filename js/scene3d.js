@@ -50,6 +50,10 @@ export class Scene3D {
         this.magneticSnapDistance = 30; // Mágneses vonzás alapértelmezett értéke (mm)
         this.boardManager = null;
 
+        // Ajtók és fiókok nyitási állapota & animációja
+        this.doorAnimationProgress = 0; // 0 = Zárva, 1 = Teljesen nyitva
+        this.targetDoorAnimationProgress = 0;
+
         this.init();
     }
 
@@ -1042,6 +1046,255 @@ export class Scene3D {
         this.renderer.setSize(width, height);
     }
 
+    /**
+     * Ajtók és fiókok kinyitása / becsukása kapcsoló
+     */
+    toggleDoors(forceState) {
+        if (typeof forceState === 'boolean') {
+            this.targetDoorAnimationProgress = forceState ? 1 : 0;
+        } else {
+            this.targetDoorAnimationProgress = this.targetDoorAnimationProgress > 0.5 ? 0 : 1;
+        }
+        return this.targetDoorAnimationProgress > 0.5;
+    }
+
+    /**
+     * Ajtók azonnali visszaállítása zárt állapotba
+     */
+    resetDoors() {
+        this.targetDoorAnimationProgress = 0;
+        this.doorAnimationProgress = 0;
+        this.updateDoorTransforms(0);
+    }
+
+    areDoorsOpen() {
+        return this.targetDoorAnimationProgress > 0.5;
+    }
+
+    /**
+     * Ajtók, felnyíló frontok, fiókok és hozzájuk tartozó fogantyúk 3D transzformációja
+     */
+    updateDoorTransforms(progress) {
+        // Easing: Smoothstep (sima gyorsulás és finom megállás)
+        const ease = progress * progress * (3 - 2 * progress);
+
+        if (!this.boardManager) return;
+
+        // 1. Konyha Korpusz csoportok ajtói és fiókjai
+        if (this.boardManager.corpora && Array.isArray(this.boardManager.corpora)) {
+            this.boardManager.corpora.forEach(corpusGroup => {
+                if (!corpusGroup || !corpusGroup.children) return;
+
+                // Csoportosítjuk a front elemeket és fogantyúkat frontId szerint
+                const frontGroups = new Map();
+                const ungroupedMovable = [];
+
+                corpusGroup.children.forEach(child => {
+                    const uData = child.userData;
+                    if (!uData) return;
+
+                    // Eredeti helyi pozíció és rotáció rögzítése
+                    if (!uData.origPosition) {
+                        uData.origPosition = child.position.clone();
+                        uData.origRotation = child.rotation.clone();
+                    }
+
+                    if (uData.frontId) {
+                        if (!frontGroups.has(uData.frontId)) {
+                            frontGroups.set(uData.frontId, []);
+                        }
+                        frontGroups.get(uData.frontId).push(child);
+                    } else if (uData.isDoor || uData.isDrawer || uData.type === 'door' || uData.type === 'drawer') {
+                        ungroupedMovable.push(child);
+                    }
+                });
+
+                // FrontId-vel rendelkező elemek animálása (ajtó/fiók + hozzá tartozó fogantyú együtt mozog)
+                frontGroups.forEach((members) => {
+                    const driver = members.find(m => m.userData && (m.userData.isDoor || m.userData.isDrawer || m.userData.type === 'door' || m.userData.type === 'drawer'));
+                    if (!driver) return;
+
+                    const dData = driver.userData;
+                    if (dData.isDoor || dData.type === 'door') {
+                        const doorType = dData.doorType || 'single_left';
+                        const isLiftUp = doorType === 'lift_up';
+                        const isRight = doorType === 'single_right';
+
+                        // Forgáspont kiszámítása
+                        const th = Number(dData.depth) || Number(dData.thickness) || 18;
+                        let pivotX = 0;
+                        let pivotY = dData.origPosition.y;
+                        let pivotZ = dData.origPosition.z - (th / 2); // a frontlap belső/hátsó felülete
+
+                        if (dData.hingePivot) {
+                            pivotX = Number(dData.hingePivot.x);
+                            pivotY = Number(dData.hingePivot.y);
+                            pivotZ = Number(dData.hingePivot.z);
+                        } else if (isLiftUp) {
+                            pivotX = dData.origPosition.x;
+                            pivotY = dData.origPosition.y + (Number(dData.height) || 720) / 2;
+                        } else if (isRight) {
+                            pivotX = dData.origPosition.x + (Number(dData.width) || 600) / 2;
+                        } else {
+                            // single_left
+                            pivotX = dData.origPosition.x - (Number(dData.width) || 600) / 2;
+                        }
+
+                        if (isLiftUp) {
+                            // Felnyíló ajtó: -85 fok (-1.48 rad) X tengely körül -> felfelé és a térbe nyílik
+                            const angle = -1.48 * ease;
+                            const cosA = Math.cos(angle);
+                            const sinA = Math.sin(angle);
+
+                            members.forEach(m => {
+                                const p0 = m.userData.origPosition;
+                                const r0 = m.userData.origRotation;
+                                const dy0 = p0.y - pivotY;
+                                const dz0 = p0.z - pivotZ;
+
+                                const newY = pivotY + dy0 * cosA - dz0 * sinA;
+                                const newZ = pivotZ + dy0 * sinA + dz0 * cosA;
+
+                                m.position.set(p0.x, newY, newZ);
+                                m.rotation.set(r0.x + angle, r0.y, r0.z);
+                            });
+                        } else {
+                            // Oldalra nyíló ajtó (Balos vagy Jobbos) Y tengely körül
+                            // Balos nyitás: -85 fok (-1.48 rad, bal oldal fixen marad a pántnál, jobb oldal előre lendül a térbe, külső felület és fogantyú balra/előre néz)
+                            // Jobbos nyitás: +85 fok (+1.48 rad, jobb oldal fixen marad a pántnál, bal oldal előre lendül a térbe, külső felület és fogantyú jobbra/előre néz)
+                            const angle = (isRight ? 1.48 : -1.48) * ease;
+                            const cosA = Math.cos(angle);
+                            const sinA = Math.sin(angle);
+
+                            members.forEach(m => {
+                                if (m.userData && m.userData.isHinge) {
+                                    // Kivetőpánt: A pántedény együtt fordul az ajtóval, a szerelőtalp a korpusz falán marad
+                                    const cupGroup = m.getObjectByName('hinge_cup_group');
+                                    const armGroup = m.getObjectByName('hinge_arm_group');
+                                    const plateGroup = m.getObjectByName('hinge_plate_group');
+
+                                    if (cupGroup && armGroup && plateGroup) {
+                                        if (!m.userData.origCupPos) {
+                                             m.userData.origCupPos = cupGroup.position.clone();
+                                             m.userData.origArmPos = armGroup.position.clone();
+                                             m.userData.origPlatePos = plateGroup.position.clone();
+                                        }
+
+                                        const c0 = m.userData.origCupPos;
+                                        const cdx = c0.x - pivotX;
+                                        const cdz = c0.z - pivotZ;
+
+                                        const newCupX = pivotX + cdx * cosA + cdz * sinA;
+                                        const newCupZ = pivotZ - cdx * sinA + cdz * cosA;
+
+                                        cupGroup.position.set(newCupX, c0.y, newCupZ);
+                                        cupGroup.rotation.y = angle;
+
+                                        const wallX = m.userData.wallX !== undefined ? Number(m.userData.wallX) : (isRight ? pivotX - 18 : pivotX + 18);
+                                        armGroup.position.set((newCupX + wallX) / 2, c0.y, (newCupZ + pivotZ) / 2);
+                                        armGroup.rotation.y = angle * 0.45;
+
+                                        plateGroup.position.copy(m.userData.origPlatePos);
+                                        plateGroup.rotation.set(0, 0, 0);
+                                        return;
+                                    }
+                                }
+
+                                const p0 = m.userData.origPosition;
+                                const r0 = m.userData.origRotation;
+                                const dx0 = p0.x - pivotX;
+                                const dz0 = p0.z - pivotZ;
+
+                                const newX = pivotX + dx0 * cosA + dz0 * sinA;
+                                const newZ = pivotZ - dx0 * sinA + dz0 * cosA;
+
+                                m.position.set(newX, p0.y, newZ);
+                                m.rotation.set(r0.x, r0.y + angle, r0.z);
+                            });
+                        }
+                    } else if (dData.isDrawer || dData.type === 'drawer') {
+                        // Fiók kihúzása előre (+Z irányba)
+                        const slideDist = Number(dData.slideDist) || 350;
+                        const deltaZ = slideDist * ease;
+
+                        members.forEach(m => {
+                            const p0 = m.userData.origPosition;
+                            const r0 = m.userData.origRotation;
+                            m.position.set(p0.x, p0.y, p0.z + deltaZ);
+                            m.rotation.set(r0.x, r0.y, r0.z);
+                        });
+                    }
+                });
+
+                // Egyedi/nem csoportosított ajtók a korpuszon belül
+                ungroupedMovable.forEach(m => {
+                    const uData = m.userData;
+                    const isDoor = uData.isDoor || uData.type === 'door';
+                    const isDrawer = uData.isDrawer || uData.type === 'drawer';
+
+                    if (isDoor) {
+                        const th = Number(uData.depth) || Number(uData.thickness) || 18;
+                        const isRight = uData.doorType === 'single_right';
+                        const pivotX = isRight ? (uData.origPosition.x + (Number(uData.width) || 600) / 2) : (uData.origPosition.x - (Number(uData.width) || 600) / 2);
+                        const pivotZ = uData.origPosition.z - (th / 2);
+                        const angle = (isRight ? 1.48 : -1.48) * ease;
+                        const cosA = Math.cos(angle);
+                        const sinA = Math.sin(angle);
+
+                        const p0 = uData.origPosition;
+                        const r0 = uData.origRotation;
+                        const dx0 = p0.x - pivotX;
+                        const dz0 = p0.z - pivotZ;
+
+                        m.position.set(pivotX + dx0 * cosA + dz0 * sinA, p0.y, pivotZ - dx0 * sinA + dz0 * cosA);
+                        m.rotation.set(r0.x, r0.y + angle, r0.z);
+                    } else if (isDrawer) {
+                        const deltaZ = 300 * ease;
+                        m.position.set(uData.origPosition.x, uData.origPosition.y, uData.origPosition.z + deltaZ);
+                    }
+                });
+            });
+        }
+
+        // 2. Önálló (nem korpusz) ajtólapok és fiókok
+        if (this.boardMeshes && Array.isArray(this.boardMeshes)) {
+            this.boardMeshes.forEach(mesh => {
+                const uData = mesh.userData;
+                if (!uData || uData.corpusId || uData.parentGroup) return; // Már korpuszként kezeltük
+
+                const isDoor = uData.isDoor || uData.type === 'door';
+                const isDrawer = uData.isDrawer || uData.type === 'drawer';
+                if (!isDoor && !isDrawer) return;
+
+                if (!uData.origPosition) {
+                    uData.origPosition = mesh.position.clone();
+                    uData.origRotation = mesh.rotation.clone();
+                }
+
+                if (isDoor) {
+                    const th = Number(uData.depth) || Number(uData.thickness) || 18;
+                    const isRight = uData.doorType === 'single_right';
+                    const pivotX = isRight ? (uData.origPosition.x + (Number(uData.width) || 600) / 2) : (uData.origPosition.x - (Number(uData.width) || 600) / 2);
+                    const pivotZ = uData.origPosition.z - (th / 2);
+                    const angle = (isRight ? 1.48 : -1.48) * ease;
+                    const cosA = Math.cos(angle);
+                    const sinA = Math.sin(angle);
+
+                    const p0 = uData.origPosition;
+                    const r0 = uData.origRotation;
+                    const dx0 = p0.x - pivotX;
+                    const dz0 = p0.z - pivotZ;
+
+                    mesh.position.set(pivotX + dx0 * cosA + dz0 * sinA, p0.y, pivotZ - dx0 * sinA + dz0 * cosA);
+                    mesh.rotation.set(r0.x, r0.y + angle, r0.z);
+                } else if (isDrawer) {
+                    const deltaZ = 300 * ease;
+                    mesh.position.set(uData.origPosition.x, uData.origPosition.y, uData.origPosition.z + deltaZ);
+                }
+            });
+        }
+    }
+
     animate() {
         requestAnimationFrame(this.animate);
         const delta = Math.min(0.1, this.clock.getDelta());
@@ -1050,6 +1303,17 @@ export class Scene3D {
             this.updateUnrealFly(delta);
         } else {
             this.controls.update();
+        }
+
+        // Ajtók nyitás / csukás animáció sima átmenete
+        if (this.doorAnimationProgress !== this.targetDoorAnimationProgress) {
+            const speed = 2.5; // teljes nyitás kb. 0.4 mp alatt
+            if (this.doorAnimationProgress < this.targetDoorAnimationProgress) {
+                this.doorAnimationProgress = Math.min(this.targetDoorAnimationProgress, this.doorAnimationProgress + speed * delta);
+            } else {
+                this.doorAnimationProgress = Math.max(this.targetDoorAnimationProgress, this.doorAnimationProgress - speed * delta);
+            }
+            this.updateDoorTransforms(this.doorAnimationProgress);
         }
 
         // 3D Lebegő buborék pozíciójának frissítése

@@ -13,17 +13,24 @@
     <script src="libs/three.min.js"></script>
     <script src="libs/OrbitControls.js"></script>
     <script src="libs/TransformControls.js"></script>
+    <script src="libs/GLTFLoader.js"></script>
     <script>
         window.addEventListener('error', function(e) {
-            console.error('ALKALMAZÁS HIBA:', e.error || e.message);
+            console.error('ALKALMAZÁS HIBA:', e.error || e.message, e);
             var banner = document.getElementById('global-error-banner');
             if (!banner) {
                 banner = document.createElement('div');
                 banner.id = 'global-error-banner';
                 banner.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#dc2626;color:#fff;padding:12px 20px;z-index:999999;font-family:sans-serif;font-size:13px;font-weight:600;box-shadow:0 4px 12px rgba(0,0,0,0.5);display:flex;justify-content:space-between;align-items:center;';
-                document.body.appendChild(banner);
+                if (document.body) {
+                    document.body.appendChild(banner);
+                } else {
+                    document.documentElement.appendChild(banner);
+                }
             }
-            banner.innerHTML = '<span>⚠️ Hiba lépett fel a betöltéskor: ' + (e.message || e.error) + '</span><button onclick="this.parentElement.remove()" style="background:#fff;color:#dc2626;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-weight:700;">OK</button>';
+            var file = e.filename ? e.filename.split('/').pop() : '';
+            var loc = file ? ' (' + file + ':' + e.lineno + ':' + e.colno + ')' : '';
+            banner.innerHTML = '<span>⚠️ Hiba lépett fel: ' + (e.message || e.error) + loc + '</span><button onclick="this.parentElement.remove()" style="background:#fff;color:#dc2626;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-weight:700;">OK</button>';
         });
     </script>
 </head>
@@ -68,6 +75,11 @@
 
             <button id="btn-open-cutlist" class="btn btn-success" title="Szabászati lista és árkalkuláció">
                 <span>📋 Szabászat</span>
+            </button>
+
+            <button id="btn-toggle-doors" class="btn" title="Ajtók és fiókok kinyitása / becsukása">
+                <span id="btn-toggle-doors-icon">🚪</span>
+                <span id="btn-toggle-doors-text">Ajtók Nyitása</span>
             </button>
 
             <button id="btn-take-screenshot" class="btn btn-icon" title="Kép mentése (Screenshot)">
@@ -873,15 +885,15 @@
 
     <!-- MODAL 4: KONYHA ELEM GENERÁTOR & VARÁZSLÓ -->
     <div class="modal-overlay" id="modal-kitchen-generator">
-        <div class="modal-dialog" style="max-width: 1160px; width: 95vw;">
+        <div class="modal-dialog">
             <div class="modal-header">
                 <div class="modal-title">🍳 Konyha Elem Tervező Varázsló</div>
                 <button class="btn btn-icon btn-close-modal" data-modal="modal-kitchen-generator">✕</button>
             </div>
-            <div class="modal-body kitchen-wizard-body" style="padding: 16px; max-height: 80vh; overflow: hidden; display: flex; gap: 16px;">
+            <div class="modal-body kitchen-wizard-body">
 
                 <!-- BAL OSZLOP: PARAMÉTEREK (Görgethető form) -->
-                <div class="kitchen-wizard-left-col" style="flex: 1.15; max-height: calc(80vh - 32px); overflow-y: auto; padding-right: 8px;">
+                <div class="kitchen-wizard-left-col">
 
                     <!-- Gyors Sablonok / Típus választó -->
                     <div style="display:flex; gap:8px; margin-bottom:16px; background:var(--bg-card); padding:8px; border-radius:var(--radius-sm); border:1px solid var(--border-color);">
@@ -896,410 +908,465 @@
                         </button>
                     </div>
 
-                    <!-- 1. FŐ KORPUSZ MÉRETEK -->
-                    <div style="background:rgba(255,255,255,0.02); border:1px solid var(--border-color); border-radius:var(--radius-sm); padding:12px; margin-bottom:12px;">
-                        <div style="font-size:13px; font-weight:700; color:var(--accent); margin-bottom:8px;">1. Fő Korpusz Méretek (mm)</div>
-                        <div class="grid-3-col">
-                            <div>
-                                <label class="form-label">Szélesség (X)</label>
-                                <div class="input-with-unit">
-                                    <input type="number" id="kc-width" class="form-control" value="600" step="10">
-                                    <span class="input-unit">mm</span>
-                                </div>
-                                <!-- Gyors szélességek -->
-                                <div style="display:flex; flex-wrap:wrap; gap:3px; margin-top:4px;">
-                                    <button class="quick-dim-btn btn-kc-w" data-val="300">300</button>
-                                    <button class="quick-dim-btn btn-kc-w" data-val="450">450</button>
-                                    <button class="quick-dim-btn btn-kc-w" data-val="600">600</button>
-                                    <button class="quick-dim-btn btn-kc-w" data-val="800">800</button>
-                                    <button class="quick-dim-btn btn-kc-w" data-val="900">900</button>
-                                    <button class="quick-dim-btn btn-kc-w" data-val="1200">1200</button>
-                                </div>
-                            </div>
-                            <div>
-                                <label class="form-label">Magasság (Y) [láb nélkül]</label>
-                                <div class="input-with-unit">
-                                    <input type="number" id="kc-height" class="form-control" value="720" step="10">
-                                    <span class="input-unit">mm</span>
-                                </div>
-                                <div style="display:flex; flex-wrap:wrap; gap:3px; margin-top:4px;">
-                                    <button class="quick-dim-btn btn-kc-h" data-val="600">600</button>
-                                    <button class="quick-dim-btn btn-kc-h" data-val="720">720</button>
-                                    <button class="quick-dim-btn btn-kc-h" data-val="860">860</button>
-                                    <button class="quick-dim-btn btn-kc-h" data-val="2000">2000</button>
-                                </div>
-                            </div>
-                            <div>
-                                <label class="form-label">Mélység (Z)</label>
-                                <div class="input-with-unit">
-                                    <input type="number" id="kc-depth" class="form-control" value="560" step="10">
-                                    <span class="input-unit">mm</span>
-                                </div>
-                                <div style="display:flex; flex-wrap:wrap; gap:3px; margin-top:4px;">
-                                    <button class="quick-dim-btn btn-kc-d" data-val="300">300</button>
-                                    <button class="quick-dim-btn btn-kc-d" data-val="560">560</button>
-                                    <button class="quick-dim-btn btn-kc-d" data-val="580">580</button>
-                                </div>
-                            </div>
-                        </div>
+                    <!-- ÖSSZECSUKHATÓ KATEGÓRIÁK KONTÉNER -->
+                    <div class="wizard-accordion-container">
 
-                        <div class="grid-3-col" style="margin-top:10px;">
-                            <div>
-                                <label class="form-label">Korpusz Lapvastagság</label>
-                                <select id="kc-thickness" class="form-control">
-                                    <option value="18" selected>18 mm standard</option>
-                                    <option value="19">19 mm prémium MDF</option>
-                                    <option value="16">16 mm</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="form-label">Korpusz & Front Textúra</label>
-                                <select id="kc-texture" class="form-control">
-                                    <optgroup label="Front & Bútorlap Textúrák">
-                                        <option value="front_k001" selected>Front K001</option>
-                                        <option value="front_k002">Front K002</option>
-                                        <option value="front_k003">Front K003</option>
-                                        <option value="front_k004">Front K004</option>
-                                        <option value="front_k536">Front K536</option>
-                                        <option value="front_3025">Front 3025</option>
-                                        <option value="front_a865">Front A865</option>
-                                    </optgroup>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="form-label" style="color:#f59e0b; font-weight:600;">⚡ Lapok lekerekítése</label>
-                                <div class="input-with-unit">
-                                    <input type="number" id="kc-edge-radius" class="form-control" value="1" min="0" max="10" step="0.5" title="Minden bútorlap lekerekítési sugara mm-ben">
-                                    <span class="input-unit">mm</span>
+                        <!-- 1. FŐ KORPUSZ MÉRETEK -->
+                        <div class="wizard-accordion-item" id="wz-sec-dims">
+                            <div class="wizard-accordion-header">
+                                <div class="wizard-accordion-title-wrap">
+                                    <span>📐 1. Fő Korpusz Méretek (mm)</span>
                                 </div>
+                                <span class="wizard-accordion-arrow">▶</span>
                             </div>
-                        </div>
-                    </div>
-
-                    <!-- 2. FELSŐ RÉSZ: ÖSSZEKÖTŐK (STRETCHERS) ÉS ELTOLÁSOK -->
-                    <div style="background:rgba(255,255,255,0.02); border:1px solid var(--border-color); border-radius:var(--radius-sm); padding:12px; margin-bottom:12px;">
-                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                            <span style="font-size:13px; font-weight:700; color:var(--accent);">2. Felső Rész: Összekötő Lécek & Eltolások</span>
-                            <select id="kc-top-type" class="form-control" style="width:200px; padding:3px 8px; font-size:12px;">
-                                <option value="stretchers" selected>Összekötő lécek (Alsószekrény)</option>
-                                <option value="full_top">Teljes tetőlap (Felsőszekrény)</option>
-                            </select>
-                        </div>
-
-                        <div id="kc-stretchers-settings">
-                            <!-- Első összekötő léc beállításai -->
-                            <div style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:var(--radius-sm); padding:10px; margin-bottom:8px;">
-                                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
-                                    <label style="font-size:12px; font-weight:700; color:var(--text-primary); display:flex; align-items:center; gap:6px;">
-                                        <input type="checkbox" id="kc-fs-enabled" checked> Első Összekötő Léc
-                                    </label>
-                                    <select id="kc-fs-orient" class="form-control" style="width:130px; font-size:11px; padding:2px 6px;">
-                                        <option value="flat" selected>Fekvő (lapjára)</option>
-                                        <option value="vertical">Álló (élre állítva)</option>
-                                    </select>
-                                </div>
-                                <div class="grid-2-col">
+                            <div class="wizard-accordion-body">
+                                <div class="grid-3-col">
                                     <div>
-                                        <label class="form-label" style="font-size:11px;">Léc Szélessége</label>
+                                        <label class="form-label">Szélesség (X)</label>
                                         <div class="input-with-unit">
-                                            <input type="number" id="kc-fs-width" class="form-control" value="80" step="5">
+                                            <input type="number" id="kc-width" class="form-control" value="600" step="10">
                                             <span class="input-unit">mm</span>
+                                        </div>
+                                        <!-- Gyors szélességek -->
+                                        <div style="display:flex; flex-wrap:wrap; gap:3px; margin-top:4px;">
+                                            <button class="quick-dim-btn btn-kc-w" data-val="300">300</button>
+                                            <button class="quick-dim-btn btn-kc-w" data-val="450">450</button>
+                                            <button class="quick-dim-btn btn-kc-w" data-val="600">600</button>
+                                            <button class="quick-dim-btn btn-kc-w" data-val="800">800</button>
+                                            <button class="quick-dim-btn btn-kc-w" data-val="900">900</button>
+                                            <button class="quick-dim-btn btn-kc-w" data-val="1200">1200</button>
                                         </div>
                                     </div>
                                     <div>
-                                        <label class="form-label" style="font-size:11px; color:#f59e0b; font-weight:700;">
-                                            ⚡ Eltolás elölről:
-                                        </label>
+                                        <label class="form-label">Magasság (Y) [láb nélkül]</label>
                                         <div class="input-with-unit">
-                                            <input type="number" id="kc-fs-inset" class="form-control" value="0" step="1" title="Mennyivel legyen beljebb a korpusz első síkjától (alapértelmezett: 0 mm)">
+                                            <input type="number" id="kc-height" class="form-control" value="720" step="10">
                                             <span class="input-unit">mm</span>
                                         </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Hátsó összekötő léc beállításai -->
-                            <div style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:var(--radius-sm); padding:10px;">
-                                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
-                                    <label style="font-size:12px; font-weight:700; color:var(--text-primary); display:flex; align-items:center; gap:6px;">
-                                        <input type="checkbox" id="kc-bs-enabled" checked> Hátsó Összekötő Léc
-                                    </label>
-                                    <select id="kc-bs-orient" class="form-control" style="width:130px; font-size:11px; padding:2px 6px;">
-                                        <option value="flat" selected>Fekvő (lapjára)</option>
-                                        <option value="vertical">Álló (élre állítva)</option>
-                                    </select>
-                                </div>
-                                <div class="grid-2-col">
-                                    <div>
-                                        <label class="form-label" style="font-size:11px;">Léc Szélessége</label>
-                                        <div class="input-with-unit">
-                                            <input type="number" id="kc-bs-width" class="form-control" value="80" step="5">
-                                            <span class="input-unit">mm</span>
+                                        <div style="display:flex; flex-wrap:wrap; gap:3px; margin-top:4px;">
+                                            <button class="quick-dim-btn btn-kc-h" data-val="600">600</button>
+                                            <button class="quick-dim-btn btn-kc-h" data-val="720">720</button>
+                                            <button class="quick-dim-btn btn-kc-h" data-val="860">860</button>
+                                            <button class="quick-dim-btn btn-kc-h" data-val="2000">2000</button>
                                         </div>
                                     </div>
                                     <div>
-                                        <label class="form-label" style="font-size:11px; color:#f59e0b; font-weight:700;">
-                                            ⚡ Eltolás hátulról:
-                                        </label>
+                                        <label class="form-label">Mélység (Z)</label>
                                         <div class="input-with-unit">
-                                            <input type="number" id="kc-bs-inset" class="form-control" value="0" step="1" title="Mennyivel legyen beljebb a korpusz hátsó síkjától (alapértelmezett: 0 mm)">
+                                            <input type="number" id="kc-depth" class="form-control" value="505" step="5">
                                             <span class="input-unit">mm</span>
+                                        </div>
+                                        <div style="display:flex; flex-wrap:wrap; gap:3px; margin-top:4px;">
+                                            <button class="quick-dim-btn btn-kc-d" data-val="300">300</button>
+                                            <button class="quick-dim-btn btn-kc-d" data-val="505">505</button>
+                                            <button class="quick-dim-btn btn-kc-d" data-val="560">560</button>
+                                            <button class="quick-dim-btn btn-kc-d" data-val="580">580</button>
                                         </div>
                                     </div>
                                 </div>
-                            </div>
-                        </div>
-                    </div>
 
-                    <!-- 3. HÁTFAL (HDF / BÚTORLAP) ÉS RÖGZÍTÉS -->
-                    <div style="background:rgba(255,255,255,0.02); border:1px solid var(--border-color); border-radius:var(--radius-sm); padding:12px; margin-bottom:12px;">
-                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                            <span style="font-size:13px; font-weight:700; color:var(--accent);">3. Hátfal Rögzítés & Eltolások</span>
-                            <label style="font-size:12px; display:flex; align-items:center; gap:6px;">
-                                <input type="checkbox" id="kc-back-enabled" checked> Hátfal bekapcsolva
-                            </label>
-                        </div>
-
-                        <div class="grid-3-col">
-                            <div>
-                                <label class="form-label">Hátfal Rögzítési Típusa</label>
-                                <select id="kc-back-type" class="form-control">
-                                    <option value="surface" selected>Rászegelt (hátulról rögzítve)</option>
-                                    <option value="groove">Nútba ültetett (süllyesztett belső horony)</option>
-                                    <option value="rabbet">Falcolt (korpusz élébe süllyesztve)</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="form-label">Hátfal Vastagság</label>
-                                <select id="kc-back-th" class="form-control">
-                                    <option value="3" selected>3 mm HDF / Farostlemez</option>
-                                    <option value="18">18 mm Bútorlap merevítés</option>
-                                </select>
-                            </div>
-                            <div id="kc-back-gap-container">
-                                <label class="form-label" style="color:#f59e0b; font-weight:700;">⚡ Réshézag körben</label>
-                                <div class="input-with-unit">
-                                    <input type="number" id="kc-back-gap" class="form-control" value="2.5" step="0.5" min="0" title="Körkörös peremvisszaállás / réshézag a korpusz széleitől (alapértelmezett: 2.5 mm)">
-                                    <span class="input-unit">mm</span>
-                                </div>
-                            </div>
-                            <div id="kc-back-inset-container" style="display:none;">
-                                <label class="form-label" style="color:#f59e0b; font-weight:700;">⚡ Hátfal Bemélyesztése (Z)</label>
-                                <div class="input-with-unit">
-                                    <input type="number" id="kc-back-inset" class="form-control" value="20" step="1" title="Vezetékek, csövek és fali egyenetlenségek miatti hézag a hátfal mögött">
-                                    <span class="input-unit">mm</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="grid-2-col" style="margin-top:8px;">
-                            <div>
-                                <label class="form-label" style="font-size:11px;">Hátfal Magassága</label>
-                                <div class="input-with-unit">
-                                    <input type="number" id="kc-back-height" class="form-control" value="715" step="5" title="Egyedi hátfal magasság mm-ben (alapértelmezetten korpusz magasság - 2×réshézag)">
-                                    <span class="input-unit">mm</span>
-                                </div>
-                            </div>
-                            <div>
-                                <label class="form-label" style="font-size:11px; color:#f59e0b; font-weight:700;">⚡ Függőleges Eltolás (Y)</label>
-                                <div class="input-with-unit">
-                                    <input type="number" id="kc-back-offset-y" class="form-control" value="0" step="1" title="Hátfal függőleges pozíciójának finomhangolása mm-ben">
-                                    <span class="input-unit">mm</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div id="kc-back-surface-notice" style="font-size:11px; color:#38bdf8; margin-top:6px;">
-                            ℹ️ Rászegelés esetén a hátfal 2.5 mm réshézaggal fekszik fel a korpusz hátuljára.
-                        </div>
-                    </div>
-
-                    <!-- 4. LÁBAK, SZOKLI ÉS MUNKALAP -->
-                    <div class="grid-2-col" style="margin-bottom:12px;">
-                        <!-- Lábak és Szokli -->
-                        <div style="background:rgba(255,255,255,0.02); border:1px solid var(--border-color); border-radius:var(--radius-sm); padding:12px;">
-                            <div style="font-size:13px; font-weight:700; color:var(--accent); margin-bottom:8px;">4. Lábak & Szokli</div>
-                            
-                            <div style="margin-bottom:8px;">
-                                <label style="font-size:12px; font-weight:600; display:flex; align-items:center; gap:6px;">
-                                    <input type="checkbox" id="kc-legs-enabled" checked> Állítható Konyhalábak
-                                </label>
-                                <div class="input-with-unit" style="margin-top:4px;">
-                                    <input type="number" id="kc-legs-height" class="form-control" value="100" step="10">
-                                    <span class="input-unit">mm</span>
-                                </div>
-                            </div>
-
-                            <div>
-                                <label style="font-size:12px; font-weight:600; display:flex; align-items:center; gap:6px;">
-                                    <input type="checkbox" id="kc-plinth-enabled" checked> Szokli Takaróléc
-                                </label>
-                                <div style="margin-top:4px;">
-                                    <label class="form-label" style="font-size:10px; color:#f59e0b;">⚡ Szokli visszaugrása (Lábtér):</label>
-                                    <div class="input-with-unit">
-                                        <input type="number" id="kc-plinth-inset" class="form-control" value="20" step="5">
-                                        <span class="input-unit">mm</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Munkalap és Belső Polcok -->
-                        <div style="background:rgba(255,255,255,0.02); border:1px solid var(--border-color); border-radius:var(--radius-sm); padding:12px;">
-                            <div style="font-size:13px; font-weight:700; color:var(--accent); margin-bottom:8px;">5. Munkalap & Polcok</div>
-
-                            <div style="margin-bottom:8px;">
-                                <label style="font-size:12px; font-weight:600; display:flex; align-items:center; gap:6px;">
-                                    <input type="checkbox" id="kc-worktop-enabled" checked> Konyhai Munkalap
-                                </label>
-                                
-                                <div class="grid-3-col" style="margin-top:4px;">
+                                <div class="grid-3-col" style="margin-top:10px;">
                                     <div>
-                                        <label class="form-label" style="font-size:10px;">Munkalap Mélység</label>
-                                        <div class="input-with-unit">
-                                            <input type="number" id="kc-worktop-depth" class="form-control" value="600" step="10" style="font-size:11px;">
-                                            <span class="input-unit">mm</span>
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label class="form-label" style="font-size:10px;">Vastagság</label>
-                                        <select id="kc-worktop-th" class="form-control" style="font-size:11px;">
-                                            <option value="38" selected>38 mm standard</option>
-                                            <option value="28">28 mm</option>
-                                            <option value="18">18 mm</option>
+                                        <label class="form-label">Korpusz Lapvastagság</label>
+                                        <select id="kc-thickness" class="form-control">
+                                            <option value="18" selected>18 mm standard</option>
+                                            <option value="19">19 mm prémium MDF</option>
+                                            <option value="16">16 mm</option>
                                         </select>
                                     </div>
                                     <div>
-                                        <label class="form-label" style="font-size:10px; color:#f59e0b;">⚡ Lekerekítés</label>
-                                        <div class="input-with-unit">
-                                            <input type="number" id="kc-worktop-edge-radius" class="form-control" value="3" min="0" max="15" step="0.5" style="font-size:11px;" title="Munkalap lekerekítési sugara mm-ben (38mm-nél 3mm)">
-                                            <span class="input-unit">mm</span>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <!-- Túllógások -->
-                                <div class="grid-2-col" style="margin-top:6px;">
-                                    <div>
-                                        <label class="form-label" style="font-size:10px; color:#f59e0b; font-weight:600;">⚡ Első túllógás</label>
-                                        <div class="input-with-unit">
-                                            <input type="number" id="kc-worktop-overhang-front" class="form-control" value="25" min="0" step="1" style="font-size:11px;">
-                                            <span class="input-unit">mm</span>
-                                        </div>
+                                        <label class="form-label">Korpusz & Front Textúra</label>
+                                        <select id="kc-texture" class="form-control">
+                                            <optgroup label="Front & Bútorlap Textúrák">
+                                                <option value="front_k001" selected>Front K001</option>
+                                                <option value="front_k002">Front K002</option>
+                                                <option value="front_k003">Front K003</option>
+                                                <option value="front_k004">Front K004</option>
+                                                <option value="front_k536">Front K536</option>
+                                                <option value="front_3025">Front 3025</option>
+                                                <option value="front_a865">Front A865</option>
+                                            </optgroup>
+                                        </select>
                                     </div>
                                     <div>
-                                        <label class="form-label" style="font-size:10px; color:#f59e0b; font-weight:600;">⚡ Hátsó túllógás</label>
+                                        <label class="form-label" style="color:#f59e0b; font-weight:600;">⚡ Lapok lekerekítése</label>
                                         <div class="input-with-unit">
-                                            <input type="number" id="kc-worktop-overhang-back" class="form-control" value="15" min="0" step="1" style="font-size:11px;">
+                                            <input type="number" id="kc-edge-radius" class="form-control" value="1" min="0" max="10" step="0.5" title="Minden bútorlap lekerekítési sugara mm-ben">
                                             <span class="input-unit">mm</span>
                                         </div>
                                     </div>
                                 </div>
-                                <div id="kc-worktop-math-info" style="font-size:10px; color:var(--text-muted); margin-top:4px;">
-                                    📏 Korpusz: 560 mm + Elöl: 25 mm + Hátul: 15 mm = 600 mm munkalap
-                                </div>
+                            </div>
+                        </div>
 
-                                <!-- Munkalap Textúra Választó -->
-                                <div style="margin-top:8px;">
-                                    <label class="form-label" style="font-size:10px; font-weight:700; color:#38bdf8;">🪵 Munkalap & Hátfalpanel Textúra</label>
-                                    <select id="kc-worktop-texture" class="form-control" style="font-size:11px;">
-                                        <optgroup label="Munkalap Textúrák">
-                                            <option value="wt_3025">Munkalap 3025</option>
-                                            <option value="wt_4299">Munkalap 4299</option>
-                                            <option value="wt_k002" selected>Munkalap K002</option>
-                                            <option value="wt_k003">Munkalap K003</option>
-                                            <option value="wt_k092">Munkalap K092</option>
-                                            <option value="wt_k2738">Munkalap K2738</option>
-                                            <option value="wt_k367">Munkalap K367</option>
-                                            <option value="wt_k536">Munkalap K536</option>
-                                            <option value="wt_k551">Munkalap K551</option>
-                                            <option value="wt_k552">Munkalap K552</option>
-                                            <option value="wt_k553">Munkalap K553</option>
-                                            <option value="wt_k756">Munkalap K756</option>
-                                            <option value="wt_k758">Munkalap K758</option>
-                                            <option value="wt_k820">Munkalap K820</option>
-                                        </optgroup>
+                        <!-- 2. FELSŐ RÉSZ: ÖSSZEKÖTŐK (STRETCHERS) ÉS ELTOLÁSOK -->
+                        <div class="wizard-accordion-item" id="wz-sec-stretchers">
+                            <div class="wizard-accordion-header">
+                                <div class="wizard-accordion-title-wrap">
+                                    <span>📏 2. Felső Rész: Összekötő Lécek & Eltolások</span>
+                                </div>
+                                <span class="wizard-accordion-arrow">▶</span>
+                            </div>
+                            <div class="wizard-accordion-body">
+                                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                                    <label class="form-label" style="margin-bottom:0;">Felső rész típusa:</label>
+                                    <select id="kc-top-type" class="form-control" style="width:200px; padding:3px 8px; font-size:12px;">
+                                        <option value="stretchers" selected>Összekötő lécek (Alsószekrény)</option>
+                                        <option value="full_top">Teljes tetőlap (Felsőszekrény)</option>
                                     </select>
                                 </div>
 
-                                <!-- Munkalap Hátfal (Csempepótló fali panel) -->
-                                <div style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:var(--radius-sm); padding:8px; margin-top:8px;">
-                                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-                                        <label style="font-size:11px; font-weight:700; color:var(--text-primary); display:flex; align-items:center; gap:6px;">
-                                            <input type="checkbox" id="kc-worktop-splashback-enabled"> 🧱 Munkalap Hátfal (Fali panel)
-                                        </label>
-                                    </div>
-                                    <div id="kc-worktop-splashback-settings" class="grid-2-col" style="display:none; gap:6px; margin-top:6px;">
-                                        <div>
-                                            <label class="form-label" style="font-size:10px;">Hátfal Magasság (Y)</label>
-                                            <div class="input-with-unit">
-                                                <input type="number" id="kc-worktop-splashback-height" class="form-control" value="600" step="10" style="font-size:11px;" title="Munkalap hátfal magassága mm-ben (alapértelmezett: 600 mm / 60 cm)">
-                                                <span class="input-unit">mm</span>
+                                <div id="kc-stretchers-settings">
+                                    <!-- Első összekötő léc beállításai -->
+                                    <div style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:var(--radius-sm); padding:10px; margin-bottom:8px;">
+                                        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
+                                            <label style="font-size:12px; font-weight:700; color:var(--text-primary); display:flex; align-items:center; gap:6px;">
+                                                <input type="checkbox" id="kc-fs-enabled" checked> Első Összekötő Léc
+                                            </label>
+                                            <select id="kc-fs-orient" class="form-control" style="width:130px; font-size:11px; padding:2px 6px;">
+                                                <option value="flat" selected>Fekvő (lapjára)</option>
+                                                <option value="vertical">Álló (élre állítva)</option>
+                                            </select>
+                                        </div>
+                                        <div class="grid-2-col">
+                                            <div>
+                                                <label class="form-label" style="font-size:11px;">Léc Szélessége</label>
+                                                <div class="input-with-unit">
+                                                    <input type="number" id="kc-fs-width" class="form-control" value="80" step="5">
+                                                    <span class="input-unit">mm</span>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label class="form-label" style="font-size:11px; color:#f59e0b; font-weight:700;">
+                                                    ⚡ Eltolás elölről:
+                                                </label>
+                                                <div class="input-with-unit">
+                                                    <input type="number" id="kc-fs-inset" class="form-control" value="0" step="1" title="Mennyivel legyen beljebb a korpusz első síkjától (alapértelmezett: 0 mm)">
+                                                    <span class="input-unit">mm</span>
+                                                </div>
                                             </div>
                                         </div>
-                                        <div>
-                                            <label class="form-label" style="font-size:10px;">Mélység / Vastagság</label>
-                                            <div class="input-with-unit">
-                                                <input type="number" id="kc-worktop-splashback-depth" class="form-control" value="5" step="1" style="font-size:11px;" title="Munkalap hátfal vastagsága/mélysége mm-ben (alapértelmezett: 5 mm / 0.5 cm)">
-                                                <span class="input-unit">mm</span>
+                                    </div>
+
+                                    <!-- Hátsó összekötő léc beállításai -->
+                                    <div style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:var(--radius-sm); padding:10px;">
+                                        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
+                                            <label style="font-size:12px; font-weight:700; color:var(--text-primary); display:flex; align-items:center; gap:6px;">
+                                                <input type="checkbox" id="kc-bs-enabled" checked> Hátsó Összekötő Léc
+                                            </label>
+                                            <select id="kc-bs-orient" class="form-control" style="width:130px; font-size:11px; padding:2px 6px;">
+                                                <option value="flat" selected>Fekvő (lapjára)</option>
+                                                <option value="vertical">Álló (élre állítva)</option>
+                                            </select>
+                                        </div>
+                                        <div class="grid-2-col">
+                                            <div>
+                                                <label class="form-label" style="font-size:11px;">Léc Szélessége</label>
+                                                <div class="input-with-unit">
+                                                    <input type="number" id="kc-bs-width" class="form-control" value="80" step="5">
+                                                    <span class="input-unit">mm</span>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label class="form-label" style="font-size:11px; color:#f59e0b; font-weight:700;">
+                                                    ⚡ Eltolás hátulról:
+                                                </label>
+                                                <div class="input-with-unit">
+                                                    <input type="number" id="kc-bs-inset" class="form-control" value="0" step="1" title="Mennyivel legyen beljebb a korpusz hátsó síkjától (alapértelmezett: 0 mm)">
+                                                    <span class="input-unit">mm</span>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
                             </div>
+                        </div>
 
-                            <div style="margin-top:8px;">
-                                <label class="form-label" style="font-size:12px; font-weight:600;">Belső Állítható Polcok Száma</label>
-                                <select id="kc-shelves-count" class="form-control">
-                                    <option value="0">0 db (üres belső tér, pl. fiókos vagy beépíthető)</option>
-                                    <option value="1" selected>1 db belső polc</option>
-                                    <option value="2">2 db belső polc</option>
-                                    <option value="3">3 db belső polc</option>
-                                </select>
+                        <!-- 3. HÁTFAL (HDF / BÚTORLAP) ÉS RÖGZÍTÉS -->
+                        <div class="wizard-accordion-item" id="wz-sec-back">
+                            <div class="wizard-accordion-header">
+                                <div class="wizard-accordion-title-wrap">
+                                    <span>🪵 3. Hátfal Rögzítés & Eltolások</span>
+                                </div>
+                                <div style="display:flex; align-items:center; gap:8px;">
+                                    <label style="font-size:12px; display:flex; align-items:center; gap:6px; cursor:pointer;" onclick="event.stopPropagation()">
+                                        <input type="checkbox" id="kc-back-enabled" checked> Hátfal bekapcsolva
+                                    </label>
+                                    <span class="wizard-accordion-arrow">▶</span>
+                                </div>
+                            </div>
+                            <div class="wizard-accordion-body">
+                                <div class="grid-3-col">
+                                    <div>
+                                        <label class="form-label">Hátfal Rögzítési Típusa</label>
+                                        <select id="kc-back-type" class="form-control">
+                                            <option value="surface" selected>Rászegelt (hátulról rögzítve)</option>
+                                            <option value="groove">Nútba ültetett (süllyesztett belső horony)</option>
+                                            <option value="rabbet">Falcolt (korpusz élébe süllyesztve)</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="form-label">Hátfal Vastagság</label>
+                                        <select id="kc-back-th" class="form-control">
+                                            <option value="3" selected>3 mm HDF / Farostlemez</option>
+                                            <option value="18">18 mm Bútorlap merevítés</option>
+                                        </select>
+                                    </div>
+                                    <div id="kc-back-gap-container">
+                                        <label class="form-label" style="color:#f59e0b; font-weight:700;">⚡ Réshézag körben</label>
+                                        <div class="input-with-unit">
+                                            <input type="number" id="kc-back-gap" class="form-control" value="2.5" step="0.5" min="0" title="Körkörös peremvisszaállás / réshézag a korpusz széleitől (alapértelmezett: 2.5 mm)">
+                                            <span class="input-unit">mm</span>
+                                        </div>
+                                    </div>
+                                    <div id="kc-back-inset-container" style="display:none;">
+                                        <label class="form-label" style="color:#f59e0b; font-weight:700;">⚡ Hátfal Bemélyesztése (Z)</label>
+                                        <div class="input-with-unit">
+                                            <input type="number" id="kc-back-inset" class="form-control" value="20" step="1" title="Vezetékek, csövek és fali egyenetlenségek miatti hézag a hátfal mögött">
+                                            <span class="input-unit">mm</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="grid-2-col" style="margin-top:8px;">
+                                    <div>
+                                        <label class="form-label" style="font-size:11px;">Hátfal Magassága</label>
+                                        <div class="input-with-unit">
+                                            <input type="number" id="kc-back-height" class="form-control" value="715" step="5" title="Egyedi hátfal magasság mm-ben (alapértelmezetten korpusz magasság - 2×réshézag)">
+                                            <span class="input-unit">mm</span>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label class="form-label" style="font-size:11px; color:#f59e0b; font-weight:700;">⚡ Függőleges Eltolás (Y)</label>
+                                        <div class="input-with-unit">
+                                            <input type="number" id="kc-back-offset-y" class="form-control" value="0" step="1" title="Hátfal függőleges pozíciójának finomhangolása mm-ben">
+                                            <span class="input-unit">mm</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div id="kc-back-surface-notice" style="font-size:11px; color:#38bdf8; margin-top:6px;">
+                                    ℹ️ Rászegelés esetén a hátfal 2.5 mm réshézaggal fekszik fel a korpusz hátuljára.
+                                </div>
                             </div>
                         </div>
-                    </div>
 
-                    <!-- 6. FRONT ELEMEK & KÉSZÜLÉKEK (Ajtók, Fiókok, Beépíthető Sütő / Főzőlap) -->
-                    <div style="background:rgba(255,255,255,0.02); border:1px solid var(--border-color); border-radius:var(--radius-sm); padding:12px; margin-bottom:12px;">
-                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                            <span style="font-size:13px; font-weight:700; color:var(--accent); display:flex; align-items:center; gap:6px;">
-                                <span>🚪 6. Front Elemek & Készülékek</span>
-                                <span id="kc-elements-badge" style="font-size:10px; background:rgba(245,158,11,0.2); color:#f59e0b; padding:1px 6px; border-radius:10px; font-weight:600;">0 elem hozzáadva</span>
-                            </span>
-                            <span id="kc-elements-height-info" style="font-size:11px; color:var(--text-muted);">Összes front magasság: 0 / 720 mm</span>
-                        </div>
+                        <!-- 4. LÁBAK ÉS SZOKLI -->
+                        <div class="wizard-accordion-item" id="wz-sec-legs">
+                            <div class="wizard-accordion-header">
+                                <div class="wizard-accordion-title-wrap">
+                                    <span>🦵 4. Lábak & Szokli Takaróléc</span>
+                                </div>
+                                <span class="wizard-accordion-arrow">▶</span>
+                            </div>
+                            <div class="wizard-accordion-body">
+                                <div style="margin-bottom:10px;">
+                                    <label style="font-size:12px; font-weight:600; display:flex; align-items:center; gap:6px;">
+                                        <input type="checkbox" id="kc-legs-enabled" checked> Állítható Konyhalábak
+                                    </label>
+                                    <div class="grid-2-col" style="gap:6px; margin-top:4px;">
+                                        <div>
+                                            <label class="form-label" style="font-size:10px;">Láb Magasság</label>
+                                            <div class="input-with-unit">
+                                                <input type="number" id="kc-legs-height" class="form-control" value="100" step="10" style="font-size:11px;">
+                                                <span class="input-unit">mm</span>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label class="form-label" style="font-size:10px; color:#38bdf8; font-weight:700;">🦵 3D Láb Modell</label>
+                                            <select id="kc-legs-model" class="form-control" style="font-size:11px; padding:3px 4px;">
+                                                <option value="lab_01" selected>Láb 01 (Állítható szürke/fekete)</option>
+                                                <option value="lab_02">Láb 02 (Standard fekete láb)</option>
+                                                <option value="lab_03">Láb 03 (Króm szintezőláb)</option>
+                                                <option value="standard">Egyszerű henger</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
 
-                        <div id="kc-elements-container" style="display:flex; flex-direction:column; gap:8px; margin-bottom:10px;">
-                            <!-- Dinamikusan hozzáadott elemek listája ide renderelődik -->
-                            <div id="kc-no-elements-msg" style="font-size:11px; color:var(--text-muted); font-style:italic; padding:10px; background:rgba(0,0,0,0.2); border-radius:4px; text-align:center;">
-                                Alapból nincs front hozzáadva (nyitott korpusz). Az alábbi gombokkal adhatsz hozzá tetszőlegesen ajtót, fiókot vagy beépíthető sütőt/főzőlapot!
+                                <div>
+                                    <label style="font-size:12px; font-weight:600; display:flex; align-items:center; gap:6px;">
+                                        <input type="checkbox" id="kc-plinth-enabled" checked> Szokli Takaróléc
+                                    </label>
+                                    <div style="margin-top:4px;">
+                                        <label class="form-label" style="font-size:10px; color:#f59e0b;">⚡ Szokli visszaugrása (Lábtér):</label>
+                                        <div class="input-with-unit">
+                                            <input type="number" id="kc-plinth-inset" class="form-control" value="20" step="5">
+                                            <span class="input-unit">mm</span>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
-                        <!-- Hozzáadás gombok -->
-                        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px; margin-bottom:6px;">
-                            <button id="btn-kc-add-door" type="button" class="btn btn-sm" style="background:rgba(59,130,246,0.15); color:#60a5fa; border-color:rgba(59,130,246,0.4); justify-content:center; font-weight:600;">
-                                <span>🚪 + Nyíló Ajtó</span>
-                            </button>
-                            <button id="btn-kc-add-liftup" type="button" class="btn btn-sm" style="background:rgba(147,51,234,0.15); color:#c084fc; border-color:rgba(147,51,234,0.4); justify-content:center; font-weight:600;">
-                                <span>⬆️ + Felnyíló Ajtó</span>
-                            </button>
+                        <!-- 5. MUNKALAP & BELSŐ POLCOK -->
+                        <div class="wizard-accordion-item" id="wz-sec-worktop">
+                            <div class="wizard-accordion-header">
+                                <div class="wizard-accordion-title-wrap">
+                                    <span>🪚 5. Munkalap & Belső Polcok</span>
+                                </div>
+                                <span class="wizard-accordion-arrow">▶</span>
+                            </div>
+                            <div class="wizard-accordion-body">
+                                <div style="margin-bottom:8px;">
+                                    <label style="font-size:12px; font-weight:600; display:flex; align-items:center; gap:6px;">
+                                        <input type="checkbox" id="kc-worktop-enabled" checked> Konyhai Munkalap
+                                    </label>
+                                    
+                                    <div class="grid-3-col" style="margin-top:4px;">
+                                        <div>
+                                            <label class="form-label" style="font-size:10px;">Munkalap Mélység</label>
+                                            <div class="input-with-unit">
+                                                <input type="number" id="kc-worktop-depth" class="form-control" value="600" step="10" style="font-size:11px;">
+                                                <span class="input-unit">mm</span>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label class="form-label" style="font-size:10px;">Vastagság</label>
+                                            <select id="kc-worktop-th" class="form-control" style="font-size:11px;">
+                                                <option value="38" selected>38 mm standard</option>
+                                                <option value="28">28 mm</option>
+                                                <option value="18">18 mm</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label class="form-label" style="font-size:10px; color:#f59e0b;">⚡ Lekerekítés</label>
+                                            <div class="input-with-unit">
+                                                <input type="number" id="kc-worktop-edge-radius" class="form-control" value="3" min="0" max="15" step="0.5" style="font-size:11px;" title="Munkalap lekerekítési sugara mm-ben (38mm-nél 3mm)">
+                                                <span class="input-unit">mm</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Túllógások -->
+                                    <div class="grid-2-col" style="margin-top:6px;">
+                                        <div>
+                                            <label class="form-label" style="font-size:10px; color:#f59e0b; font-weight:600;">⚡ Első túllógás</label>
+                                            <div class="input-with-unit">
+                                                <input type="number" id="kc-worktop-overhang-front" class="form-control" value="45" min="0" step="1" style="font-size:11px;">
+                                                <span class="input-unit">mm</span>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label class="form-label" style="font-size:10px; color:#f59e0b; font-weight:600;">⚡ Hátsó túllógás</label>
+                                            <div class="input-with-unit">
+                                                <input type="number" id="kc-worktop-overhang-back" class="form-control" value="50" min="0" step="1" style="font-size:11px;">
+                                                <span class="input-unit">mm</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div id="kc-worktop-math-info" style="font-size:10px; color:var(--text-muted); margin-top:4px;">
+                                        📏 Korpusz: 505 mm + Elöl: 45 mm + Hátul: 50 mm = 600 mm munkalap
+                                    </div>
+
+                                    <!-- Munkalap Textúra Választó -->
+                                    <div style="margin-top:8px;">
+                                        <label class="form-label" style="font-size:10px; font-weight:700; color:#38bdf8;">🪵 Munkalap & Hátfalpanel Textúra</label>
+                                        <select id="kc-worktop-texture" class="form-control" style="font-size:11px;">
+                                            <optgroup label="Munkalap Textúrák">
+                                                <option value="wt_3025">Munkalap 3025</option>
+                                                <option value="wt_4299">Munkalap 4299</option>
+                                                <option value="wt_k002" selected>Munkalap K002</option>
+                                                <option value="wt_k003">Munkalap K003</option>
+                                                <option value="wt_k092">Munkalap K092</option>
+                                                <option value="wt_k2738">Munkalap K2738</option>
+                                                <option value="wt_k367">Munkalap K367</option>
+                                                <option value="wt_k536">Munkalap K536</option>
+                                                <option value="wt_k551">Munkalap K551</option>
+                                                <option value="wt_k552">Munkalap K552</option>
+                                                <option value="wt_k553">Munkalap K553</option>
+                                                <option value="wt_k756">Munkalap K756</option>
+                                                <option value="wt_k758">Munkalap K758</option>
+                                                <option value="wt_k820">Munkalap K820</option>
+                                            </optgroup>
+                                        </select>
+                                    </div>
+
+                                    <!-- Munkalap Hátfal (Csempepótló fali panel) -->
+                                    <div style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:var(--radius-sm); padding:8px; margin-top:8px;">
+                                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                                            <label style="font-size:11px; font-weight:700; color:var(--text-primary); display:flex; align-items:center; gap:6px;">
+                                                <input type="checkbox" id="kc-worktop-splashback-enabled" checked> 🧱 Munkalap Hátfal (Fali panel)
+                                            </label>
+                                        </div>
+                                        <div id="kc-worktop-splashback-settings" class="grid-2-col" style="display:grid; gap:6px; margin-top:6px;">
+                                            <div>
+                                                <label class="form-label" style="font-size:10px;">Hátfal Magasság (Y)</label>
+                                                <div class="input-with-unit">
+                                                    <input type="number" id="kc-worktop-splashback-height" class="form-control" value="600" step="10" style="font-size:11px;" title="Munkalap hátfal magassága mm-ben (alapértelmezett: 600 mm / 60 cm)">
+                                                    <span class="input-unit">mm</span>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label class="form-label" style="font-size:10px;">Mélység / Vastagság</label>
+                                                <div class="input-with-unit">
+                                                    <input type="number" id="kc-worktop-splashback-depth" class="form-control" value="5" step="1" style="font-size:11px;" title="Munkalap hátfal vastagsága/mélysége mm-ben (alapértelmezett: 5 mm / 0.5 cm)">
+                                                    <span class="input-unit">mm</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div style="margin-top:8px;">
+                                    <label class="form-label" style="font-size:12px; font-weight:600;">Belső Állítható Polcok Száma</label>
+                                    <select id="kc-shelves-count" class="form-control">
+                                        <option value="0">0 db (üres belső tér, pl. fiókos vagy beépíthető)</option>
+                                        <option value="1" selected>1 db belső polc</option>
+                                        <option value="2">2 db belső polc</option>
+                                        <option value="3">3 db belső polc</option>
+                                    </select>
+                                </div>
+                            </div>
                         </div>
-                        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px;">
-                            <button id="btn-kc-add-drawer" type="button" class="btn btn-sm" style="background:rgba(16,185,129,0.15); color:#34d399; border-color:rgba(16,185,129,0.4); justify-content:center; font-weight:600;">
-                                <span>🗄️ + Fiók</span>
-                            </button>
-                            <button id="btn-kc-add-oven" type="button" class="btn btn-sm" style="background:rgba(239,68,68,0.15); color:#f87171; border-color:rgba(239,68,68,0.4); justify-content:center; font-weight:600;">
-                                <span>🍳 + Sütő & Főzőlap</span>
-                            </button>
+
+                        <!-- 6. FRONT ELEMEK & KÉSZÜLÉKEK -->
+                        <div class="wizard-accordion-item" id="wz-sec-fronts">
+                            <div class="wizard-accordion-header">
+                                <div class="wizard-accordion-title-wrap">
+                                    <span>🚪 6. Front Elemek & Készülékek</span>
+                                    <span id="kc-elements-badge" style="font-size:10px; background:rgba(245,158,11,0.2); color:#f59e0b; padding:1px 6px; border-radius:10px; font-weight:600;">0 elem hozzáadva</span>
+                                </div>
+                                <span class="wizard-accordion-arrow">▶</span>
+                            </div>
+                            <div class="wizard-accordion-body">
+                                <div style="display:flex; justify-content:flex-end; margin-bottom:6px;">
+                                    <span id="kc-elements-height-info" style="font-size:11px; color:var(--text-muted);">Összes front magasság: 0 / 720 mm</span>
+                                </div>
+
+                                <div id="kc-elements-container" style="display:flex; flex-direction:column; gap:8px; margin-bottom:10px;">
+                                    <!-- Dinamikusan hozzáadott elemek listája ide renderelődik -->
+                                    <div id="kc-no-elements-msg" style="font-size:11px; color:var(--text-muted); font-style:italic; padding:10px; background:rgba(0,0,0,0.2); border-radius:4px; text-align:center;">
+                                        Alapból nincs front hozzáadva (nyitott korpusz). Az alábbi gombokkal adhatsz hozzá tetszőlegesen ajtót, fiókot vagy beépíthető sütőt/főzőlapot!
+                                    </div>
+                                </div>
+
+                                <!-- Hozzáadás gombok -->
+                                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px; margin-bottom:6px;">
+                                    <button id="btn-kc-add-door" type="button" class="btn btn-sm" style="background:rgba(59,130,246,0.15); color:#60a5fa; border-color:rgba(59,130,246,0.4); justify-content:center; font-weight:600;">
+                                        <span>🚪 + Nyíló Ajtó</span>
+                                    </button>
+                                    <button id="btn-kc-add-liftup" type="button" class="btn btn-sm" style="background:rgba(147,51,234,0.15); color:#c084fc; border-color:rgba(147,51,234,0.4); justify-content:center; font-weight:600;">
+                                        <span>⬆️ + Felnyíló Ajtó</span>
+                                    </button>
+                                </div>
+                                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px;">
+                                    <button id="btn-kc-add-drawer" type="button" class="btn btn-sm" style="background:rgba(16,185,129,0.15); color:#34d399; border-color:rgba(16,185,129,0.4); justify-content:center; font-weight:600;">
+                                        <span>🗄️ + Fiók</span>
+                                    </button>
+                                    <button id="btn-kc-add-oven" type="button" class="btn btn-sm" style="background:rgba(239,68,68,0.15); color:#f87171; border-color:rgba(239,68,68,0.4); justify-content:center; font-weight:600;">
+                                        <span>🍳 + Sütő & Főzőlap</span>
+                                    </button>
+                                </div>
+                            </div>
                         </div>
+
                     </div>
 
                 </div>
 
                 <!-- JOBB OSZLOP: 3D ÉLŐKÉP (Valós idejű interaktív előnézet) -->
-                <div class="kitchen-wizard-right-col" style="flex: 1; display: flex; flex-direction: column; background: #131720; border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 12px; position: relative;">
+                <div class="kitchen-wizard-right-col" style="background: #131720; border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 12px; position: relative;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                         <span style="font-size: 13px; font-weight: 700; color: #f59e0b; display: flex; align-items: center; gap: 6px;">
                             <span>🔍 3D Élőkép</span>
@@ -1312,7 +1379,7 @@
                     </div>
 
                     <!-- 3D Canvas Konténer -->
-                    <div id="kitchen-preview-3d-container" style="flex: 1; width: 100%; min-height: 420px; border-radius: var(--radius-sm); overflow: hidden; position: relative; background: #181b24; border: 1px solid rgba(255,255,255,0.06);"></div>
+                    <div id="kitchen-preview-3d-container" style="border-radius: var(--radius-sm); overflow: hidden; position: relative; background: #181b24; border: 1px solid rgba(255,255,255,0.06);"></div>
 
                     <!-- Élőkép lábléc információk -->
                     <div style="margin-top: 8px; display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: var(--text-muted);">
@@ -1332,6 +1399,6 @@
     </div>
 
     <!-- Betöltjük a fő alkalmazás scriptet (Működik közvetlen fájlmegnyitással és webszerverrel is) -->
-    <script src="js/bundle.js"></script>
+    <script src="js/bundle.js?v=3.0"></script>
 </body>
 </html>
