@@ -5670,7 +5670,8 @@ class SnapEngine {
 // --- FILE: catalogManager.js ---
 /**
  * Bal Oldali Katalógus és Kategóriakezelő Menedzser (catalogManager.js)
- * Kategóriák kezelése, bútorok mentése automatikus 3D előnézettel, visszatöltés, export/import
+ * Kategóriák kezelése, bútorok mentése automatikus 3D előnézettel, visszatöltés, export/import,
+ * valamint automatikus szinkronizáció a helyi Python szerverrel és a GitHub-bal.
  */
 
 class CatalogManager {
@@ -5687,7 +5688,159 @@ class CatalogManager {
         this.storageKeyCategories = 'butortervezo_categories_v1';
         this.storageKeyItems = 'butortervezo_items_v1';
 
+        // 1. Gyors betöltés LocalStorage-ből az azonnali megjelenítéshez
         this.loadFromStorage();
+
+        // 2. Háttérben lekérés a szervertől (data/catalog.json - GitHub szinkron)
+        this.fetchServerCatalog();
+    }
+
+    /**
+     * Elegáns, lebegő értesítés megjelenítése a képernyő sarkában
+     */
+    showToast(message, type = 'info') {
+        let container = document.getElementById('catalog-toast-container');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'catalog-toast-container';
+            container.style.cssText = `
+                position: fixed;
+                bottom: 24px;
+                right: 24px;
+                z-index: 999999;
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+                pointer-events: none;
+            `;
+            document.body.appendChild(container);
+        }
+
+        const toast = document.createElement('div');
+        toast.style.cssText = `
+            padding: 12px 18px;
+            border-radius: 8px;
+            font-family: 'Inter', sans-serif;
+            font-size: 13px;
+            font-weight: 600;
+            color: #ffffff;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            pointer-events: auto;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            transform: translateY(20px);
+            opacity: 0;
+        `;
+
+        if (type === 'success') {
+            toast.style.background = 'linear-gradient(135deg, #10b981, #059669)';
+            toast.style.border = '1px solid #34d399';
+        } else if (type === 'warning') {
+            toast.style.background = 'linear-gradient(135deg, #f59e0b, #d97706)';
+            toast.style.border = '1px solid #fbbf24';
+        } else if (type === 'error') {
+            toast.style.background = 'linear-gradient(135deg, #ef4444, #dc2626)';
+            toast.style.border = '1px solid #f87171';
+        } else {
+            toast.style.background = 'linear-gradient(135deg, #3b82f6, #2563eb)';
+            toast.style.border = '1px solid #60a5fa';
+        }
+
+        toast.innerHTML = `<span>${message}</span>`;
+        container.appendChild(toast);
+
+        // Animált beúszás
+        requestAnimationFrame(() => {
+            toast.style.transform = 'translateY(0)';
+            toast.style.opacity = '1';
+        });
+
+        // Eltűnés 3.5 mp után
+        setTimeout(() => {
+            toast.style.transform = 'translateY(20px)';
+            toast.style.opacity = '0';
+            setTimeout(() => toast.remove(), 300);
+        }, 3500);
+    }
+
+    /**
+     * Katalógus adatok lekérése a helyi backend szervertől (data/catalog.json)
+     */
+    async fetchServerCatalog() {
+        try {
+            const res = await fetch('/api/catalog');
+            if (!res.ok) return;
+
+            const serverData = await res.json();
+            let changed = false;
+
+            // Kategóriák összefésülése a szerver adataival
+            if (serverData.categories && Array.isArray(serverData.categories) && serverData.categories.length > 0) {
+                serverData.categories.forEach(sCat => {
+                    const exists = this.categories.some(c => c.id === sCat.id);
+                    if (!exists) {
+                        this.categories.push(sCat);
+                        changed = true;
+                    }
+                });
+            }
+
+            // Bútorok összefésülése a szerver adataival
+            if (serverData.items && Array.isArray(serverData.items)) {
+                if (this.items.length === 0 && serverData.items.length > 0) {
+                    this.items = serverData.items;
+                    changed = true;
+                } else {
+                    serverData.items.forEach(sItem => {
+                        const exists = this.items.some(i => i.id === sItem.id);
+                        if (!exists) {
+                            this.items.push(sItem);
+                            changed = true;
+                        }
+                    });
+                }
+            }
+
+            if (changed) {
+                this.saveCategoriesToStorage();
+                this.saveItemsToStorage();
+                this.notifyChange();
+                console.log('Katalógus sikeresen szinkronizálva a szerverrel/GitHub-bal.');
+            }
+        } catch (e) {
+            // Nincs szerverkapcsolat (pl. offline vagy közvetlen fájlmegnyitás)
+            console.log('Katalógus offline módban fut (LocalStorage aktív).');
+        }
+    }
+
+    /**
+     * Katalógus elküldése a szervernek és automatikus Git Push indítása
+     */
+    async syncToServer(actionDescription = 'Katalógus frissítés') {
+        try {
+            const res = await fetch('/api/catalog', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: actionDescription,
+                    categories: this.categories,
+                    items: this.items
+                })
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                this.showToast(`💾 Katalógus mentve & feltöltve a GitHub-ra! 🚀`, 'success');
+                console.log('[SYNC SIKER]', data);
+            } else {
+                this.showToast('💾 Katalógus mentve a böngészőben (Helyi)', 'info');
+            }
+        } catch (e) {
+            // Offline mód vagy nincs Python szerver
+            this.showToast('💾 Katalógus mentve (Offline / LocalStorage)', 'info');
+        }
     }
 
     /**
@@ -5758,6 +5911,7 @@ class CatalogManager {
         this.categories.push(newCat);
         this.saveCategoriesToStorage();
         this.notifyChange();
+        this.syncToServer(`Új kategória létrehozva: ${newCat.name}`);
         return newCat;
     }
 
@@ -5768,12 +5922,15 @@ class CatalogManager {
         if (newColor) cat.color = newColor;
         this.saveCategoriesToStorage();
         this.notifyChange();
+        this.syncToServer(`Kategória módosítva: ${cat.name}`);
         return cat;
     }
 
     deleteCategory(id) {
+        const cat = this.categories.find(c => c.id === id);
+        const catName = cat ? cat.name : id;
         this.categories = this.categories.filter(c => c.id !== id);
-        // Az adott kategóriában lévő bútorokat áttesszük 'uncategorized'-be vagy töröljük
+        // Az adott kategóriában lévő bútorokat áttesszük 'uncategorized'-be
         this.items.forEach(item => {
             if (item.categoryId === id) {
                 item.categoryId = 'uncategorized';
@@ -5785,6 +5942,7 @@ class CatalogManager {
         this.saveCategoriesToStorage();
         this.saveItemsToStorage();
         this.notifyChange();
+        this.syncToServer(`Kategória törölve: ${catName}`);
     }
 
     getCategoryById(id) {
@@ -5876,6 +6034,7 @@ class CatalogManager {
         this.items.unshift(newItem);
         this.saveItemsToStorage();
         this.notifyChange();
+        this.syncToServer(`Bútor mentve a katalógusba: ${newItem.name}`);
         return newItem;
     }
 
@@ -5911,6 +6070,7 @@ class CatalogManager {
         this.items.unshift(newItem); // Elejére szúrjuk be
         this.saveItemsToStorage();
         this.notifyChange();
+        this.syncToServer(`Bútor mentve a katalógusba: ${newItem.name}`);
         return newItem;
     }
 
@@ -5956,9 +6116,12 @@ class CatalogManager {
     }
 
     deleteItem(itemId) {
+        const item = this.items.find(i => i.id === itemId);
+        const itemName = item ? item.name : itemId;
         this.items = this.items.filter(i => i.id !== itemId);
         this.saveItemsToStorage();
         this.notifyChange();
+        this.syncToServer(`Bútor törölve a katalógusból: ${itemName}`);
     }
 
     /**
@@ -6021,6 +6184,7 @@ class CatalogManager {
                     this.saveCategoriesToStorage();
                     this.saveItemsToStorage();
                     this.notifyChange();
+                    this.syncToServer('Katalógus importálva');
                     resolve(true);
                 } catch (err) {
                     reject(err);

@@ -58,6 +58,7 @@ Vagy nyisd meg az `index.html` fájlt közvetlenül bármelyik modern böngész�
 ### 4. Bal Oldali Katalógus & Kategóriakezelő
 - **Kategóriák**: Hozz létre új kategóriákat (pl. *Konyhabútor, Nappali, Gardrób, Iroda*), egyedi színekkel.
 - **Mentés 3D Fotóval**: Egy kattintással elmentheted a jelenlegi bútort: a rendszer automatikusan nagyfelbontású 3D előnézeti képet generál a kártyához!
+- **☁️ Automatikus GitHub Szinkronizáció**: Amikor a katalógusba mentesz, a háttérben automatikusan frissül a `data/catalog.json` fájl és a szerver azonnal commitolja és felküldi a módosításokat a GitHubra!
 - **Visszatöltés vagy Melléillesztés**: Bútor visszatöltése szerkesztésre, vagy új elemként való hozzáadása a meglévő szobához.
 - **JSON Export / Import**: Mentsd le a teljes katalógust fájlba vagy töltsd be másik gépen.
 
