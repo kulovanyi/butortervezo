@@ -268,8 +268,27 @@ export class BoardManager {
         const edges = new THREE.EdgesGeometry(geometry, 20);
         const lineMat = new THREE.LineBasicMaterial({ color: '#38bdf8', linewidth: 2 });
         const outlineMesh = new THREE.LineSegments(edges, lineMat);
+        outlineMesh.name = '__selection_outline__';
         outlineMesh.visible = false;
+        outlineMesh.renderOrder = 9998;
         mesh.add(outlineMesh);
+
+        const highlightMat = new THREE.MeshBasicMaterial({
+            color: 0xf59e0b,
+            transparent: true,
+            opacity: 0.35,
+            depthWrite: false,
+            depthTest: true,
+            polygonOffset: true,
+            polygonOffsetFactor: -2,
+            polygonOffsetUnits: -4,
+            side: THREE.DoubleSide
+        });
+        const highlightMesh = new THREE.Mesh(geometry, highlightMat);
+        highlightMesh.name = '__selection_highlight__';
+        highlightMesh.visible = false;
+        highlightMesh.renderOrder = 9999;
+        mesh.add(highlightMesh);
 
         const boardData = {
             id: id,
@@ -292,7 +311,8 @@ export class BoardManager {
             locked: false,
             visible: true,
             mesh: mesh,
-            outlineMesh: outlineMesh
+            outlineMesh: outlineMesh,
+            highlightMesh: highlightMesh
         };
 
         mesh.userData = boardData;
@@ -345,6 +365,34 @@ export class BoardManager {
                 const material = MaterialManager.createMaterial(boardData.textureKey || config.textureKey || 'white_matte');
                 mesh = new THREE.Mesh(geometry, material);
                 mesh.position.set(boardData.x, boardData.y, boardData.z);
+
+                const edges = new THREE.EdgesGeometry(geometry, 20);
+                const lineMat = new THREE.LineBasicMaterial({ color: '#38bdf8', linewidth: 2 });
+                const outlineMesh = new THREE.LineSegments(edges, lineMat);
+                outlineMesh.name = '__selection_outline__';
+                outlineMesh.visible = false;
+                outlineMesh.renderOrder = 9998;
+                mesh.add(outlineMesh);
+
+                const highlightMat = new THREE.MeshBasicMaterial({
+                    color: 0xf59e0b,
+                    transparent: true,
+                    opacity: 0.35,
+                    depthWrite: false,
+                    depthTest: true,
+                    polygonOffset: true,
+                    polygonOffsetFactor: -2,
+                    polygonOffsetUnits: -4,
+                    side: THREE.DoubleSide
+                });
+                const highlightMesh = new THREE.Mesh(geometry, highlightMat);
+                highlightMesh.name = '__selection_highlight__';
+                highlightMesh.visible = false;
+                highlightMesh.renderOrder = 9999;
+                mesh.add(highlightMesh);
+
+                boardData.outlineMesh = outlineMesh;
+                boardData.highlightMesh = highlightMesh;
             }
 
             mesh.castShadow = true;
@@ -432,6 +480,34 @@ export class BoardManager {
                 const material = MaterialManager.createMaterial(boardData.textureKey || newConfig.textureKey || 'white_matte');
                 mesh = new THREE.Mesh(geometry, material);
                 mesh.position.set(boardData.x, boardData.y, boardData.z);
+
+                const edges = new THREE.EdgesGeometry(geometry, 20);
+                const lineMat = new THREE.LineBasicMaterial({ color: '#38bdf8', linewidth: 2 });
+                const outlineMesh = new THREE.LineSegments(edges, lineMat);
+                outlineMesh.name = '__selection_outline__';
+                outlineMesh.visible = false;
+                outlineMesh.renderOrder = 9998;
+                mesh.add(outlineMesh);
+
+                const highlightMat = new THREE.MeshBasicMaterial({
+                    color: 0xf59e0b,
+                    transparent: true,
+                    opacity: 0.35,
+                    depthWrite: false,
+                    depthTest: true,
+                    polygonOffset: true,
+                    polygonOffsetFactor: -2,
+                    polygonOffsetUnits: -4,
+                    side: THREE.DoubleSide
+                });
+                const highlightMesh = new THREE.Mesh(geometry, highlightMat);
+                highlightMesh.name = '__selection_highlight__';
+                highlightMesh.visible = false;
+                highlightMesh.renderOrder = 9999;
+                mesh.add(highlightMesh);
+
+                boardData.outlineMesh = outlineMesh;
+                boardData.highlightMesh = highlightMesh;
             }
 
             mesh.castShadow = true;
@@ -1194,6 +1270,9 @@ export class BoardManager {
                 board.outlineMesh.geometry.dispose();
                 board.outlineMesh.geometry = new THREE.EdgesGeometry(board.mesh.geometry, 20);
             }
+            if (board.highlightMesh) {
+                board.highlightMesh.geometry = board.mesh.geometry;
+            }
         }
 
         if (newParams.textureKey !== undefined) {
@@ -1444,6 +1523,188 @@ export class BoardManager {
         this.boardCounter = 1;
         this.corpusCounter = 1;
         this.groupCounter = 1;
+    }
+
+    getMultiTargetsBoundingBox(targets) {
+        const box = new THREE.Box3();
+        if (!targets || targets.length === 0) {
+            return { width: 0, height: 0, depth: 0, box: box };
+        }
+        targets.forEach(t => {
+            t.updateWorldMatrix(true, true);
+            box.expandByObject(t);
+        });
+        const size = new THREE.Vector3();
+        box.getSize(size);
+        return {
+            width: Math.round(size.x),
+            height: Math.round(size.y),
+            depth: Math.round(size.z),
+            box: box
+        };
+    }
+
+    getMultiTargetsBoardCount(targets) {
+        if (!targets || targets.length === 0) return 0;
+        let count = 0;
+        const countedCorpusIds = new Set();
+        const countedGroupIds = new Set();
+        const countedBoardIds = new Set();
+
+        targets.forEach(t => {
+            if (t.userData && t.userData.isCorpus) {
+                if (!countedCorpusIds.has(t.userData.id)) {
+                    countedCorpusIds.add(t.userData.id);
+                    count += this.boards.filter(b => b.corpusId === t.userData.id).length;
+                }
+            } else if (t.userData && t.userData.isCustomGroup) {
+                if (!countedGroupIds.has(t.userData.id)) {
+                    countedGroupIds.add(t.userData.id);
+                    count += this.boards.filter(b => b.groupId === t.userData.id).length;
+                }
+            } else if (t.userData && t.userData.corpusId) {
+                if (!countedCorpusIds.has(t.userData.corpusId)) {
+                    countedCorpusIds.add(t.userData.corpusId);
+                    count += this.boards.filter(b => b.corpusId === t.userData.corpusId).length;
+                }
+            } else if (t.userData && t.userData.groupId) {
+                if (!countedGroupIds.has(t.userData.groupId)) {
+                    countedGroupIds.add(t.userData.groupId);
+                    count += this.boards.filter(b => b.groupId === t.userData.groupId).length;
+                }
+            } else if (t.userData && t.userData.id) {
+                if (!countedBoardIds.has(t.userData.id)) {
+                    countedBoardIds.add(t.userData.id);
+                    count++;
+                }
+            }
+        });
+        return count;
+    }
+
+    getMultiTargetsJSON(targets) {
+        if (!targets || targets.length === 0) return { corpora: [], customGroups: [], boards: [] };
+
+        const bounds = this.getMultiTargetsBoundingBox(targets);
+        const center = new THREE.Vector3();
+        bounds.box.getCenter(center);
+        const offsetX = center.x;
+        const offsetY = bounds.box.min.y;
+        const offsetZ = center.z;
+
+        const corporaToSave = [];
+        const groupsToSave = [];
+        const boardsToSave = [];
+
+        const savedCorpusIds = new Set();
+        const savedGroupIds = new Set();
+        const savedBoardIds = new Set();
+
+        targets.forEach(t => {
+            const isCorpus = t.userData && t.userData.isCorpus;
+            const isGroup = t.userData && t.userData.isCustomGroup;
+            const corpusId = t.userData ? (isCorpus ? t.userData.id : t.userData.corpusId) : null;
+            const groupId = t.userData ? (isGroup ? t.userData.id : t.userData.groupId) : null;
+
+            if (corpusId && !savedCorpusIds.has(corpusId)) {
+                savedCorpusIds.add(corpusId);
+                const corpus = this.corpora.find(c => c.userData.id === corpusId);
+                if (corpus) {
+                    corporaToSave.push({
+                        id: corpus.userData.id,
+                        name: corpus.userData.name,
+                        config: JSON.parse(JSON.stringify(corpus.userData.config)),
+                        x: corpus.position.x - offsetX,
+                        y: corpus.position.y - offsetY,
+                        z: corpus.position.z - offsetZ
+                    });
+                }
+            } else if (groupId && !savedGroupIds.has(groupId)) {
+                savedGroupIds.add(groupId);
+                const group = this.customGroups.find(g => g.userData.id === groupId);
+                if (group) {
+                    groupsToSave.push({
+                        id: group.userData.id,
+                        name: group.userData.name,
+                        x: group.position.x - offsetX,
+                        y: group.position.y - offsetY,
+                        z: group.position.z - offsetZ
+                    });
+                    const childBoards = this.boards.filter(b => b.groupId === groupId);
+                    childBoards.forEach(b => {
+                        if (!savedBoardIds.has(b.id)) {
+                            savedBoardIds.add(b.id);
+                            const worldPos = new THREE.Vector3();
+                            const worldQuat = new THREE.Quaternion();
+                            if (b.mesh) {
+                                b.mesh.getWorldPosition(worldPos);
+                                b.mesh.getWorldQuaternion(worldQuat);
+                            }
+                            const euler = new THREE.Euler().setFromQuaternion(worldQuat);
+                            boardsToSave.push({
+                                id: b.id,
+                                groupId: b.groupId,
+                                name: b.name,
+                                width: b.width,
+                                height: b.height,
+                                depth: b.depth,
+                                thickness: b.thickness,
+                                edgeRadius: b.edgeRadius !== undefined ? b.edgeRadius : 1,
+                                type: b.type,
+                                textureKey: b.textureKey,
+                                edgeBanding: b.edgeBanding,
+                                x: worldPos.x - offsetX,
+                                y: worldPos.y - offsetY,
+                                z: worldPos.z - offsetZ,
+                                rotX: Math.round(THREE.MathUtils.radToDeg(euler.x)),
+                                rotY: Math.round(THREE.MathUtils.radToDeg(euler.y)),
+                                rotZ: Math.round(THREE.MathUtils.radToDeg(euler.z))
+                            });
+                        }
+                    });
+                }
+            } else if (!corpusId && !groupId && t.userData && t.userData.id) {
+                const bId = t.userData.id;
+                if (!savedBoardIds.has(bId)) {
+                    savedBoardIds.add(bId);
+                    const b = this.boards.find(item => item.id === bId || item.mesh === t);
+                    if (b) {
+                        const worldPos = new THREE.Vector3();
+                        const worldQuat = new THREE.Quaternion();
+                        if (b.mesh) {
+                            b.mesh.getWorldPosition(worldPos);
+                            b.mesh.getWorldQuaternion(worldQuat);
+                        }
+                        const euler = new THREE.Euler().setFromQuaternion(worldQuat);
+                        boardsToSave.push({
+                            id: b.id,
+                            groupId: null,
+                            name: b.name,
+                            width: b.width,
+                            height: b.height,
+                            depth: b.depth,
+                            thickness: b.thickness,
+                            edgeRadius: b.edgeRadius !== undefined ? b.edgeRadius : 1,
+                            type: b.type,
+                            textureKey: b.textureKey,
+                            edgeBanding: b.edgeBanding,
+                            x: worldPos.x - offsetX,
+                            y: worldPos.y - offsetY,
+                            z: worldPos.z - offsetZ,
+                            rotX: Math.round(THREE.MathUtils.radToDeg(euler.x)),
+                            rotY: Math.round(THREE.MathUtils.radToDeg(euler.y)),
+                            rotZ: Math.round(THREE.MathUtils.radToDeg(euler.z))
+                        });
+                    }
+                }
+            }
+        });
+
+        return {
+            corpora: corporaToSave,
+            customGroups: groupsToSave,
+            boards: boardsToSave
+        };
     }
 
     getCorpusJSON(corpusId) {

@@ -1092,6 +1092,13 @@ class FurnitureApp {
         });
 
         // --- Mentés Katalógusba Modal Események ---
+        document.querySelectorAll('#save-angle-buttons-container .btn-save-angle').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const angle = btn.getAttribute('data-angle');
+                this.updateSaveSnapshot(angle);
+            });
+        });
+
         document.getElementById('btn-confirm-save-furniture').addEventListener('click', () => {
             const name = document.getElementById('save-furniture-name').value;
             const categoryId = document.getElementById('save-furniture-category').value;
@@ -1103,8 +1110,8 @@ class FurnitureApp {
             }
 
             const item = this.savingTarget ? 
-                this.catalogManager.saveSelectedToCatalog(this.savingTarget, name, categoryId, desc) :
-                this.catalogManager.saveCurrentFurnitureToCatalog(name, categoryId, desc);
+                this.catalogManager.saveSelectedToCatalog(this.savingTarget, name, categoryId, desc, this.currentSaveThumbnail, this.activeSaveSnapshotAngle) :
+                this.catalogManager.saveCurrentFurnitureToCatalog(name, categoryId, desc, this.currentSaveThumbnail, this.activeSaveSnapshotAngle);
 
             if (item) {
                 if (categoryId) {
@@ -2236,8 +2243,13 @@ class FurnitureApp {
                     catItems.forEach(item => {
                         const card = document.createElement('div');
                         card.className = 'catalog-card';
+                        card.style.display = 'flex';
+                        card.style.alignItems = 'center';
+                        card.style.padding = '8px';
+                        card.style.gap = '10px';
+                        card.style.marginBottom = '8px';
 
-                        const thumbSrc = item.thumbnail || 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="150" viewBox="0 0 200 150"><rect width="200" height="150" fill="%231e293b"/><text x="100" y="80" fill="%2364748b" font-family="sans-serif" font-size="28" text-anchor="middle">🛋️</text></svg>';
+                        const thumbSrc = item.thumbnail || 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><rect width="200" height="200" fill="%231e293b"/><text x="100" y="110" fill="%2364748b" font-family="sans-serif" font-size="36" text-anchor="middle">🛋️</text></svg>';
 
                         const dimW = (item.dimensions && item.dimensions.w) || 0;
                         const dimH = (item.dimensions && item.dimensions.h) || 0;
@@ -2245,21 +2257,19 @@ class FurnitureApp {
                         const boardCount = item.boardCount || (item.boards && item.boards.length) || 1;
 
                         card.innerHTML = `
-                            <div class="card-img-container">
-                                <img src="${thumbSrc}" class="card-img" alt="${item.name}">
+                            <div class="card-img-container" style="width:72px; height:72px; min-width:72px; min-height:72px; aspect-ratio:1/1; border-radius:var(--radius-sm); overflow:hidden; background:#0b1120; border:1px solid var(--border-color); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                                <img src="${thumbSrc}" class="card-img" alt="${item.name}" style="width:100%; height:100%; object-fit:contain;">
                             </div>
-                            <div class="card-body">
-                                <div class="card-title">${item.name}</div>
-                                ${item.description ? `<div class="card-desc">${item.description}</div>` : ''}
-                                <div class="card-meta">
-                                    <span>📏 ${dimW}×${dimH}×${dimD} mm</span>
-                                    <span>🧩 ${boardCount} lap</span>
+                            <div class="card-body" style="flex:1; min-width:0; padding:0; display:flex; flex-direction:column; justify-content:space-between; height:72px;">
+                                <div style="min-width:0;">
+                                    <div class="card-title" style="font-size:13px; font-weight:600; color:var(--text-primary); margin-bottom:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${item.name}">${item.name}</div>
+                                    <div style="font-size:11px; color:#38bdf8; font-weight:500;">📏 ${dimW}×${dimH}×${dimD} mm</div>
                                 </div>
-                                <div class="card-actions">
-                                    <button class="btn btn-sm btn-primary btn-add-scene" style="flex:1;" title="Hozzáadás a 3D munkatérhez">
-                                        ➕ Hozzáadás a Térhez
+                                <div class="card-actions" style="display:flex; gap:6px; align-items:center; justify-content:flex-end; margin-top:auto;">
+                                    <button class="btn btn-sm btn-primary btn-add-scene" style="padding:4px 10px; font-size:14px; line-height:1;" title="Hozzáadás a jelenethez">
+                                        ➡️
                                     </button>
-                                    <button class="btn btn-sm btn-danger btn-delete-item" style="padding:4px 8px; background:rgba(239, 68, 68, 0.2); color:#ef4444; border-color:#ef4444;" title="Törlés a katalógusból">
+                                    <button class="btn btn-sm btn-danger btn-delete-item" style="padding:4px 8px; font-size:13px; line-height:1; background:rgba(239, 68, 68, 0.18); color:#ef4444; border-color:rgba(239, 68, 68, 0.4);" title="Törlés a katalógusból">
                                         🗑️
                                     </button>
                                 </div>
@@ -2504,68 +2514,104 @@ class FurnitureApp {
             return;
         }
 
-        // Kijelölt elem vagy korpusz vagy csoport meghatározása
-        let target = this.selectedCustomGroup || this.selectedCorpus || (this.selectedBoard ? this.selectedBoard.mesh : null);
-        if (!target && this.scene3D.selectedTarget) {
-            target = this.scene3D.selectedTarget;
-        }
+        const selectedTargets = (this.scene3D.selectedTargets && this.scene3D.selectedTargets.length > 0)
+            ? this.scene3D.selectedTargets
+            : (this.scene3D.selectedTarget ? [this.scene3D.selectedTarget] : []);
 
-        // Ha egy korpusz valamelyik belső bútorlapja volt kiválasztva, válasszuk ki az egész korpuszt
-        if (target && target.userData && target.userData.corpusId) {
-            const parentCorpus = this.boardManager.corpora.find(c => c.userData.id === target.userData.corpusId);
-            if (parentCorpus) {
-                target = parentCorpus;
-            }
-        }
-
-        // Ha nincs semmi kijelölve: automatikusan kiválasztjuk az egyetlent, ha csak 1 van a térben, különben figyelmeztetünk
-        if (!target) {
-            if (this.boardManager.corpora.length === 1 && this.boardManager.boards.filter(b => !b.corpusId).length === 0) {
-                target = this.boardManager.corpora[0];
-                this.scene3D.selectBoard(target);
-            } else if (this.boardManager.customGroups.length === 1 && this.boardManager.boards.filter(b => !b.groupId).length === 0) {
-                target = this.boardManager.customGroups[0];
-                this.scene3D.selectBoard(target);
-            } else if (this.boardManager.corpora.length === 0 && this.boardManager.customGroups.length === 0 && this.boardManager.boards.length === 1) {
-                target = this.boardManager.boards[0].mesh;
-                this.scene3D.selectBoard(target);
-            } else {
-                alert('Kérlek kattints rá a 3D térben arra a csoportra, korpuszra vagy bútorlapra, amelyet el szeretnél menteni a katalógusba!');
-                return;
-            }
-        }
-
-        const isCorpus = target.userData && target.userData.isCorpus;
-        const isCustomGroup = target.userData && target.userData.isCustomGroup;
-        const targetId = target.userData ? target.userData.id : null;
         let defaultName = '';
         let targetInfoText = '';
         let defaultCat = 'cat_kitchen';
+        let snapshotTarget = null;
 
-        if (isCorpus) {
-            this.savingTarget = { type: 'corpus', id: targetId, target: target, name: target.userData.name };
-            defaultName = target.userData.name || 'Konyha Korpusz';
-            targetInfoText = `🍳 Kijelölt korpusz: ${target.userData.name} (${target.userData.width}×${target.userData.height}×${target.userData.depth} mm)`;
+        if (selectedTargets.length > 1) {
+            // TÖBB ELEM KIJELÖLVE (Shiftes kijelölés mentése egyben)
+            const bounds = this.boardManager.getMultiTargetsBoundingBox(selectedTargets);
+            const boardCount = this.boardManager.getMultiTargetsBoardCount(selectedTargets);
+            this.savingTarget = {
+                type: 'multiple',
+                targets: selectedTargets,
+                name: `Kombinált Összeállítás (${selectedTargets.length} elem)`
+            };
+            defaultName = `Kombinált Bútor (${selectedTargets.length} elem)`;
+            targetInfoText = `✨ Több elem kijelölve: ${selectedTargets.length} db egység (${boardCount} db alkatrész, ${bounds.width}×${bounds.height}×${bounds.depth} mm)`;
             defaultCat = 'cat_kitchen';
-        } else if (isCustomGroup) {
-            this.savingTarget = { type: 'group', id: targetId, target: target, name: target.userData.name };
-            defaultName = target.userData.name || 'Bútor Csoport';
-            targetInfoText = `📦 Kijelölt csoport: ${target.userData.name} (${target.userData.width}×${target.userData.height}×${target.userData.depth} mm)`;
-            defaultCat = 'cat_living';
+            snapshotTarget = selectedTargets;
         } else {
-            const board = this.boardManager.boards.find(b => b.id === targetId || b.mesh === target);
-            const bId = board ? board.id : targetId;
-            const bName = board ? board.name : (target.userData.name || 'Egyedi Lap');
-            this.savingTarget = { type: 'board', id: bId, target: target, name: bName };
-            defaultName = bName;
-            targetInfoText = `📐 Kijelölt lap: ${bName} (${board ? `${board.width}×${board.height}×${board.depth} mm` : ''})`;
-            defaultCat = 'cat_living';
+            // Egyedi elem vagy korpusz vagy csoport meghatározása
+            let target = selectedTargets.length === 1 ? selectedTargets[0] : null;
+
+            // Ha nincs semmi kijelölve: automatikusan kiválasztjuk az egyetlent, ha csak 1 van a térben, különben a teljes tervet mentjük
+            if (!target) {
+                if (this.boardManager.corpora.length === 1 && this.boardManager.boards.filter(b => !b.corpusId).length === 0) {
+                    target = this.boardManager.corpora[0];
+                    this.scene3D.selectBoard(target);
+                } else if (this.boardManager.customGroups.length === 1 && this.boardManager.boards.filter(b => !b.groupId).length === 0) {
+                    target = this.boardManager.customGroups[0];
+                    this.scene3D.selectBoard(target);
+                } else if (this.boardManager.corpora.length === 0 && this.boardManager.customGroups.length === 0 && this.boardManager.boards.length === 1) {
+                    target = this.boardManager.boards[0].mesh;
+                    this.scene3D.selectBoard(target);
+                } else if (this.boardManager.corpora.length > 0 || this.boardManager.boards.length > 0) {
+                    // Teljes munkatér mentése
+                    const allTargets = [
+                        ...this.boardManager.corpora,
+                        ...this.boardManager.customGroups,
+                        ...this.boardManager.boards.filter(b => !b.corpusId && !b.groupId).map(b => b.mesh)
+                    ];
+                    const bounds = this.boardManager.getFurnitureBoundingBox();
+                    this.savingTarget = {
+                        type: 'multiple',
+                        targets: allTargets,
+                        name: 'Teljes 3D Bútorterv'
+                    };
+                    defaultName = 'Teljes Bútor Összeállítás';
+                    targetInfoText = `📐 Teljes 3D terv mentése (${bounds.count} db alkatrész, ${bounds.width}×${bounds.height}×${bounds.depth} mm)`;
+                    defaultCat = 'cat_kitchen';
+                    snapshotTarget = null;
+                }
+            }
+
+            if (target) {
+                // Ha egy korpusz valamelyik belső bútorlapja volt kiválasztva, válasszuk ki az egész korpuszt
+                if (target.userData && target.userData.corpusId) {
+                    const parentCorpus = this.boardManager.corpora.find(c => c.userData.id === target.userData.corpusId);
+                    if (parentCorpus) {
+                        target = parentCorpus;
+                    }
+                }
+
+                const isCorpus = target.userData && target.userData.isCorpus;
+                const isCustomGroup = target.userData && target.userData.isCustomGroup;
+                const targetId = target.userData ? target.userData.id : null;
+
+                if (isCorpus) {
+                    this.savingTarget = { type: 'corpus', id: targetId, target: target, name: target.userData.name };
+                    defaultName = target.userData.name || 'Konyha Korpusz';
+                    targetInfoText = `🍳 Kijelölt korpusz: ${target.userData.name} (${target.userData.width}×${target.userData.height}×${target.userData.depth} mm)`;
+                    defaultCat = 'cat_kitchen';
+                    snapshotTarget = target;
+                } else if (isCustomGroup) {
+                    this.savingTarget = { type: 'group', id: targetId, target: target, name: target.userData.name };
+                    defaultName = target.userData.name || 'Bútor Csoport';
+                    targetInfoText = `📦 Kijelölt csoport: ${target.userData.name} (${target.userData.width}×${target.userData.height}×${target.userData.depth} mm)`;
+                    defaultCat = 'cat_living';
+                    snapshotTarget = target;
+                } else {
+                    const board = this.boardManager.boards.find(b => b.id === targetId || b.mesh === target);
+                    const bId = board ? board.id : targetId;
+                    const bName = board ? board.name : (target.userData.name || 'Egyedi Lap');
+                    this.savingTarget = { type: 'board', id: bId, target: target, name: bName };
+                    defaultName = bName;
+                    targetInfoText = `📐 Kijelölt lap: ${bName} (${board ? `${board.width}×${board.height}×${board.depth} mm` : ''})`;
+                    defaultCat = 'cat_living';
+                    snapshotTarget = target;
+                }
+            }
         }
 
-        // 3D Fotó készítése CSAK a kijelölt elemről/korpuszról
-        const snapshot = this.scene3D.getSnapshot(target, 400, 300);
-        const imgEl = document.getElementById('save-modal-thumbnail');
-        if (imgEl) imgEl.src = snapshot;
+        // 3D Fotó készítése a kijelölt elemről/elemekről (1:1 négyzetes arány, választható kameraszögek)
+        this.activeSaveSnapshotTarget = snapshotTarget;
+        this.updateSaveSnapshot('iso-right');
 
         // Kategória dropdown feltöltése és alapértelmezett kategória kijelölése
         this.populateSaveCategoryDropdown(defaultCat);
@@ -2580,6 +2626,29 @@ class FurnitureApp {
         if (infoEl) infoEl.textContent = targetInfoText;
 
         this.openModal('modal-save-furniture');
+    }
+
+    updateSaveSnapshot(angle = 'iso-right') {
+        this.activeSaveSnapshotAngle = angle;
+        const snapshot = this.scene3D.getSnapshot(this.activeSaveSnapshotTarget, 512, 512, angle);
+        this.currentSaveThumbnail = snapshot;
+        const imgEl = document.getElementById('save-modal-thumbnail');
+        if (imgEl) imgEl.src = snapshot;
+
+        const buttons = document.querySelectorAll('#save-angle-buttons-container .btn-save-angle');
+        buttons.forEach(btn => {
+            if (btn.getAttribute('data-angle') === angle) {
+                btn.classList.add('active');
+                btn.style.background = '#38bdf8';
+                btn.style.color = '#0f172a';
+                btn.style.fontWeight = 'bold';
+            } else {
+                btn.classList.remove('active');
+                btn.style.background = '';
+                btn.style.color = '';
+                btn.style.fontWeight = 'normal';
+            }
+        });
     }
 
     populateSaveCategoryDropdown(selectedCatId = null) {

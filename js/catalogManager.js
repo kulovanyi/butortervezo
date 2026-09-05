@@ -126,8 +126,8 @@ export class CatalogManager {
     /**
      * Kijelölt korpusz vagy egyedi bútorlap mentése a katalógusba izolált 3D fotóval
      */
-    saveSelectedToCatalog(savingTarget, name, categoryId, description = '') {
-        if (!savingTarget || !savingTarget.target) {
+    saveSelectedToCatalog(savingTarget, name, categoryId, description = '', customThumbnail = null, snapshotAngle = 'iso-right') {
+        if (!savingTarget || (!savingTarget.target && !savingTarget.targets)) {
             alert('Nincs kijelölt elem a mentéshez!');
             return null;
         }
@@ -136,7 +136,17 @@ export class CatalogManager {
         let dimensions = { w: 600, h: 720, d: 560 };
         let boardCount = 1;
 
-        if (savingTarget.type === 'corpus') {
+        if (savingTarget.type === 'multiple') {
+            const targets = savingTarget.targets || [];
+            boardsData = this.boardManager.getMultiTargetsJSON(targets);
+            const bounds = this.boardManager.getMultiTargetsBoundingBox(targets);
+            dimensions = {
+                w: bounds.width || 600,
+                h: bounds.height || 720,
+                d: bounds.depth || 560
+            };
+            boardCount = this.boardManager.getMultiTargetsBoardCount(targets);
+        } else if (savingTarget.type === 'corpus') {
             boardsData = this.boardManager.getCorpusJSON(savingTarget.id);
             const corpus = this.boardManager.corpora.find(c => c.userData.id === savingTarget.id);
             if (corpus) {
@@ -177,8 +187,9 @@ export class CatalogManager {
             return null;
         }
 
-        // Csak a kijelölt elem látszódik a kisképben!
-        const thumbnail = this.scene3D.getSnapshot(savingTarget.target, 400, 300);
+        // Kiskép készítése a kijelölt elemekről (1:1 arány)
+        const snapTarget = savingTarget.type === 'multiple' ? savingTarget.targets : savingTarget.target;
+        const thumbnail = customThumbnail || this.scene3D.getSnapshot(snapTarget, 512, 512, snapshotAngle || 'iso-right');
 
         const newItem = {
             id: 'item_' + Date.now(),
@@ -201,7 +212,7 @@ export class CatalogManager {
     /**
      * Jelenlegi bútor mentése a bal oldali katalógusba automatikus 3D fotóval
      */
-    saveCurrentFurnitureToCatalog(name, categoryId, description = '') {
+    saveCurrentFurnitureToCatalog(name, categoryId, description = '', customThumbnail = null, snapshotAngle = 'iso-right') {
         const boardsData = this.boardManager.toJSON();
         if (boardsData.corpora.length === 0 && boardsData.boards.length === 0) {
             alert('A 3D tér üres! Hozz létre legalább egy bútorlapot a mentéshez.');
@@ -209,7 +220,7 @@ export class CatalogManager {
         }
 
         const bounds = this.boardManager.getFurnitureBoundingBox();
-        const thumbnail = this.scene3D.getSnapshot(null, 400, 300);
+        const thumbnail = customThumbnail || this.scene3D.getSnapshot(null, 512, 512, snapshotAngle || 'iso-right');
 
         const newItem = {
             id: 'item_' + Date.now(),

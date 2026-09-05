@@ -629,6 +629,7 @@ const ModelManager = {
         group.add(clone);
         group.position.set(boardData.x, boardData.y, boardData.z);
         group.userData = boardData;
+        attachHardwareHighlights(group);
         return group;
     },
 
@@ -684,6 +685,7 @@ const ModelManager = {
         // A láb a padlón áll (Y = 0)
         group.position.set(boardData.x, 0, boardData.z);
         group.userData = boardData;
+        attachHardwareHighlights(group);
         return group;
     },
 
@@ -791,29 +793,28 @@ const ModelManager = {
             armGroup.add(rivetMesh);
         });
 
-        // Hátsó rugós kioldó fül / gomb (a fotón látható bordázott kioldó gomb a kar végén)
-        const clipButtonGeo = new THREE.BoxGeometry(12, 13, 8);
-        const clipButtonMesh = new THREE.Mesh(clipButtonGeo, darkMetalMat);
-        clipButtonMesh.position.set(0, -2, -armD - 3);
-        armGroup.add(clipButtonMesh);
+        const linkGeo = new THREE.BoxGeometry(6, 12, 16);
+        const linkMesh = new THREE.Mesh(linkGeo, satinArmMat);
+        linkMesh.position.set(isLeft ? 4 : -4, 0, -4);
+        armGroup.add(linkMesh);
 
-        // 4. KERESZTTALP / SZERELŐTALP EGYSÉG (A korpusz belső oldalára rögzítve)
+        const adjScrewGeo = new THREE.CylinderGeometry(3.5, 3.5, 2.5, 16);
+        const adjScrew = new THREE.Mesh(adjScrewGeo, screwMat);
+        adjScrew.position.set(0, 9.2, -26);
+        armGroup.add(adjScrew);
+
+        // 4. KORPUSZ OLDALRA SZERELT TALP (Mounting Cross-Plate)
         const plateGroup = new THREE.Group();
         plateGroup.name = 'hinge_plate_group';
 
-        // Kereszttalp fém talplemez
-        const plateW = 4.5;
-        const plateH = 34;
-        const plateD = 40;
-        const plateGeo = new THREE.BoxGeometry(plateW, plateH, plateD);
-        const plateMesh = new THREE.Mesh(plateGeo, chromeMat);
-        plateMesh.position.set(isLeft ? plateW / 2 : -plateW / 2, 0, -24);
-        plateMesh.castShadow = true;
-        plateGroup.add(plateMesh);
+        const plateW = 18;
+        const plateBaseGeo = new THREE.BoxGeometry(plateW, 37, 2.5);
+        const plateBaseMesh = new THREE.Mesh(plateBaseGeo, chromeMat);
+        plateBaseMesh.rotation.y = Math.PI / 2;
+        plateBaseMesh.position.set(isLeft ? plateW / 2 : -plateW / 2, 0, -24);
+        plateGroup.add(plateBaseMesh);
 
-        // Fő magasság- és mélységállító csavar (nagy kereszthornyos csavar a talpon)
-        const plateScrewGeo = new THREE.CylinderGeometry(4.5, 3.5, 2.5, 16);
-        plateScrewGeo.rotateZ(Math.PI / 2);
+        const plateScrewGeo = new THREE.CylinderGeometry(2.8, 2.8, 2.0, 16);
         const plateScrewMesh = new THREE.Mesh(plateScrewGeo, screwMat);
         plateScrewMesh.position.set(isLeft ? plateW + 0.8 : -plateW - 0.8, 0, -24);
         plateGroup.add(plateScrewMesh);
@@ -833,9 +834,44 @@ const ModelManager = {
         group.add(plateGroup);
 
         group.userData = boardData;
+        attachHardwareHighlights(group);
         return group;
     }
 };
+
+function attachHardwareHighlights(group) {
+    if (!group) return;
+    group.traverse(child => {
+        if (child.isMesh && child.geometry && child.name !== '__selection_outline__' && child.name !== '__selection_highlight__') {
+            const edges = new THREE.EdgesGeometry(child.geometry, 25);
+            const lineMat = new THREE.LineBasicMaterial({ color: '#38bdf8', linewidth: 2 });
+            const outlineMesh = new THREE.LineSegments(edges, lineMat);
+            outlineMesh.name = '__selection_outline__';
+            outlineMesh.visible = false;
+            outlineMesh.renderOrder = 9998;
+            child.add(outlineMesh);
+            child.userData.outlineMesh = outlineMesh;
+
+            const highlightMat = new THREE.MeshBasicMaterial({
+                color: 0xf59e0b,
+                transparent: true,
+                opacity: 0.35,
+                depthWrite: false,
+                depthTest: true,
+                polygonOffset: true,
+                polygonOffsetFactor: -2,
+                polygonOffsetUnits: -4,
+                side: THREE.DoubleSide
+            });
+            const highlightMesh = new THREE.Mesh(child.geometry, highlightMat);
+            highlightMesh.name = '__selection_highlight__';
+            highlightMesh.visible = false;
+            highlightMesh.renderOrder = 9999;
+            child.add(highlightMesh);
+            child.userData.highlightMesh = highlightMesh;
+        }
+    });
+}
 
 
 // --- FILE: presetFurniture.js ---
@@ -2474,32 +2510,93 @@ class Scene3D {
         this.updateMultiSelection();
     }
 
-    updateMultiSelection() {
-        // Körvonalak törlése
-        this.boardMeshes.forEach(m => {
-            if (m.userData.outlineMesh) {
-                m.userData.outlineMesh.visible = false;
+    ensureSelectionMeshes(child, lineColor = '#f59e0b') {
+        if (!child || !child.isMesh || child.name === '__selection_outline__' || child.name === '__selection_highlight__') {
+            return;
+        }
+
+        if (!child.userData) {
+            child.userData = {};
+        }
+
+        if (!child.userData.outlineMesh) {
+            try {
+                const edges = new THREE.EdgesGeometry(child.geometry, 20);
+                const lineMat = new THREE.LineBasicMaterial({ color: lineColor, linewidth: 2 });
+                const outlineMesh = new THREE.LineSegments(edges, lineMat);
+                outlineMesh.name = '__selection_outline__';
+                outlineMesh.visible = false;
+                outlineMesh.renderOrder = 9998;
+                child.add(outlineMesh);
+                child.userData.outlineMesh = outlineMesh;
+            } catch (e) {
+                console.warn('Outline mesh creation skipped:', e);
+            }
+        }
+
+        if (!child.userData.highlightMesh) {
+            try {
+                const highlightMat = new THREE.MeshBasicMaterial({
+                    color: 0xf59e0b,
+                    transparent: true,
+                    opacity: 0.35,
+                    depthWrite: false,
+                    depthTest: true,
+                    polygonOffset: true,
+                    polygonOffsetFactor: -2,
+                    polygonOffsetUnits: -4,
+                    side: THREE.DoubleSide
+                });
+                const highlightMesh = new THREE.Mesh(child.geometry, highlightMat);
+                highlightMesh.name = '__selection_highlight__';
+                highlightMesh.visible = false;
+                highlightMesh.renderOrder = 9999;
+                child.add(highlightMesh);
+                child.userData.highlightMesh = highlightMesh;
+            } catch (e) {
+                console.warn('Highlight mesh creation skipped:', e);
+            }
+        }
+    }
+
+    clearAllHighlights() {
+        if (!this.scene) return;
+        this.scene.traverse(child => {
+            if (child.userData) {
+                if (child.userData.outlineMesh) child.userData.outlineMesh.visible = false;
+                if (child.userData.highlightMesh) child.userData.highlightMesh.visible = false;
             }
         });
+    }
 
-        // Kijelölt elemek körvonalainak bekapcsolása
-        const lineColor = (this.selectedTargets.length > 1) ? '#f59e0b' : '#38bdf8';
-        this.selectedTargets.forEach(target => {
-            if (target.isGroup) {
-                target.children.forEach(child => {
-                    if (child.userData && child.userData.outlineMesh) {
-                        child.userData.outlineMesh.visible = true;
-                        if (child.userData.outlineMesh.material) {
-                            child.userData.outlineMesh.material.color.set('#f59e0b');
-                        }
+    applySelectionHighlight(target, lineColor = '#f59e0b') {
+        if (!target) return;
+        target.traverse(child => {
+            if (child.isMesh && child.name !== '__selection_outline__' && child.name !== '__selection_highlight__') {
+                this.ensureSelectionMeshes(child, lineColor);
+                if (child.userData && child.userData.outlineMesh) {
+                    child.userData.outlineMesh.visible = true;
+                    if (child.userData.outlineMesh.material) {
+                        child.userData.outlineMesh.material.color.set(lineColor);
                     }
-                });
-            } else if (target.userData && target.userData.outlineMesh) {
-                target.userData.outlineMesh.visible = true;
-                if (target.userData.outlineMesh.material) {
-                    target.userData.outlineMesh.material.color.set(lineColor);
+                }
+                if (child.userData && child.userData.highlightMesh) {
+                    child.userData.highlightMesh.visible = true;
+                    if (child.userData.highlightMesh.material) {
+                        child.userData.highlightMesh.material.color.set(0xf59e0b);
+                        child.userData.highlightMesh.material.opacity = 0.35;
+                    }
                 }
             }
+        });
+    }
+
+    updateMultiSelection() {
+        this.clearAllHighlights();
+
+        const lineColor = (this.selectedTargets.length > 1) ? '#f59e0b' : '#38bdf8';
+        this.selectedTargets.forEach(target => {
+            this.applySelectionHighlight(target, lineColor);
         });
 
         if (this.selectedTargets.length === 1) {
@@ -2524,35 +2621,13 @@ class Scene3D {
         this.selectedTarget = target;
         this.selectedTargets = target ? [target] : [];
 
-        // Előző körvonalak törlése
-        this.boardMeshes.forEach(m => {
-            if (m.userData.outlineMesh) {
-                m.userData.outlineMesh.visible = false;
-            }
-        });
+        this.clearAllHighlights();
 
         if (target) {
             this.transformControls.attach(target);
-
             const isGroupTarget = target.isGroup && target.userData && (target.userData.isCorpus || target.userData.isCustomGroup);
             const lineColor = isGroupTarget ? '#f59e0b' : '#38bdf8';
-
-            // Ha Group (Korpusz vagy Csoport)
-            if (target.isGroup) {
-                target.children.forEach(child => {
-                    if (child.userData && child.userData.outlineMesh) {
-                        child.userData.outlineMesh.visible = true;
-                        if (child.userData.outlineMesh.material) {
-                            child.userData.outlineMesh.material.color.set('#f59e0b');
-                        }
-                    }
-                });
-            } else if (target.userData && target.userData.outlineMesh) {
-                target.userData.outlineMesh.visible = true;
-                if (target.userData.outlineMesh.material) {
-                    target.userData.outlineMesh.material.color.set(lineColor);
-                }
-            }
+            this.applySelectionHighlight(target, lineColor);
         } else {
             this.transformControls.detach();
         }
@@ -3006,7 +3081,7 @@ class Scene3D {
         };
     }
 
-    getSnapshot(target = null, width = 400, height = 300) {
+    getSnapshot(target = null, width = 512, height = 512, angle = 'iso-right') {
         const prevTransformVisible = this.transformControls.visible;
         const prevGridVisible = this.gridHelper.visible;
         const prevDimVisible = this.dimensionGroup.visible;
@@ -3015,15 +3090,37 @@ class Scene3D {
         this.gridHelper.visible = false;
         this.dimensionGroup.visible = false;
 
-        // Ha van target (kijelölt elem/korpusz), elrejtünk minden egyéb bútort a fotó idejére
+        // Ideiglenesen kikapcsoljuk az összes narancssárga kiemelő réteget és élvonalat
+        const visibleHighlights = [];
+        this.scene.traverse((obj) => {
+            if (obj.userData) {
+                if (obj.userData.outlineMesh && obj.userData.outlineMesh.visible) {
+                    obj.userData.outlineMesh.visible = false;
+                    visibleHighlights.push(obj.userData.outlineMesh);
+                }
+                if (obj.userData.highlightMesh && obj.userData.highlightMesh.visible) {
+                    obj.userData.highlightMesh.visible = false;
+                    visibleHighlights.push(obj.userData.highlightMesh);
+                }
+            }
+            if (obj.name === '__selection_outline__' || obj.name === '__selection_highlight__') {
+                if (obj.visible) {
+                    obj.visible = false;
+                    visibleHighlights.push(obj);
+                }
+            }
+        });
+
+        // Ha van target (kijelölt elem/korpusz vagy elemek listája), elrejtünk minden egyéb bútort a fotó idejére
         const hiddenObjects = [];
-        if (target) {
+        const targetList = Array.isArray(target) ? target : (target ? [target] : null);
+        if (targetList && targetList.length > 0) {
             this.scene.traverse((obj) => {
-                if (obj.isMesh && obj !== this.gridHelper) {
+                if (obj.isMesh && obj !== this.gridHelper && obj.name !== '__selection_outline__' && obj.name !== '__selection_highlight__') {
                     let isPartOfTarget = false;
                     let cur = obj;
                     while (cur) {
-                        if (cur === target) {
+                        if (targetList.includes(cur)) {
                             isPartOfTarget = true;
                             break;
                         }
@@ -3038,8 +3135,11 @@ class Scene3D {
         }
 
         const box = new THREE.Box3();
-        if (target) {
-            box.setFromObject(target);
+        if (targetList && targetList.length > 0) {
+            targetList.forEach(t => {
+                t.updateWorldMatrix(true, true);
+                box.expandByObject(t);
+            });
         } else if (this.boardMeshes.length > 0) {
             this.boardMeshes.forEach(mesh => box.expandByObject(mesh));
         } else {
@@ -3055,22 +3155,78 @@ class Scene3D {
 
         const prevTarget = this.controls.target.clone();
         const prevPos = this.camera.position.clone();
+        const prevAspect = this.perspCamera.aspect;
 
-        // Szépen a cél elemre optimalizáljuk a kameraszöget
-        this.camera.position.set(
-            center.x + maxDim * 1.3,
-            center.y + maxDim * 0.9,
-            center.z + maxDim * 1.6
-        );
+        // 1:1 négyzetes arány a fotózás idejére
+        const origSize = new THREE.Vector2();
+        this.renderer.getSize(origSize);
+        this.perspCamera.aspect = width / height;
+        this.perspCamera.updateProjectionMatrix();
+
+        // Kameraszög beállítása a kiválasztott nézet szerint (közelebb pozicionálva a kitöltéshez)
+        if (angle === 'iso-left') {
+            this.camera.position.set(
+                center.x - maxDim * 0.95,
+                center.y + maxDim * 0.65,
+                center.z + maxDim * 1.15
+            );
+        } else if (angle === 'front') {
+            this.camera.position.set(
+                center.x,
+                center.y,
+                center.z + maxDim * 1.35
+            );
+        } else if (angle === 'back') {
+            this.camera.position.set(
+                center.x,
+                center.y,
+                center.z - maxDim * 1.35
+            );
+        } else if (angle === 'right') {
+            this.camera.position.set(
+                center.x + maxDim * 1.35,
+                center.y,
+                center.z
+            );
+        } else if (angle === 'left') {
+            this.camera.position.set(
+                center.x - maxDim * 1.35,
+                center.y,
+                center.z
+            );
+        } else if (angle === 'top') {
+            this.camera.position.set(
+                center.x,
+                center.y + maxDim * 1.45,
+                center.z + maxDim * 0.01
+            );
+        } else {
+            // 'iso-right' / alapértelmezett izometrikus
+            this.camera.position.set(
+                center.x + maxDim * 0.95,
+                center.y + maxDim * 0.65,
+                center.z + maxDim * 1.15
+            );
+        }
+
         this.controls.target.copy(center);
         this.camera.lookAt(center);
 
-        this.renderer.render(this.scene, this.camera);
+        this.renderer.setSize(width, height, false);
+        this.renderer.render(this.scene, this.perspCamera);
         const dataUrl = this.renderer.domElement.toDataURL('image/jpeg', 0.92);
 
-        // Visszaállítjuk az elrejtett elemeket
+        // Visszaállítjuk a renderert és a kamerát
+        this.renderer.setSize(origSize.x, origSize.y, false);
+        this.perspCamera.aspect = prevAspect;
+        this.perspCamera.updateProjectionMatrix();
+
+        // Visszaállítjuk az elrejtett elemeket és a kiemeléseket
         hiddenObjects.forEach(obj => {
             obj.visible = true;
+        });
+        visibleHighlights.forEach(h => {
+            h.visible = true;
         });
 
         this.transformControls.visible = prevTransformVisible;
@@ -3683,8 +3839,27 @@ class BoardManager {
         const edges = new THREE.EdgesGeometry(geometry, 20);
         const lineMat = new THREE.LineBasicMaterial({ color: '#38bdf8', linewidth: 2 });
         const outlineMesh = new THREE.LineSegments(edges, lineMat);
+        outlineMesh.name = '__selection_outline__';
         outlineMesh.visible = false;
+        outlineMesh.renderOrder = 9998;
         mesh.add(outlineMesh);
+
+        const highlightMat = new THREE.MeshBasicMaterial({
+            color: 0xf59e0b,
+            transparent: true,
+            opacity: 0.35,
+            depthWrite: false,
+            depthTest: true,
+            polygonOffset: true,
+            polygonOffsetFactor: -2,
+            polygonOffsetUnits: -4,
+            side: THREE.DoubleSide
+        });
+        const highlightMesh = new THREE.Mesh(geometry, highlightMat);
+        highlightMesh.name = '__selection_highlight__';
+        highlightMesh.visible = false;
+        highlightMesh.renderOrder = 9999;
+        mesh.add(highlightMesh);
 
         const boardData = {
             id: id,
@@ -3707,7 +3882,8 @@ class BoardManager {
             locked: false,
             visible: true,
             mesh: mesh,
-            outlineMesh: outlineMesh
+            outlineMesh: outlineMesh,
+            highlightMesh: highlightMesh
         };
 
         mesh.userData = boardData;
@@ -3760,6 +3936,34 @@ class BoardManager {
                 const material = MaterialManager.createMaterial(boardData.textureKey || config.textureKey || 'white_matte');
                 mesh = new THREE.Mesh(geometry, material);
                 mesh.position.set(boardData.x, boardData.y, boardData.z);
+
+                const edges = new THREE.EdgesGeometry(geometry, 20);
+                const lineMat = new THREE.LineBasicMaterial({ color: '#38bdf8', linewidth: 2 });
+                const outlineMesh = new THREE.LineSegments(edges, lineMat);
+                outlineMesh.name = '__selection_outline__';
+                outlineMesh.visible = false;
+                outlineMesh.renderOrder = 9998;
+                mesh.add(outlineMesh);
+
+                const highlightMat = new THREE.MeshBasicMaterial({
+                    color: 0xf59e0b,
+                    transparent: true,
+                    opacity: 0.35,
+                    depthWrite: false,
+                    depthTest: true,
+                    polygonOffset: true,
+                    polygonOffsetFactor: -2,
+                    polygonOffsetUnits: -4,
+                    side: THREE.DoubleSide
+                });
+                const highlightMesh = new THREE.Mesh(geometry, highlightMat);
+                highlightMesh.name = '__selection_highlight__';
+                highlightMesh.visible = false;
+                highlightMesh.renderOrder = 9999;
+                mesh.add(highlightMesh);
+
+                boardData.outlineMesh = outlineMesh;
+                boardData.highlightMesh = highlightMesh;
             }
 
             mesh.castShadow = true;
@@ -3847,6 +4051,34 @@ class BoardManager {
                 const material = MaterialManager.createMaterial(boardData.textureKey || newConfig.textureKey || 'white_matte');
                 mesh = new THREE.Mesh(geometry, material);
                 mesh.position.set(boardData.x, boardData.y, boardData.z);
+
+                const edges = new THREE.EdgesGeometry(geometry, 20);
+                const lineMat = new THREE.LineBasicMaterial({ color: '#38bdf8', linewidth: 2 });
+                const outlineMesh = new THREE.LineSegments(edges, lineMat);
+                outlineMesh.name = '__selection_outline__';
+                outlineMesh.visible = false;
+                outlineMesh.renderOrder = 9998;
+                mesh.add(outlineMesh);
+
+                const highlightMat = new THREE.MeshBasicMaterial({
+                    color: 0xf59e0b,
+                    transparent: true,
+                    opacity: 0.35,
+                    depthWrite: false,
+                    depthTest: true,
+                    polygonOffset: true,
+                    polygonOffsetFactor: -2,
+                    polygonOffsetUnits: -4,
+                    side: THREE.DoubleSide
+                });
+                const highlightMesh = new THREE.Mesh(geometry, highlightMat);
+                highlightMesh.name = '__selection_highlight__';
+                highlightMesh.visible = false;
+                highlightMesh.renderOrder = 9999;
+                mesh.add(highlightMesh);
+
+                boardData.outlineMesh = outlineMesh;
+                boardData.highlightMesh = highlightMesh;
             }
 
             mesh.castShadow = true;
@@ -4609,6 +4841,9 @@ class BoardManager {
                 board.outlineMesh.geometry.dispose();
                 board.outlineMesh.geometry = new THREE.EdgesGeometry(board.mesh.geometry, 20);
             }
+            if (board.highlightMesh) {
+                board.highlightMesh.geometry = board.mesh.geometry;
+            }
         }
 
         if (newParams.textureKey !== undefined) {
@@ -4859,6 +5094,188 @@ class BoardManager {
         this.boardCounter = 1;
         this.corpusCounter = 1;
         this.groupCounter = 1;
+    }
+
+    getMultiTargetsBoundingBox(targets) {
+        const box = new THREE.Box3();
+        if (!targets || targets.length === 0) {
+            return { width: 0, height: 0, depth: 0, box: box };
+        }
+        targets.forEach(t => {
+            t.updateWorldMatrix(true, true);
+            box.expandByObject(t);
+        });
+        const size = new THREE.Vector3();
+        box.getSize(size);
+        return {
+            width: Math.round(size.x),
+            height: Math.round(size.y),
+            depth: Math.round(size.z),
+            box: box
+        };
+    }
+
+    getMultiTargetsBoardCount(targets) {
+        if (!targets || targets.length === 0) return 0;
+        let count = 0;
+        const countedCorpusIds = new Set();
+        const countedGroupIds = new Set();
+        const countedBoardIds = new Set();
+
+        targets.forEach(t => {
+            if (t.userData && t.userData.isCorpus) {
+                if (!countedCorpusIds.has(t.userData.id)) {
+                    countedCorpusIds.add(t.userData.id);
+                    count += this.boards.filter(b => b.corpusId === t.userData.id).length;
+                }
+            } else if (t.userData && t.userData.isCustomGroup) {
+                if (!countedGroupIds.has(t.userData.id)) {
+                    countedGroupIds.add(t.userData.id);
+                    count += this.boards.filter(b => b.groupId === t.userData.id).length;
+                }
+            } else if (t.userData && t.userData.corpusId) {
+                if (!countedCorpusIds.has(t.userData.corpusId)) {
+                    countedCorpusIds.add(t.userData.corpusId);
+                    count += this.boards.filter(b => b.corpusId === t.userData.corpusId).length;
+                }
+            } else if (t.userData && t.userData.groupId) {
+                if (!countedGroupIds.has(t.userData.groupId)) {
+                    countedGroupIds.add(t.userData.groupId);
+                    count += this.boards.filter(b => b.groupId === t.userData.groupId).length;
+                }
+            } else if (t.userData && t.userData.id) {
+                if (!countedBoardIds.has(t.userData.id)) {
+                    countedBoardIds.add(t.userData.id);
+                    count++;
+                }
+            }
+        });
+        return count;
+    }
+
+    getMultiTargetsJSON(targets) {
+        if (!targets || targets.length === 0) return { corpora: [], customGroups: [], boards: [] };
+
+        const bounds = this.getMultiTargetsBoundingBox(targets);
+        const center = new THREE.Vector3();
+        bounds.box.getCenter(center);
+        const offsetX = center.x;
+        const offsetY = bounds.box.min.y;
+        const offsetZ = center.z;
+
+        const corporaToSave = [];
+        const groupsToSave = [];
+        const boardsToSave = [];
+
+        const savedCorpusIds = new Set();
+        const savedGroupIds = new Set();
+        const savedBoardIds = new Set();
+
+        targets.forEach(t => {
+            const isCorpus = t.userData && t.userData.isCorpus;
+            const isGroup = t.userData && t.userData.isCustomGroup;
+            const corpusId = t.userData ? (isCorpus ? t.userData.id : t.userData.corpusId) : null;
+            const groupId = t.userData ? (isGroup ? t.userData.id : t.userData.groupId) : null;
+
+            if (corpusId && !savedCorpusIds.has(corpusId)) {
+                savedCorpusIds.add(corpusId);
+                const corpus = this.corpora.find(c => c.userData.id === corpusId);
+                if (corpus) {
+                    corporaToSave.push({
+                        id: corpus.userData.id,
+                        name: corpus.userData.name,
+                        config: JSON.parse(JSON.stringify(corpus.userData.config)),
+                        x: corpus.position.x - offsetX,
+                        y: corpus.position.y - offsetY,
+                        z: corpus.position.z - offsetZ
+                    });
+                }
+            } else if (groupId && !savedGroupIds.has(groupId)) {
+                savedGroupIds.add(groupId);
+                const group = this.customGroups.find(g => g.userData.id === groupId);
+                if (group) {
+                    groupsToSave.push({
+                        id: group.userData.id,
+                        name: group.userData.name,
+                        x: group.position.x - offsetX,
+                        y: group.position.y - offsetY,
+                        z: group.position.z - offsetZ
+                    });
+                    const childBoards = this.boards.filter(b => b.groupId === groupId);
+                    childBoards.forEach(b => {
+                        if (!savedBoardIds.has(b.id)) {
+                            savedBoardIds.add(b.id);
+                            const worldPos = new THREE.Vector3();
+                            const worldQuat = new THREE.Quaternion();
+                            if (b.mesh) {
+                                b.mesh.getWorldPosition(worldPos);
+                                b.mesh.getWorldQuaternion(worldQuat);
+                            }
+                            const euler = new THREE.Euler().setFromQuaternion(worldQuat);
+                            boardsToSave.push({
+                                id: b.id,
+                                groupId: b.groupId,
+                                name: b.name,
+                                width: b.width,
+                                height: b.height,
+                                depth: b.depth,
+                                thickness: b.thickness,
+                                edgeRadius: b.edgeRadius !== undefined ? b.edgeRadius : 1,
+                                type: b.type,
+                                textureKey: b.textureKey,
+                                edgeBanding: b.edgeBanding,
+                                x: worldPos.x - offsetX,
+                                y: worldPos.y - offsetY,
+                                z: worldPos.z - offsetZ,
+                                rotX: Math.round(THREE.MathUtils.radToDeg(euler.x)),
+                                rotY: Math.round(THREE.MathUtils.radToDeg(euler.y)),
+                                rotZ: Math.round(THREE.MathUtils.radToDeg(euler.z))
+                            });
+                        }
+                    });
+                }
+            } else if (!corpusId && !groupId && t.userData && t.userData.id) {
+                const bId = t.userData.id;
+                if (!savedBoardIds.has(bId)) {
+                    savedBoardIds.add(bId);
+                    const b = this.boards.find(item => item.id === bId || item.mesh === t);
+                    if (b) {
+                        const worldPos = new THREE.Vector3();
+                        const worldQuat = new THREE.Quaternion();
+                        if (b.mesh) {
+                            b.mesh.getWorldPosition(worldPos);
+                            b.mesh.getWorldQuaternion(worldQuat);
+                        }
+                        const euler = new THREE.Euler().setFromQuaternion(worldQuat);
+                        boardsToSave.push({
+                            id: b.id,
+                            groupId: null,
+                            name: b.name,
+                            width: b.width,
+                            height: b.height,
+                            depth: b.depth,
+                            thickness: b.thickness,
+                            edgeRadius: b.edgeRadius !== undefined ? b.edgeRadius : 1,
+                            type: b.type,
+                            textureKey: b.textureKey,
+                            edgeBanding: b.edgeBanding,
+                            x: worldPos.x - offsetX,
+                            y: worldPos.y - offsetY,
+                            z: worldPos.z - offsetZ,
+                            rotX: Math.round(THREE.MathUtils.radToDeg(euler.x)),
+                            rotY: Math.round(THREE.MathUtils.radToDeg(euler.y)),
+                            rotZ: Math.round(THREE.MathUtils.radToDeg(euler.z))
+                        });
+                    }
+                }
+            }
+        });
+
+        return {
+            corpora: corporaToSave,
+            customGroups: groupsToSave,
+            boards: boardsToSave
+        };
     }
 
     getCorpusJSON(corpusId) {
@@ -5379,8 +5796,8 @@ class CatalogManager {
     /**
      * Kijelölt korpusz vagy egyedi bútorlap mentése a katalógusba izolált 3D fotóval
      */
-    saveSelectedToCatalog(savingTarget, name, categoryId, description = '') {
-        if (!savingTarget || !savingTarget.target) {
+    saveSelectedToCatalog(savingTarget, name, categoryId, description = '', customThumbnail = null, snapshotAngle = 'iso-right') {
+        if (!savingTarget || (!savingTarget.target && !savingTarget.targets)) {
             alert('Nincs kijelölt elem a mentéshez!');
             return null;
         }
@@ -5389,7 +5806,17 @@ class CatalogManager {
         let dimensions = { w: 600, h: 720, d: 560 };
         let boardCount = 1;
 
-        if (savingTarget.type === 'corpus') {
+        if (savingTarget.type === 'multiple') {
+            const targets = savingTarget.targets || [];
+            boardsData = this.boardManager.getMultiTargetsJSON(targets);
+            const bounds = this.boardManager.getMultiTargetsBoundingBox(targets);
+            dimensions = {
+                w: bounds.width || 600,
+                h: bounds.height || 720,
+                d: bounds.depth || 560
+            };
+            boardCount = this.boardManager.getMultiTargetsBoardCount(targets);
+        } else if (savingTarget.type === 'corpus') {
             boardsData = this.boardManager.getCorpusJSON(savingTarget.id);
             const corpus = this.boardManager.corpora.find(c => c.userData.id === savingTarget.id);
             if (corpus) {
@@ -5430,8 +5857,9 @@ class CatalogManager {
             return null;
         }
 
-        // Csak a kijelölt elem látszódik a kisképben!
-        const thumbnail = this.scene3D.getSnapshot(savingTarget.target, 400, 300);
+        // Kiskép készítése a kijelölt elemekről (1:1 arány)
+        const snapTarget = savingTarget.type === 'multiple' ? savingTarget.targets : savingTarget.target;
+        const thumbnail = customThumbnail || this.scene3D.getSnapshot(snapTarget, 512, 512, snapshotAngle || 'iso-right');
 
         const newItem = {
             id: 'item_' + Date.now(),
@@ -5454,7 +5882,7 @@ class CatalogManager {
     /**
      * Jelenlegi bútor mentése a bal oldali katalógusba automatikus 3D fotóval
      */
-    saveCurrentFurnitureToCatalog(name, categoryId, description = '') {
+    saveCurrentFurnitureToCatalog(name, categoryId, description = '', customThumbnail = null, snapshotAngle = 'iso-right') {
         const boardsData = this.boardManager.toJSON();
         if (boardsData.corpora.length === 0 && boardsData.boards.length === 0) {
             alert('A 3D tér üres! Hozz létre legalább egy bútorlapot a mentéshez.');
@@ -5462,7 +5890,7 @@ class CatalogManager {
         }
 
         const bounds = this.boardManager.getFurnitureBoundingBox();
-        const thumbnail = this.scene3D.getSnapshot(null, 400, 300);
+        const thumbnail = customThumbnail || this.scene3D.getSnapshot(null, 512, 512, snapshotAngle || 'iso-right');
 
         const newItem = {
             id: 'item_' + Date.now(),
@@ -7311,6 +7739,13 @@ class FurnitureApp {
         });
 
         // --- Mentés Katalógusba Modal Események ---
+        document.querySelectorAll('#save-angle-buttons-container .btn-save-angle').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const angle = btn.getAttribute('data-angle');
+                this.updateSaveSnapshot(angle);
+            });
+        });
+
         document.getElementById('btn-confirm-save-furniture').addEventListener('click', () => {
             const name = document.getElementById('save-furniture-name').value;
             const categoryId = document.getElementById('save-furniture-category').value;
@@ -7322,8 +7757,8 @@ class FurnitureApp {
             }
 
             const item = this.savingTarget ? 
-                this.catalogManager.saveSelectedToCatalog(this.savingTarget, name, categoryId, desc) :
-                this.catalogManager.saveCurrentFurnitureToCatalog(name, categoryId, desc);
+                this.catalogManager.saveSelectedToCatalog(this.savingTarget, name, categoryId, desc, this.currentSaveThumbnail, this.activeSaveSnapshotAngle) :
+                this.catalogManager.saveCurrentFurnitureToCatalog(name, categoryId, desc, this.currentSaveThumbnail, this.activeSaveSnapshotAngle);
 
             if (item) {
                 if (categoryId) {
@@ -8455,8 +8890,13 @@ class FurnitureApp {
                     catItems.forEach(item => {
                         const card = document.createElement('div');
                         card.className = 'catalog-card';
+                        card.style.display = 'flex';
+                        card.style.alignItems = 'center';
+                        card.style.padding = '8px';
+                        card.style.gap = '10px';
+                        card.style.marginBottom = '8px';
 
-                        const thumbSrc = item.thumbnail || 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="150" viewBox="0 0 200 150"><rect width="200" height="150" fill="%231e293b"/><text x="100" y="80" fill="%2364748b" font-family="sans-serif" font-size="28" text-anchor="middle">🛋️</text></svg>';
+                        const thumbSrc = item.thumbnail || 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><rect width="200" height="200" fill="%231e293b"/><text x="100" y="110" fill="%2364748b" font-family="sans-serif" font-size="36" text-anchor="middle">🛋️</text></svg>';
 
                         const dimW = (item.dimensions && item.dimensions.w) || 0;
                         const dimH = (item.dimensions && item.dimensions.h) || 0;
@@ -8464,21 +8904,19 @@ class FurnitureApp {
                         const boardCount = item.boardCount || (item.boards && item.boards.length) || 1;
 
                         card.innerHTML = `
-                            <div class="card-img-container">
-                                <img src="${thumbSrc}" class="card-img" alt="${item.name}">
+                            <div class="card-img-container" style="width:72px; height:72px; min-width:72px; min-height:72px; aspect-ratio:1/1; border-radius:var(--radius-sm); overflow:hidden; background:#0b1120; border:1px solid var(--border-color); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                                <img src="${thumbSrc}" class="card-img" alt="${item.name}" style="width:100%; height:100%; object-fit:contain;">
                             </div>
-                            <div class="card-body">
-                                <div class="card-title">${item.name}</div>
-                                ${item.description ? `<div class="card-desc">${item.description}</div>` : ''}
-                                <div class="card-meta">
-                                    <span>📏 ${dimW}×${dimH}×${dimD} mm</span>
-                                    <span>🧩 ${boardCount} lap</span>
+                            <div class="card-body" style="flex:1; min-width:0; padding:0; display:flex; flex-direction:column; justify-content:space-between; height:72px;">
+                                <div style="min-width:0;">
+                                    <div class="card-title" style="font-size:13px; font-weight:600; color:var(--text-primary); margin-bottom:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${item.name}">${item.name}</div>
+                                    <div style="font-size:11px; color:#38bdf8; font-weight:500;">📏 ${dimW}×${dimH}×${dimD} mm</div>
                                 </div>
-                                <div class="card-actions">
-                                    <button class="btn btn-sm btn-primary btn-add-scene" style="flex:1;" title="Hozzáadás a 3D munkatérhez">
-                                        ➕ Hozzáadás a Térhez
+                                <div class="card-actions" style="display:flex; gap:6px; align-items:center; justify-content:flex-end; margin-top:auto;">
+                                    <button class="btn btn-sm btn-primary btn-add-scene" style="padding:4px 10px; font-size:14px; line-height:1;" title="Hozzáadás a jelenethez">
+                                        ➡️
                                     </button>
-                                    <button class="btn btn-sm btn-danger btn-delete-item" style="padding:4px 8px; background:rgba(239, 68, 68, 0.2); color:#ef4444; border-color:#ef4444;" title="Törlés a katalógusból">
+                                    <button class="btn btn-sm btn-danger btn-delete-item" style="padding:4px 8px; font-size:13px; line-height:1; background:rgba(239, 68, 68, 0.18); color:#ef4444; border-color:rgba(239, 68, 68, 0.4);" title="Törlés a katalógusból">
                                         🗑️
                                     </button>
                                 </div>
@@ -8723,68 +9161,104 @@ class FurnitureApp {
             return;
         }
 
-        // Kijelölt elem vagy korpusz vagy csoport meghatározása
-        let target = this.selectedCustomGroup || this.selectedCorpus || (this.selectedBoard ? this.selectedBoard.mesh : null);
-        if (!target && this.scene3D.selectedTarget) {
-            target = this.scene3D.selectedTarget;
-        }
+        const selectedTargets = (this.scene3D.selectedTargets && this.scene3D.selectedTargets.length > 0)
+            ? this.scene3D.selectedTargets
+            : (this.scene3D.selectedTarget ? [this.scene3D.selectedTarget] : []);
 
-        // Ha egy korpusz valamelyik belső bútorlapja volt kiválasztva, válasszuk ki az egész korpuszt
-        if (target && target.userData && target.userData.corpusId) {
-            const parentCorpus = this.boardManager.corpora.find(c => c.userData.id === target.userData.corpusId);
-            if (parentCorpus) {
-                target = parentCorpus;
-            }
-        }
-
-        // Ha nincs semmi kijelölve: automatikusan kiválasztjuk az egyetlent, ha csak 1 van a térben, különben figyelmeztetünk
-        if (!target) {
-            if (this.boardManager.corpora.length === 1 && this.boardManager.boards.filter(b => !b.corpusId).length === 0) {
-                target = this.boardManager.corpora[0];
-                this.scene3D.selectBoard(target);
-            } else if (this.boardManager.customGroups.length === 1 && this.boardManager.boards.filter(b => !b.groupId).length === 0) {
-                target = this.boardManager.customGroups[0];
-                this.scene3D.selectBoard(target);
-            } else if (this.boardManager.corpora.length === 0 && this.boardManager.customGroups.length === 0 && this.boardManager.boards.length === 1) {
-                target = this.boardManager.boards[0].mesh;
-                this.scene3D.selectBoard(target);
-            } else {
-                alert('Kérlek kattints rá a 3D térben arra a csoportra, korpuszra vagy bútorlapra, amelyet el szeretnél menteni a katalógusba!');
-                return;
-            }
-        }
-
-        const isCorpus = target.userData && target.userData.isCorpus;
-        const isCustomGroup = target.userData && target.userData.isCustomGroup;
-        const targetId = target.userData ? target.userData.id : null;
         let defaultName = '';
         let targetInfoText = '';
         let defaultCat = 'cat_kitchen';
+        let snapshotTarget = null;
 
-        if (isCorpus) {
-            this.savingTarget = { type: 'corpus', id: targetId, target: target, name: target.userData.name };
-            defaultName = target.userData.name || 'Konyha Korpusz';
-            targetInfoText = `🍳 Kijelölt korpusz: ${target.userData.name} (${target.userData.width}×${target.userData.height}×${target.userData.depth} mm)`;
+        if (selectedTargets.length > 1) {
+            // TÖBB ELEM KIJELÖLVE (Shiftes kijelölés mentése egyben)
+            const bounds = this.boardManager.getMultiTargetsBoundingBox(selectedTargets);
+            const boardCount = this.boardManager.getMultiTargetsBoardCount(selectedTargets);
+            this.savingTarget = {
+                type: 'multiple',
+                targets: selectedTargets,
+                name: `Kombinált Összeállítás (${selectedTargets.length} elem)`
+            };
+            defaultName = `Kombinált Bútor (${selectedTargets.length} elem)`;
+            targetInfoText = `✨ Több elem kijelölve: ${selectedTargets.length} db egység (${boardCount} db alkatrész, ${bounds.width}×${bounds.height}×${bounds.depth} mm)`;
             defaultCat = 'cat_kitchen';
-        } else if (isCustomGroup) {
-            this.savingTarget = { type: 'group', id: targetId, target: target, name: target.userData.name };
-            defaultName = target.userData.name || 'Bútor Csoport';
-            targetInfoText = `📦 Kijelölt csoport: ${target.userData.name} (${target.userData.width}×${target.userData.height}×${target.userData.depth} mm)`;
-            defaultCat = 'cat_living';
+            snapshotTarget = selectedTargets;
         } else {
-            const board = this.boardManager.boards.find(b => b.id === targetId || b.mesh === target);
-            const bId = board ? board.id : targetId;
-            const bName = board ? board.name : (target.userData.name || 'Egyedi Lap');
-            this.savingTarget = { type: 'board', id: bId, target: target, name: bName };
-            defaultName = bName;
-            targetInfoText = `📐 Kijelölt lap: ${bName} (${board ? `${board.width}×${board.height}×${board.depth} mm` : ''})`;
-            defaultCat = 'cat_living';
+            // Egyedi elem vagy korpusz vagy csoport meghatározása
+            let target = selectedTargets.length === 1 ? selectedTargets[0] : null;
+
+            // Ha nincs semmi kijelölve: automatikusan kiválasztjuk az egyetlent, ha csak 1 van a térben, különben a teljes tervet mentjük
+            if (!target) {
+                if (this.boardManager.corpora.length === 1 && this.boardManager.boards.filter(b => !b.corpusId).length === 0) {
+                    target = this.boardManager.corpora[0];
+                    this.scene3D.selectBoard(target);
+                } else if (this.boardManager.customGroups.length === 1 && this.boardManager.boards.filter(b => !b.groupId).length === 0) {
+                    target = this.boardManager.customGroups[0];
+                    this.scene3D.selectBoard(target);
+                } else if (this.boardManager.corpora.length === 0 && this.boardManager.customGroups.length === 0 && this.boardManager.boards.length === 1) {
+                    target = this.boardManager.boards[0].mesh;
+                    this.scene3D.selectBoard(target);
+                } else if (this.boardManager.corpora.length > 0 || this.boardManager.boards.length > 0) {
+                    // Teljes munkatér mentése
+                    const allTargets = [
+                        ...this.boardManager.corpora,
+                        ...this.boardManager.customGroups,
+                        ...this.boardManager.boards.filter(b => !b.corpusId && !b.groupId).map(b => b.mesh)
+                    ];
+                    const bounds = this.boardManager.getFurnitureBoundingBox();
+                    this.savingTarget = {
+                        type: 'multiple',
+                        targets: allTargets,
+                        name: 'Teljes 3D Bútorterv'
+                    };
+                    defaultName = 'Teljes Bútor Összeállítás';
+                    targetInfoText = `📐 Teljes 3D terv mentése (${bounds.count} db alkatrész, ${bounds.width}×${bounds.height}×${bounds.depth} mm)`;
+                    defaultCat = 'cat_kitchen';
+                    snapshotTarget = null;
+                }
+            }
+
+            if (target) {
+                // Ha egy korpusz valamelyik belső bútorlapja volt kiválasztva, válasszuk ki az egész korpuszt
+                if (target.userData && target.userData.corpusId) {
+                    const parentCorpus = this.boardManager.corpora.find(c => c.userData.id === target.userData.corpusId);
+                    if (parentCorpus) {
+                        target = parentCorpus;
+                    }
+                }
+
+                const isCorpus = target.userData && target.userData.isCorpus;
+                const isCustomGroup = target.userData && target.userData.isCustomGroup;
+                const targetId = target.userData ? target.userData.id : null;
+
+                if (isCorpus) {
+                    this.savingTarget = { type: 'corpus', id: targetId, target: target, name: target.userData.name };
+                    defaultName = target.userData.name || 'Konyha Korpusz';
+                    targetInfoText = `🍳 Kijelölt korpusz: ${target.userData.name} (${target.userData.width}×${target.userData.height}×${target.userData.depth} mm)`;
+                    defaultCat = 'cat_kitchen';
+                    snapshotTarget = target;
+                } else if (isCustomGroup) {
+                    this.savingTarget = { type: 'group', id: targetId, target: target, name: target.userData.name };
+                    defaultName = target.userData.name || 'Bútor Csoport';
+                    targetInfoText = `📦 Kijelölt csoport: ${target.userData.name} (${target.userData.width}×${target.userData.height}×${target.userData.depth} mm)`;
+                    defaultCat = 'cat_living';
+                    snapshotTarget = target;
+                } else {
+                    const board = this.boardManager.boards.find(b => b.id === targetId || b.mesh === target);
+                    const bId = board ? board.id : targetId;
+                    const bName = board ? board.name : (target.userData.name || 'Egyedi Lap');
+                    this.savingTarget = { type: 'board', id: bId, target: target, name: bName };
+                    defaultName = bName;
+                    targetInfoText = `📐 Kijelölt lap: ${bName} (${board ? `${board.width}×${board.height}×${board.depth} mm` : ''})`;
+                    defaultCat = 'cat_living';
+                    snapshotTarget = target;
+                }
+            }
         }
 
-        // 3D Fotó készítése CSAK a kijelölt elemről/korpuszról
-        const snapshot = this.scene3D.getSnapshot(target, 400, 300);
-        const imgEl = document.getElementById('save-modal-thumbnail');
-        if (imgEl) imgEl.src = snapshot;
+        // 3D Fotó készítése a kijelölt elemről/elemekről (1:1 négyzetes arány, választható kameraszögek)
+        this.activeSaveSnapshotTarget = snapshotTarget;
+        this.updateSaveSnapshot('iso-right');
 
         // Kategória dropdown feltöltése és alapértelmezett kategória kijelölése
         this.populateSaveCategoryDropdown(defaultCat);
@@ -8799,6 +9273,29 @@ class FurnitureApp {
         if (infoEl) infoEl.textContent = targetInfoText;
 
         this.openModal('modal-save-furniture');
+    }
+
+    updateSaveSnapshot(angle = 'iso-right') {
+        this.activeSaveSnapshotAngle = angle;
+        const snapshot = this.scene3D.getSnapshot(this.activeSaveSnapshotTarget, 512, 512, angle);
+        this.currentSaveThumbnail = snapshot;
+        const imgEl = document.getElementById('save-modal-thumbnail');
+        if (imgEl) imgEl.src = snapshot;
+
+        const buttons = document.querySelectorAll('#save-angle-buttons-container .btn-save-angle');
+        buttons.forEach(btn => {
+            if (btn.getAttribute('data-angle') === angle) {
+                btn.classList.add('active');
+                btn.style.background = '#38bdf8';
+                btn.style.color = '#0f172a';
+                btn.style.fontWeight = 'bold';
+            } else {
+                btn.classList.remove('active');
+                btn.style.background = '';
+                btn.style.color = '';
+                btn.style.fontWeight = 'normal';
+            }
+        });
     }
 
     populateSaveCategoryDropdown(selectedCatId = null) {

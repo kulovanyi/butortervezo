@@ -402,32 +402,93 @@ export class Scene3D {
         this.updateMultiSelection();
     }
 
-    updateMultiSelection() {
-        // Körvonalak törlése
-        this.boardMeshes.forEach(m => {
-            if (m.userData.outlineMesh) {
-                m.userData.outlineMesh.visible = false;
+    ensureSelectionMeshes(child, lineColor = '#f59e0b') {
+        if (!child || !child.isMesh || child.name === '__selection_outline__' || child.name === '__selection_highlight__') {
+            return;
+        }
+
+        if (!child.userData) {
+            child.userData = {};
+        }
+
+        if (!child.userData.outlineMesh) {
+            try {
+                const edges = new THREE.EdgesGeometry(child.geometry, 20);
+                const lineMat = new THREE.LineBasicMaterial({ color: lineColor, linewidth: 2 });
+                const outlineMesh = new THREE.LineSegments(edges, lineMat);
+                outlineMesh.name = '__selection_outline__';
+                outlineMesh.visible = false;
+                outlineMesh.renderOrder = 9998;
+                child.add(outlineMesh);
+                child.userData.outlineMesh = outlineMesh;
+            } catch (e) {
+                console.warn('Outline mesh creation skipped:', e);
+            }
+        }
+
+        if (!child.userData.highlightMesh) {
+            try {
+                const highlightMat = new THREE.MeshBasicMaterial({
+                    color: 0xf59e0b,
+                    transparent: true,
+                    opacity: 0.35,
+                    depthWrite: false,
+                    depthTest: true,
+                    polygonOffset: true,
+                    polygonOffsetFactor: -2,
+                    polygonOffsetUnits: -4,
+                    side: THREE.DoubleSide
+                });
+                const highlightMesh = new THREE.Mesh(child.geometry, highlightMat);
+                highlightMesh.name = '__selection_highlight__';
+                highlightMesh.visible = false;
+                highlightMesh.renderOrder = 9999;
+                child.add(highlightMesh);
+                child.userData.highlightMesh = highlightMesh;
+            } catch (e) {
+                console.warn('Highlight mesh creation skipped:', e);
+            }
+        }
+    }
+
+    clearAllHighlights() {
+        if (!this.scene) return;
+        this.scene.traverse(child => {
+            if (child.userData) {
+                if (child.userData.outlineMesh) child.userData.outlineMesh.visible = false;
+                if (child.userData.highlightMesh) child.userData.highlightMesh.visible = false;
             }
         });
+    }
 
-        // Kijelölt elemek körvonalainak bekapcsolása
-        const lineColor = (this.selectedTargets.length > 1) ? '#f59e0b' : '#38bdf8';
-        this.selectedTargets.forEach(target => {
-            if (target.isGroup) {
-                target.children.forEach(child => {
-                    if (child.userData && child.userData.outlineMesh) {
-                        child.userData.outlineMesh.visible = true;
-                        if (child.userData.outlineMesh.material) {
-                            child.userData.outlineMesh.material.color.set('#f59e0b');
-                        }
+    applySelectionHighlight(target, lineColor = '#f59e0b') {
+        if (!target) return;
+        target.traverse(child => {
+            if (child.isMesh && child.name !== '__selection_outline__' && child.name !== '__selection_highlight__') {
+                this.ensureSelectionMeshes(child, lineColor);
+                if (child.userData && child.userData.outlineMesh) {
+                    child.userData.outlineMesh.visible = true;
+                    if (child.userData.outlineMesh.material) {
+                        child.userData.outlineMesh.material.color.set(lineColor);
                     }
-                });
-            } else if (target.userData && target.userData.outlineMesh) {
-                target.userData.outlineMesh.visible = true;
-                if (target.userData.outlineMesh.material) {
-                    target.userData.outlineMesh.material.color.set(lineColor);
+                }
+                if (child.userData && child.userData.highlightMesh) {
+                    child.userData.highlightMesh.visible = true;
+                    if (child.userData.highlightMesh.material) {
+                        child.userData.highlightMesh.material.color.set(0xf59e0b);
+                        child.userData.highlightMesh.material.opacity = 0.35;
+                    }
                 }
             }
+        });
+    }
+
+    updateMultiSelection() {
+        this.clearAllHighlights();
+
+        const lineColor = (this.selectedTargets.length > 1) ? '#f59e0b' : '#38bdf8';
+        this.selectedTargets.forEach(target => {
+            this.applySelectionHighlight(target, lineColor);
         });
 
         if (this.selectedTargets.length === 1) {
@@ -452,35 +513,13 @@ export class Scene3D {
         this.selectedTarget = target;
         this.selectedTargets = target ? [target] : [];
 
-        // Előző körvonalak törlése
-        this.boardMeshes.forEach(m => {
-            if (m.userData.outlineMesh) {
-                m.userData.outlineMesh.visible = false;
-            }
-        });
+        this.clearAllHighlights();
 
         if (target) {
             this.transformControls.attach(target);
-
             const isGroupTarget = target.isGroup && target.userData && (target.userData.isCorpus || target.userData.isCustomGroup);
             const lineColor = isGroupTarget ? '#f59e0b' : '#38bdf8';
-
-            // Ha Group (Korpusz vagy Csoport)
-            if (target.isGroup) {
-                target.children.forEach(child => {
-                    if (child.userData && child.userData.outlineMesh) {
-                        child.userData.outlineMesh.visible = true;
-                        if (child.userData.outlineMesh.material) {
-                            child.userData.outlineMesh.material.color.set('#f59e0b');
-                        }
-                    }
-                });
-            } else if (target.userData && target.userData.outlineMesh) {
-                target.userData.outlineMesh.visible = true;
-                if (target.userData.outlineMesh.material) {
-                    target.userData.outlineMesh.material.color.set(lineColor);
-                }
-            }
+            this.applySelectionHighlight(target, lineColor);
         } else {
             this.transformControls.detach();
         }
@@ -934,7 +973,7 @@ export class Scene3D {
         };
     }
 
-    getSnapshot(target = null, width = 400, height = 300) {
+    getSnapshot(target = null, width = 512, height = 512, angle = 'iso-right') {
         const prevTransformVisible = this.transformControls.visible;
         const prevGridVisible = this.gridHelper.visible;
         const prevDimVisible = this.dimensionGroup.visible;
@@ -943,15 +982,37 @@ export class Scene3D {
         this.gridHelper.visible = false;
         this.dimensionGroup.visible = false;
 
-        // Ha van target (kijelölt elem/korpusz), elrejtünk minden egyéb bútort a fotó idejére
+        // Ideiglenesen kikapcsoljuk az összes narancssárga kiemelő réteget és élvonalat
+        const visibleHighlights = [];
+        this.scene.traverse((obj) => {
+            if (obj.userData) {
+                if (obj.userData.outlineMesh && obj.userData.outlineMesh.visible) {
+                    obj.userData.outlineMesh.visible = false;
+                    visibleHighlights.push(obj.userData.outlineMesh);
+                }
+                if (obj.userData.highlightMesh && obj.userData.highlightMesh.visible) {
+                    obj.userData.highlightMesh.visible = false;
+                    visibleHighlights.push(obj.userData.highlightMesh);
+                }
+            }
+            if (obj.name === '__selection_outline__' || obj.name === '__selection_highlight__') {
+                if (obj.visible) {
+                    obj.visible = false;
+                    visibleHighlights.push(obj);
+                }
+            }
+        });
+
+        // Ha van target (kijelölt elem/korpusz vagy elemek listája), elrejtünk minden egyéb bútort a fotó idejére
         const hiddenObjects = [];
-        if (target) {
+        const targetList = Array.isArray(target) ? target : (target ? [target] : null);
+        if (targetList && targetList.length > 0) {
             this.scene.traverse((obj) => {
-                if (obj.isMesh && obj !== this.gridHelper) {
+                if (obj.isMesh && obj !== this.gridHelper && obj.name !== '__selection_outline__' && obj.name !== '__selection_highlight__') {
                     let isPartOfTarget = false;
                     let cur = obj;
                     while (cur) {
-                        if (cur === target) {
+                        if (targetList.includes(cur)) {
                             isPartOfTarget = true;
                             break;
                         }
@@ -966,8 +1027,11 @@ export class Scene3D {
         }
 
         const box = new THREE.Box3();
-        if (target) {
-            box.setFromObject(target);
+        if (targetList && targetList.length > 0) {
+            targetList.forEach(t => {
+                t.updateWorldMatrix(true, true);
+                box.expandByObject(t);
+            });
         } else if (this.boardMeshes.length > 0) {
             this.boardMeshes.forEach(mesh => box.expandByObject(mesh));
         } else {
@@ -983,22 +1047,78 @@ export class Scene3D {
 
         const prevTarget = this.controls.target.clone();
         const prevPos = this.camera.position.clone();
+        const prevAspect = this.perspCamera.aspect;
 
-        // Szépen a cél elemre optimalizáljuk a kameraszöget
-        this.camera.position.set(
-            center.x + maxDim * 1.3,
-            center.y + maxDim * 0.9,
-            center.z + maxDim * 1.6
-        );
+        // 1:1 négyzetes arány a fotózás idejére
+        const origSize = new THREE.Vector2();
+        this.renderer.getSize(origSize);
+        this.perspCamera.aspect = width / height;
+        this.perspCamera.updateProjectionMatrix();
+
+        // Kameraszög beállítása a kiválasztott nézet szerint (közelebb pozicionálva a kitöltéshez)
+        if (angle === 'iso-left') {
+            this.camera.position.set(
+                center.x - maxDim * 0.95,
+                center.y + maxDim * 0.65,
+                center.z + maxDim * 1.15
+            );
+        } else if (angle === 'front') {
+            this.camera.position.set(
+                center.x,
+                center.y,
+                center.z + maxDim * 1.35
+            );
+        } else if (angle === 'back') {
+            this.camera.position.set(
+                center.x,
+                center.y,
+                center.z - maxDim * 1.35
+            );
+        } else if (angle === 'right') {
+            this.camera.position.set(
+                center.x + maxDim * 1.35,
+                center.y,
+                center.z
+            );
+        } else if (angle === 'left') {
+            this.camera.position.set(
+                center.x - maxDim * 1.35,
+                center.y,
+                center.z
+            );
+        } else if (angle === 'top') {
+            this.camera.position.set(
+                center.x,
+                center.y + maxDim * 1.45,
+                center.z + maxDim * 0.01
+            );
+        } else {
+            // 'iso-right' / alapértelmezett izometrikus
+            this.camera.position.set(
+                center.x + maxDim * 0.95,
+                center.y + maxDim * 0.65,
+                center.z + maxDim * 1.15
+            );
+        }
+
         this.controls.target.copy(center);
         this.camera.lookAt(center);
 
-        this.renderer.render(this.scene, this.camera);
+        this.renderer.setSize(width, height, false);
+        this.renderer.render(this.scene, this.perspCamera);
         const dataUrl = this.renderer.domElement.toDataURL('image/jpeg', 0.92);
 
-        // Visszaállítjuk az elrejtett elemeket
+        // Visszaállítjuk a renderert és a kamerát
+        this.renderer.setSize(origSize.x, origSize.y, false);
+        this.perspCamera.aspect = prevAspect;
+        this.perspCamera.updateProjectionMatrix();
+
+        // Visszaállítjuk az elrejtett elemeket és a kiemeléseket
         hiddenObjects.forEach(obj => {
             obj.visible = true;
+        });
+        visibleHighlights.forEach(h => {
+            h.visible = true;
         });
 
         this.transformControls.visible = prevTransformVisible;

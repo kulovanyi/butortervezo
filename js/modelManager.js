@@ -142,6 +142,7 @@ export const ModelManager = {
         group.add(clone);
         group.position.set(boardData.x, boardData.y, boardData.z);
         group.userData = boardData;
+        attachHardwareHighlights(group);
         return group;
     },
 
@@ -197,6 +198,7 @@ export const ModelManager = {
         // A láb a padlón áll (Y = 0)
         group.position.set(boardData.x, 0, boardData.z);
         group.userData = boardData;
+        attachHardwareHighlights(group);
         return group;
     },
 
@@ -304,29 +306,28 @@ export const ModelManager = {
             armGroup.add(rivetMesh);
         });
 
-        // Hátsó rugós kioldó fül / gomb (a fotón látható bordázott kioldó gomb a kar végén)
-        const clipButtonGeo = new THREE.BoxGeometry(12, 13, 8);
-        const clipButtonMesh = new THREE.Mesh(clipButtonGeo, darkMetalMat);
-        clipButtonMesh.position.set(0, -2, -armD - 3);
-        armGroup.add(clipButtonMesh);
+        const linkGeo = new THREE.BoxGeometry(6, 12, 16);
+        const linkMesh = new THREE.Mesh(linkGeo, satinArmMat);
+        linkMesh.position.set(isLeft ? 4 : -4, 0, -4);
+        armGroup.add(linkMesh);
 
-        // 4. KERESZTTALP / SZERELŐTALP EGYSÉG (A korpusz belső oldalára rögzítve)
+        const adjScrewGeo = new THREE.CylinderGeometry(3.5, 3.5, 2.5, 16);
+        const adjScrew = new THREE.Mesh(adjScrewGeo, screwMat);
+        adjScrew.position.set(0, 9.2, -26);
+        armGroup.add(adjScrew);
+
+        // 4. KORPUSZ OLDALRA SZERELT TALP (Mounting Cross-Plate)
         const plateGroup = new THREE.Group();
         plateGroup.name = 'hinge_plate_group';
 
-        // Kereszttalp fém talplemez
-        const plateW = 4.5;
-        const plateH = 34;
-        const plateD = 40;
-        const plateGeo = new THREE.BoxGeometry(plateW, plateH, plateD);
-        const plateMesh = new THREE.Mesh(plateGeo, chromeMat);
-        plateMesh.position.set(isLeft ? plateW / 2 : -plateW / 2, 0, -24);
-        plateMesh.castShadow = true;
-        plateGroup.add(plateMesh);
+        const plateW = 18;
+        const plateBaseGeo = new THREE.BoxGeometry(plateW, 37, 2.5);
+        const plateBaseMesh = new THREE.Mesh(plateBaseGeo, chromeMat);
+        plateBaseMesh.rotation.y = Math.PI / 2;
+        plateBaseMesh.position.set(isLeft ? plateW / 2 : -plateW / 2, 0, -24);
+        plateGroup.add(plateBaseMesh);
 
-        // Fő magasság- és mélységállító csavar (nagy kereszthornyos csavar a talpon)
-        const plateScrewGeo = new THREE.CylinderGeometry(4.5, 3.5, 2.5, 16);
-        plateScrewGeo.rotateZ(Math.PI / 2);
+        const plateScrewGeo = new THREE.CylinderGeometry(2.8, 2.8, 2.0, 16);
         const plateScrewMesh = new THREE.Mesh(plateScrewGeo, screwMat);
         plateScrewMesh.position.set(isLeft ? plateW + 0.8 : -plateW - 0.8, 0, -24);
         plateGroup.add(plateScrewMesh);
@@ -346,6 +347,41 @@ export const ModelManager = {
         group.add(plateGroup);
 
         group.userData = boardData;
+        attachHardwareHighlights(group);
         return group;
     }
 };
+
+function attachHardwareHighlights(group) {
+    if (!group) return;
+    group.traverse(child => {
+        if (child.isMesh && child.geometry && child.name !== '__selection_outline__' && child.name !== '__selection_highlight__') {
+            const edges = new THREE.EdgesGeometry(child.geometry, 25);
+            const lineMat = new THREE.LineBasicMaterial({ color: '#38bdf8', linewidth: 2 });
+            const outlineMesh = new THREE.LineSegments(edges, lineMat);
+            outlineMesh.name = '__selection_outline__';
+            outlineMesh.visible = false;
+            outlineMesh.renderOrder = 9998;
+            child.add(outlineMesh);
+            child.userData.outlineMesh = outlineMesh;
+
+            const highlightMat = new THREE.MeshBasicMaterial({
+                color: 0xf59e0b,
+                transparent: true,
+                opacity: 0.35,
+                depthWrite: false,
+                depthTest: true,
+                polygonOffset: true,
+                polygonOffsetFactor: -2,
+                polygonOffsetUnits: -4,
+                side: THREE.DoubleSide
+            });
+            const highlightMesh = new THREE.Mesh(child.geometry, highlightMat);
+            highlightMesh.name = '__selection_highlight__';
+            highlightMesh.visible = false;
+            highlightMesh.renderOrder = 9999;
+            child.add(highlightMesh);
+            child.userData.highlightMesh = highlightMesh;
+        }
+    });
+}
