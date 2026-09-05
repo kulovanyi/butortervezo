@@ -1821,6 +1821,7 @@ class Scene3D {
             const w1 = target.userData.width || 600;
             const h1 = target.userData.height || 720;
             const d1 = target.userData.depth || 560;
+            const type1 = target.userData.config?.type || (posY >= 1000 ? 'wall' : 'base');
 
             const posX = target.position.x;
             const posY = target.position.y;
@@ -1835,48 +1836,69 @@ class Scene3D {
                 const w2 = other.userData.width || 600;
                 const h2 = other.userData.height || 720;
                 const d2 = other.userData.depth || 560;
+                const type2 = other.userData.config?.type || (other.position.y >= 1000 ? 'wall' : 'base');
 
                 const otherX = other.position.x;
                 const otherY = other.position.y;
                 const otherZ = other.position.z;
+                const otherBackZ = otherZ - (d2 / 2);
 
-                // Oldalirányú (X) illeszkedések:
-                // a) Cél bal oldala az egyéb jobb oldalához
-                const snapX_LeftToRight = otherX + (w2 / 2) + (w1 / 2);
-                const dist1 = Math.abs(posX - snapX_LeftToRight);
+                // A) FELSŐ ÉS ALSÓ SZEKRÉNY EGYMÁS FÖLÉ ILLESZTÉSE (Wall on Base)
+                if (type1 === 'wall' && type2 === 'base') {
+                    const baseConfig = other.userData.config || {};
+                    const baseLegH = baseConfig.legs?.enabled ? Number(baseConfig.legs.height) : 0;
+                    const baseCorpusH = Number(baseConfig.height) || h2;
+                    const baseWtTh = baseConfig.worktop?.enabled ? Number(baseConfig.worktop.thickness) : 0;
+                    const splashbackH = baseConfig.worktop?.splashback?.enabled ? Number(baseConfig.worktop.splashback.height) : 600;
+                    const baseTopY = otherY + baseLegH + baseCorpusH + baseWtTh + splashbackH;
+                    const snapZ = otherBackZ + (d1 / 2);
 
-                // b) Cél jobb oldala az egyéb bal oldalához
-                const snapX_RightToLeft = otherX - (w2 / 2) - (w1 / 2);
-                const dist2 = Math.abs(posX - snapX_RightToLeft);
-
-                if (dist1 < minDistance) {
-                    minDistance = dist1;
-                    closestSnap = {
-                        x: snapX_LeftToRight,
-                        y: otherY,
-                        z: otherZ
-                    };
+                    // X-irányú közvetlen fölé-illesztés
+                    const distCenterX = Math.abs(posX - otherX);
+                    if (distCenterX < minDistance * 1.5 && Math.abs(posY - baseTopY) < minDistance * 3) {
+                        minDistance = distCenterX;
+                        closestSnap = {
+                            x: otherX,
+                            y: baseTopY,
+                            z: snapZ
+                        };
+                    }
                 }
 
-                if (dist2 < minDistance) {
-                    minDistance = dist2;
-                    closestSnap = {
-                        x: snapX_RightToLeft,
-                        y: otherY,
-                        z: otherZ
-                    };
+                // B) OLDALIRÁNYÚ (X) EGYMÁS MELLÉ ILLESZTÉS (Side by side)
+                const isSameLevel = (type1 === type2) || Math.abs(posY - otherY) < this.magneticSnapDistance * 2;
+                if (isSameLevel) {
+                    const snapX_LeftToRight = otherX + (w2 / 2) + (w1 / 2);
+                    const dist1 = Math.abs(posX - snapX_LeftToRight);
+
+                    const snapX_RightToLeft = otherX - (w2 / 2) - (w1 / 2);
+                    const dist2 = Math.abs(posX - snapX_RightToLeft);
+                    const snapZ = otherBackZ + (d1 / 2); // Mindkettő hátfala egy síkba kerül
+
+                    if (dist1 < minDistance) {
+                        minDistance = dist1;
+                        closestSnap = {
+                            x: snapX_LeftToRight,
+                            y: otherY,
+                            z: snapZ
+                        };
+                    }
+
+                    if (dist2 < minDistance) {
+                        minDistance = dist2;
+                        closestSnap = {
+                            x: snapX_RightToLeft,
+                            y: otherY,
+                            z: snapZ
+                        };
+                    }
                 }
             });
 
             if (closestSnap) {
                 target.position.x = closestSnap.x;
-                // Ha a magasság (Y) és a mélység (Z) is közel van, simítsuk egy síkba
-                if (Math.abs(posY - closestSnap.y) <= this.magneticSnapDistance * 2) {
-                    target.position.y = closestSnap.y;
-                }
-                if (Math.abs(posZ - closestSnap.z) <= this.magneticSnapDistance * 2) {
-                    target.position.z = closestSnap.z;
-                }
+                target.position.y = closestSnap.y;
+                target.position.z = closestSnap.z;
             }
             return;
         }
@@ -5146,6 +5168,8 @@ class FurnitureApp {
         this.editingCorpusId = null;
         this.previewCorpus = null;
         this.newCorpusOffsetX = 0;
+        this.newCorpusOffsetY = 0;
+        this.newCorpusOffsetZ = 0;
         this.kitchenBackupConfig = null;
         this.kitchenBackupBoards = null;
         this.savingTarget = null;
@@ -7451,6 +7475,20 @@ class FurnitureApp {
                 document.getElementById('kc-worktop-splashback-depth').value = 5;
             }
             document.getElementById('kc-shelves-count').value = '1';
+
+            if (!this.editingCorpusId) {
+                const currentBounds = this.boardManager.getFurnitureBoundingBox();
+                const initialW = Number(document.getElementById('kc-width').value) || 600;
+                this.newCorpusOffsetX = currentBounds.width > 0 ? (currentBounds.width / 2 + initialW / 2 + 80) : 0;
+                this.newCorpusOffsetY = 0;
+                this.newCorpusOffsetZ = 0;
+                if (this.previewCorpus) {
+                    this.previewCorpus.position.set(this.newCorpusOffsetX, 0, 0);
+                    this.previewCorpus.userData.x = this.newCorpusOffsetX;
+                    this.previewCorpus.userData.y = 0;
+                    this.previewCorpus.userData.z = 0;
+                }
+            }
         } else if (type === 'wall') {
             document.getElementById('kc-width').value = 600;
             document.getElementById('kc-height').value = 720;
@@ -7467,6 +7505,25 @@ class FurnitureApp {
             document.getElementById('kc-worktop-enabled').checked = false;
             document.getElementById('kc-shelves-count').value = '2';
             document.getElementById('kc-back-inset').value = 15;
+
+            // Felső elem elhelyezése: mindig egy alsó elem tetejére rakja és a hátuljához igazítsa
+            if (!this.editingCorpusId) {
+                const wallCfg = {
+                    width: 600,
+                    height: 720,
+                    depth: 320
+                };
+                const placement = this.getWallCabinetPlacement(wallCfg);
+                this.newCorpusOffsetX = placement.x;
+                this.newCorpusOffsetY = placement.y;
+                this.newCorpusOffsetZ = placement.z;
+                if (this.previewCorpus) {
+                    this.previewCorpus.position.set(placement.x, placement.y, placement.z);
+                    this.previewCorpus.userData.x = placement.x;
+                    this.previewCorpus.userData.y = placement.y;
+                    this.previewCorpus.userData.z = placement.z;
+                }
+            }
         } else if (type === 'tall') {
             document.getElementById('kc-width').value = 600;
             document.getElementById('kc-height').value = 2000;
@@ -7484,7 +7541,86 @@ class FurnitureApp {
             document.getElementById('kc-plinth-inset').value = 20;
             document.getElementById('kc-worktop-enabled').checked = false;
             document.getElementById('kc-shelves-count').value = '3';
+
+            if (!this.editingCorpusId) {
+                const currentBounds = this.boardManager.getFurnitureBoundingBox();
+                const initialW = Number(document.getElementById('kc-width').value) || 600;
+                this.newCorpusOffsetX = currentBounds.width > 0 ? (currentBounds.width / 2 + initialW / 2 + 80) : 0;
+                this.newCorpusOffsetY = 0;
+                this.newCorpusOffsetZ = 0;
+                if (this.previewCorpus) {
+                    this.previewCorpus.position.set(this.newCorpusOffsetX, 0, 0);
+                    this.previewCorpus.userData.x = this.newCorpusOffsetX;
+                    this.previewCorpus.userData.y = 0;
+                    this.previewCorpus.userData.z = 0;
+                }
+            }
         }
+    }
+
+    /**
+     * Felsőszekrény (wall cabinet) automatikus pozicionálása alsószekrény tetejére, hátfalhoz igazítva
+     */
+    getWallCabinetPlacement(wallConfig) {
+        const wallD = Number(wallConfig.depth) || 320;
+        const wallW = Number(wallConfig.width) || 600;
+
+        const corpora = (this.boardManager.corpora || []).filter(c => c !== this.previewCorpus);
+        const baseCorpora = corpora.filter(c => {
+            const t = c.userData.config?.type;
+            return t === 'base' || (!t && (Number(c.userData.height) || 720) < 1000 && c.position.y < 500);
+        });
+
+        if (baseCorpora.length > 0) {
+            const wallCorpora = corpora.filter(c => {
+                const t = c.userData.config?.type;
+                return t === 'wall' || (!t && c.position.y >= 1000);
+            });
+
+            // 1. Keresünk olyan alsó elemet, ami felett még nincs felsőszekrény
+            let targetBase = null;
+            for (const base of baseCorpora) {
+                const hasWallAbove = wallCorpora.some(w => Math.abs(w.position.x - base.position.x) < 50);
+                if (!hasWallAbove) {
+                    targetBase = base;
+                    break;
+                }
+            }
+
+            // 2. Ha mindegyik felett van vagy van aktív kijelölt alsószekrény, azt használjuk
+            if (!targetBase) {
+                const selected = this.scene3D.selectedTarget;
+                if (selected && baseCorpora.includes(selected)) {
+                    targetBase = selected;
+                } else {
+                    targetBase = baseCorpora[baseCorpora.length - 1];
+                }
+            }
+
+            const baseConfig = targetBase.userData.config || {};
+            const baseLegH = baseConfig.legs?.enabled ? Number(baseConfig.legs.height) : 0;
+            const baseCorpusH = Number(baseConfig.height) || 720;
+            const baseWtTh = baseConfig.worktop?.enabled ? Number(baseConfig.worktop.thickness) : 0;
+            const splashbackH = baseConfig.worktop?.splashback?.enabled ? Number(baseConfig.worktop.splashback.height) : 600;
+
+            const baseTopY = targetBase.position.y + baseLegH + baseCorpusH + baseWtTh + splashbackH;
+            const baseDepth = Number(baseConfig.depth) || 560;
+            const baseBackZ = targetBase.position.z - (baseDepth / 2);
+
+            const targetX = targetBase.position.x;
+            const targetY = baseTopY;
+            const targetZ = baseBackZ + (wallD / 2);
+
+            return { x: targetX, y: targetY, z: targetZ };
+        }
+
+        // Alapértelmezett, ha még nincs alsószekrény a térben
+        const currentBounds = this.boardManager.getFurnitureBoundingBox();
+        const targetX = currentBounds.width > 0 ? (currentBounds.width / 2 + wallW / 2 + 80) : 0;
+        const targetY = 100 + 720 + 38 + 600; // 1458 mm standard konyhai magasság
+        const targetZ = -280 + (wallD / 2);   // -120 mm (hátfal Z=-280)
+
+        return { x: targetX, y: targetY, z: targetZ };
     }
 
     syncKitchenWorktopMath(trigger = 'front') {

@@ -520,6 +520,7 @@ export class Scene3D {
             const w1 = target.userData.width || 600;
             const h1 = target.userData.height || 720;
             const d1 = target.userData.depth || 560;
+            const type1 = target.userData.config?.type || (posY >= 1000 ? 'wall' : 'base');
 
             const posX = target.position.x;
             const posY = target.position.y;
@@ -534,48 +535,69 @@ export class Scene3D {
                 const w2 = other.userData.width || 600;
                 const h2 = other.userData.height || 720;
                 const d2 = other.userData.depth || 560;
+                const type2 = other.userData.config?.type || (other.position.y >= 1000 ? 'wall' : 'base');
 
                 const otherX = other.position.x;
                 const otherY = other.position.y;
                 const otherZ = other.position.z;
+                const otherBackZ = otherZ - (d2 / 2);
 
-                // Oldalirányú (X) illeszkedések:
-                // a) Cél bal oldala az egyéb jobb oldalához
-                const snapX_LeftToRight = otherX + (w2 / 2) + (w1 / 2);
-                const dist1 = Math.abs(posX - snapX_LeftToRight);
+                // A) FELSŐ ÉS ALSÓ SZEKRÉNY EGYMÁS FÖLÉ ILLESZTÉSE (Wall on Base)
+                if (type1 === 'wall' && type2 === 'base') {
+                    const baseConfig = other.userData.config || {};
+                    const baseLegH = baseConfig.legs?.enabled ? Number(baseConfig.legs.height) : 0;
+                    const baseCorpusH = Number(baseConfig.height) || h2;
+                    const baseWtTh = baseConfig.worktop?.enabled ? Number(baseConfig.worktop.thickness) : 0;
+                    const splashbackH = baseConfig.worktop?.splashback?.enabled ? Number(baseConfig.worktop.splashback.height) : 600;
+                    const baseTopY = otherY + baseLegH + baseCorpusH + baseWtTh + splashbackH;
+                    const snapZ = otherBackZ + (d1 / 2);
 
-                // b) Cél jobb oldala az egyéb bal oldalához
-                const snapX_RightToLeft = otherX - (w2 / 2) - (w1 / 2);
-                const dist2 = Math.abs(posX - snapX_RightToLeft);
-
-                if (dist1 < minDistance) {
-                    minDistance = dist1;
-                    closestSnap = {
-                        x: snapX_LeftToRight,
-                        y: otherY,
-                        z: otherZ
-                    };
+                    // X-irányú közvetlen fölé-illesztés
+                    const distCenterX = Math.abs(posX - otherX);
+                    if (distCenterX < minDistance * 1.5 && Math.abs(posY - baseTopY) < minDistance * 3) {
+                        minDistance = distCenterX;
+                        closestSnap = {
+                            x: otherX,
+                            y: baseTopY,
+                            z: snapZ
+                        };
+                    }
                 }
 
-                if (dist2 < minDistance) {
-                    minDistance = dist2;
-                    closestSnap = {
-                        x: snapX_RightToLeft,
-                        y: otherY,
-                        z: otherZ
-                    };
+                // B) OLDALIRÁNYÚ (X) EGYMÁS MELLÉ ILLESZTÉS (Side by side)
+                const isSameLevel = (type1 === type2) || Math.abs(posY - otherY) < this.magneticSnapDistance * 2;
+                if (isSameLevel) {
+                    const snapX_LeftToRight = otherX + (w2 / 2) + (w1 / 2);
+                    const dist1 = Math.abs(posX - snapX_LeftToRight);
+
+                    const snapX_RightToLeft = otherX - (w2 / 2) - (w1 / 2);
+                    const dist2 = Math.abs(posX - snapX_RightToLeft);
+                    const snapZ = otherBackZ + (d1 / 2); // Mindkettő hátfala egy síkba kerül
+
+                    if (dist1 < minDistance) {
+                        minDistance = dist1;
+                        closestSnap = {
+                            x: snapX_LeftToRight,
+                            y: otherY,
+                            z: snapZ
+                        };
+                    }
+
+                    if (dist2 < minDistance) {
+                        minDistance = dist2;
+                        closestSnap = {
+                            x: snapX_RightToLeft,
+                            y: otherY,
+                            z: snapZ
+                        };
+                    }
                 }
             });
 
             if (closestSnap) {
                 target.position.x = closestSnap.x;
-                // Ha a magasság (Y) és a mélység (Z) is közel van, simítsuk egy síkba
-                if (Math.abs(posY - closestSnap.y) <= this.magneticSnapDistance * 2) {
-                    target.position.y = closestSnap.y;
-                }
-                if (Math.abs(posZ - closestSnap.z) <= this.magneticSnapDistance * 2) {
-                    target.position.z = closestSnap.z;
-                }
+                target.position.y = closestSnap.y;
+                target.position.z = closestSnap.z;
             }
             return;
         }
