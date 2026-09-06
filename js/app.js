@@ -1611,6 +1611,12 @@ class FurnitureApp {
             }
         });
 
+        // Korpusz mélység változásakor munkalap matek szinkronizálása
+        document.getElementById('kc-depth').addEventListener('input', () => {
+            this.syncKitchenWorktopMath('depth');
+            this.updateKitchenLivePreview();
+        });
+
         // Munkalap hátfal bekapcsolása / kikapcsolása
         const splashbackCheckbox = document.getElementById('kc-worktop-splashback-enabled');
         if (splashbackCheckbox) {
@@ -3964,7 +3970,10 @@ class FurnitureApp {
         const targetY = baseLegH + baseH + worktopTh + splashH;
         const targetX = refBase.position.x;
         const baseD = Number(baseCfg.depth) || 505;
-        const targetZ = refBase.position.z + (-baseD / 2) + (wallD / 2);
+        const overhangF = Number(baseCfg.worktop?.overhangFront !== undefined ? baseCfg.worktop.overhangFront : 45);
+        const wtD = Number(baseCfg.worktop?.depth) || (baseD + overhangF + 50);
+        const wtBackZ = (baseD / 2 + overhangF) - wtD;
+        const targetZ = refBase.position.z + wtBackZ + (wallD / 2);
 
         return {
             x: targetX,
@@ -3986,21 +3995,21 @@ class FurnitureApp {
 
         const totalOverhangAvailable = Math.max(0, worktopDepth - corpusDepth);
 
-        if (trigger === 'depth') {
+        if (trigger === 'depth' || trigger === null) {
             if (frontOverhang > totalOverhangAvailable) {
                 frontOverhang = totalOverhangAvailable;
             }
-            backOverhang = totalOverhangAvailable - frontOverhang;
+            backOverhang = Math.max(0, totalOverhangAvailable - frontOverhang);
         } else if (trigger === 'front') {
             if (frontOverhang > totalOverhangAvailable) {
                 frontOverhang = totalOverhangAvailable;
             }
-            backOverhang = totalOverhangAvailable - frontOverhang;
+            backOverhang = Math.max(0, totalOverhangAvailable - frontOverhang);
         } else if (trigger === 'back') {
             if (backOverhang > totalOverhangAvailable) {
                 backOverhang = totalOverhangAvailable;
             }
-            frontOverhang = totalOverhangAvailable - backOverhang;
+            frontOverhang = Math.max(0, totalOverhangAvailable - backOverhang);
         }
 
         document.getElementById('kc-worktop-overhang-front').value = frontOverhang;

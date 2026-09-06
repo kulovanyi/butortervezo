@@ -1810,10 +1810,10 @@ class Scene3D {
                         ? Number(baseConfig.worktop.splashback.height)
                         : (baseConfig.worktop?.enabled ? 600 : 600);
                     const baseTopY = otherY + baseLegH + baseCorpusH + baseWtTh + splashbackH;
-                    const overhangBack = (baseConfig.worktop?.enabled && Number(baseConfig.worktop.overhangBack) > 0)
-                        ? Number(baseConfig.worktop.overhangBack)
-                        : 0;
-                    const snapZ = (otherBackZ - overhangBack) + (d1 / 2);
+                    const baseOverhangF = baseConfig.worktop?.enabled ? Number(baseConfig.worktop.overhangFront !== undefined ? baseConfig.worktop.overhangFront : 45) : 0;
+                    const baseWtD = baseConfig.worktop?.enabled ? Number(baseConfig.worktop.depth || (d2 + baseOverhangF + 50)) : d2;
+                    const baseWtBackZ = (d2 / 2 + baseOverhangF) - baseWtD;
+                    const snapZ = (otherZ + baseWtBackZ) + (d1 / 2);
 
                     // X-irányú közvetlen fölé-illesztés
                     const distCenterX = Math.abs(posX - otherX);
@@ -7103,13 +7103,15 @@ class KitchenCorpusGenerator {
 
             const wtRadius = cfg.worktop?.edgeRadius !== undefined ? Number(cfg.worktop.edgeRadius) : 3;
 
-            // A munkalap tényleges mélysége a korpusz mélysége + első és hátsó túllógások
+            // A munkalap tényleges mélysége
             const wtD = Number(cfg.worktop.depth) || (D + overhangF + overhangB);
             const wtW = W + overhangL + overhangR;
             const wtY = corpusBaseY + H + (wtTh / 2);
             
-            // Z pozíció: a korpusz elöl +D/2, hátul -D/2.
-            const wtZ = (overhangF - overhangB) / 2;
+            // Z pozíció: az elülső él mindig a korpusz frontja (+D/2) előtt overhangF távolságra van
+            // Front él: +D/2 + overhangF, hátsó él: (D/2 + overhangF) - wtD
+            const wtZ = (D / 2 + overhangF) - (wtD / 2);
+            const wtBackZ = wtZ - (wtD / 2);
             const wtTex = cfg.worktop.textureKey || 'wt_3025';
 
             const wtCornerCut = isEndUnit && cornerCutObj ? {
@@ -7139,12 +7141,13 @@ class KitchenCorpusGenerator {
             });
 
             // Munkalap Hátfal (Fali panel / Csempepótló)
+            // MINDEN esetben pontosan a munkalap hátsó élére ül fel, függetlenül a korpusz mélységétől!
             if (cfg.worktop.splashback && cfg.worktop.splashback.enabled) {
                 const sbH = Number(cfg.worktop.splashback.height) || 600; // 60cm
                 const sbTh = Number(cfg.worktop.splashback.thickness !== undefined ? cfg.worktop.splashback.thickness : 5); // 0.5cm (5mm)
                 // A munkalap tetejére ül fel, a munkalap hátuljának síkjában (egész szélességben végigér a munkalap hátulján)
                 const sbY = corpusBaseY + H + wtTh + (sbH / 2);
-                const sbZ = (-D / 2 - overhangB) + (sbTh / 2);
+                const sbZ = wtBackZ + (sbTh / 2);
                 const sbTex = cfg.worktop.splashback.textureKey || wtTex;
 
                 boards.push({
@@ -9407,6 +9410,12 @@ class FurnitureApp {
             if (backHInput) {
                 backHInput.value = Math.max(10, corpusH - (2 * gap));
             }
+        });
+
+        // Korpusz mélység változásakor munkalap matek szinkronizálása
+        document.getElementById('kc-depth').addEventListener('input', () => {
+            this.syncKitchenWorktopMath('depth');
+            this.updateKitchenLivePreview();
         });
 
         // Munkalap hátfal bekapcsolása / kikapcsolása
@@ -11762,7 +11771,10 @@ class FurnitureApp {
         const targetY = baseLegH + baseH + worktopTh + splashH;
         const targetX = refBase.position.x;
         const baseD = Number(baseCfg.depth) || 505;
-        const targetZ = refBase.position.z + (-baseD / 2) + (wallD / 2);
+        const overhangF = Number(baseCfg.worktop?.overhangFront !== undefined ? baseCfg.worktop.overhangFront : 45);
+        const wtD = Number(baseCfg.worktop?.depth) || (baseD + overhangF + 50);
+        const wtBackZ = (baseD / 2 + overhangF) - wtD;
+        const targetZ = refBase.position.z + wtBackZ + (wallD / 2);
 
         return {
             x: targetX,
@@ -11784,21 +11796,21 @@ class FurnitureApp {
 
         const totalOverhangAvailable = Math.max(0, worktopDepth - corpusDepth);
 
-        if (trigger === 'depth') {
+        if (trigger === 'depth' || trigger === null) {
             if (frontOverhang > totalOverhangAvailable) {
                 frontOverhang = totalOverhangAvailable;
             }
-            backOverhang = totalOverhangAvailable - frontOverhang;
+            backOverhang = Math.max(0, totalOverhangAvailable - frontOverhang);
         } else if (trigger === 'front') {
             if (frontOverhang > totalOverhangAvailable) {
                 frontOverhang = totalOverhangAvailable;
             }
-            backOverhang = totalOverhangAvailable - frontOverhang;
+            backOverhang = Math.max(0, totalOverhangAvailable - frontOverhang);
         } else if (trigger === 'back') {
             if (backOverhang > totalOverhangAvailable) {
                 backOverhang = totalOverhangAvailable;
             }
-            frontOverhang = totalOverhangAvailable - backOverhang;
+            frontOverhang = Math.max(0, totalOverhangAvailable - backOverhang);
         }
 
         document.getElementById('kc-worktop-overhang-front').value = frontOverhang;

@@ -754,13 +754,15 @@ export class KitchenCorpusGenerator {
 
             const wtRadius = cfg.worktop?.edgeRadius !== undefined ? Number(cfg.worktop.edgeRadius) : 3;
 
-            // A munkalap tényleges mélysége a korpusz mélysége + első és hátsó túllógások
+            // A munkalap tényleges mélysége
             const wtD = Number(cfg.worktop.depth) || (D + overhangF + overhangB);
             const wtW = W + overhangL + overhangR;
             const wtY = corpusBaseY + H + (wtTh / 2);
             
-            // Z pozíció: a korpusz elöl +D/2, hátul -D/2.
-            const wtZ = (overhangF - overhangB) / 2;
+            // Z pozíció: az elülső él mindig a korpusz frontja (+D/2) előtt overhangF távolságra van
+            // Front él: +D/2 + overhangF, hátsó él: (D/2 + overhangF) - wtD
+            const wtZ = (D / 2 + overhangF) - (wtD / 2);
+            const wtBackZ = wtZ - (wtD / 2);
             const wtTex = cfg.worktop.textureKey || 'wt_3025';
 
             const wtCornerCut = isEndUnit && cornerCutObj ? {
@@ -790,12 +792,13 @@ export class KitchenCorpusGenerator {
             });
 
             // Munkalap Hátfal (Fali panel / Csempepótló)
+            // MINDEN esetben pontosan a munkalap hátsó élére ül fel, függetlenül a korpusz mélységétől!
             if (cfg.worktop.splashback && cfg.worktop.splashback.enabled) {
                 const sbH = Number(cfg.worktop.splashback.height) || 600; // 60cm
                 const sbTh = Number(cfg.worktop.splashback.thickness !== undefined ? cfg.worktop.splashback.thickness : 5); // 0.5cm (5mm)
                 // A munkalap tetejére ül fel, a munkalap hátuljának síkjában (egész szélességben végigér a munkalap hátulján)
                 const sbY = corpusBaseY + H + wtTh + (sbH / 2);
-                const sbZ = (-D / 2 - overhangB) + (sbTh / 2);
+                const sbZ = wtBackZ + (sbTh / 2);
                 const sbTex = cfg.worktop.splashback.textureKey || wtTex;
 
                 boards.push({

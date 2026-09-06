@@ -659,10 +659,10 @@ export class Scene3D {
                         ? Number(baseConfig.worktop.splashback.height)
                         : (baseConfig.worktop?.enabled ? 600 : 600);
                     const baseTopY = otherY + baseLegH + baseCorpusH + baseWtTh + splashbackH;
-                    const overhangBack = (baseConfig.worktop?.enabled && Number(baseConfig.worktop.overhangBack) > 0)
-                        ? Number(baseConfig.worktop.overhangBack)
-                        : 0;
-                    const snapZ = (otherBackZ - overhangBack) + (d1 / 2);
+                    const baseOverhangF = baseConfig.worktop?.enabled ? Number(baseConfig.worktop.overhangFront !== undefined ? baseConfig.worktop.overhangFront : 45) : 0;
+                    const baseWtD = baseConfig.worktop?.enabled ? Number(baseConfig.worktop.depth || (d2 + baseOverhangF + 50)) : d2;
+                    const baseWtBackZ = (d2 / 2 + baseOverhangF) - baseWtD;
+                    const snapZ = (otherZ + baseWtBackZ) + (d1 / 2);
 
                     // X-irányú közvetlen fölé-illesztés
                     const distCenterX = Math.abs(posX - otherX);
