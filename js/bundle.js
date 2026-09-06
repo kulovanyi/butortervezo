@@ -2998,32 +2998,6 @@ function createCornerCutBoardGeometry(w, h, d, cornerCut) {
         return fallback;
     }
 }
-function mergeSimpleGeometries(geometries) {
-    const nonIndexed = geometries.map(g => g.index ? g.toNonIndexed() : g);
-    let totalCount = 0;
-    nonIndexed.forEach(g => {
-        totalCount += g.attributes.position.count;
-    });
-
-    const posArray = new Float32Array(totalCount * 3);
-    const normArray = new Float32Array(totalCount * 3);
-
-    let offset = 0;
-    nonIndexed.forEach(g => {
-        const pos = g.attributes.position.array;
-        const norm = g.attributes.normal ? g.attributes.normal.array : null;
-        posArray.set(pos, offset * 3);
-        if (norm) {
-            normArray.set(norm, offset * 3);
-        }
-        offset += g.attributes.position.count;
-    });
-
-    const merged = new THREE.BufferGeometry();
-    merged.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
-    merged.setAttribute('normal', new THREE.BufferAttribute(normArray, 3));
-    return merged;
-}
 
 /**
  * Saroklevágott Munkalap Geometria Generátor
@@ -3037,82 +3011,153 @@ function createCornerCutWorktopGeometry(w, h, d, radius = 3, cornerCut = {}) {
     const cutZ = Math.min(Math.max(1, Number(cornerCut.sizeZ) || 80), Math.max(1, d - 10));
     const r = Math.min(Math.max(0, Number(radius) !== undefined ? Number(radius) : 3), Math.min(h / 2 - 0.1, d / 2 - 0.1));
 
+    if (r <= 0.05 || (w - cutX) <= 5) {
+        return createCornerCutBoardGeometry(w, h, d, cornerCut);
+    }
+
     try {
-        const wA = w - cutX;
-        if (wA <= 5) {
-            return createCornerCutBoardGeometry(w, h, d, cornerCut);
+        const positions = [];
+        const indices = [];
+
+        const hw = w / 2;
+        const hd = d / 2;
+        const hh = h / 2;
+
+        const nArc = 3;
+        const profile2D = [];
+
+        // 1. Back bottom
+        profile2D.push({ y: -hh, z: -hd });
+        // 2. Bottom before curve
+        profile2D.push({ y: -hh, z: hd - r });
+        // 3. Bottom-front arc
+        for (let i = 1; i <= nArc; i++) {
+            const angle = (-Math.PI / 2) + (i / nArc) * (Math.PI / 2);
+            profile2D.push({
+                y: -hh + r + r * Math.sin(angle),
+                z: hd - r + r * Math.cos(angle)
+            });
+        }
+        // 4. Top-front arc
+        for (let i = 1; i <= nArc; i++) {
+            const angle = (i / nArc) * (Math.PI / 2);
+            profile2D.push({
+                y: hh - r + r * Math.sin(angle),
+                z: hd - r + r * Math.cos(angle)
+            });
+        }
+        // 5. Back top
+        profile2D.push({ y: hh, z: -hd });
+
+        const nPts = profile2D.length;
+
+        function addVertex(x, y, z) {
+            positions.push(x, y, z);
+            return (positions.length / 3) - 1;
+        }
+
+        function addQuad(v1, v2, v3, v4) {
+            indices.push(v1, v2, v3, v1, v3, v4);
+        }
+
+        function addTri(v1, v2, v3) {
+            indices.push(v1, v2, v3);
         }
 
         if (side === 'right') {
-            // A) Bal oldali fő munkalap szakasz (R3 elülső él lekerekítéssel)
-            const geoA = createWorktopGeometry(wA, h, d, r);
-            const xA = -w / 2 + wA / 2;
-            geoA.translate(xA, 0, 0);
+            const xLeft = -hw;
+            const xCutStart = hw - cutX;
+            const xRight = hw;
+            const zBack = -hd;
+            const zCutEnd = hd - cutZ;
+            const zFront = hd;
 
-            // B) Jobb oldali sarok szakasz (sík 90° vágásokkal, nincs elülső R3 él)
-            const shapeB = new THREE.Shape();
-            const xStart = w / 2 - cutX;
-            const xEnd = w / 2;
-            const zBack = -d / 2;
-            const zCutSide = d / 2 - cutZ;
-            const zFront = d / 2;
-
-            shapeB.moveTo(xStart, zBack);
-            shapeB.lineTo(xEnd, zBack);
-            shapeB.lineTo(xEnd, zCutSide);
-            if (cornerType === 'round') {
-                const roundR = Math.min(cutX, cutZ);
-                shapeB.absarc(xEnd - roundR, zFront - roundR, roundR, 0, Math.PI / 2, false);
-            } else {
-                shapeB.lineTo(xStart, zFront);
+            const leftIndices = [];
+            for (let i = 0; i < nPts; i++) {
+                leftIndices.push(addVertex(xLeft, profile2D[i].y, profile2D[i].z));
             }
-            shapeB.lineTo(xStart, zBack);
 
-            const geoB = new THREE.ExtrudeGeometry(shapeB, { depth: h, bevelEnabled: false, steps: 1 });
-            geoB.rotateX(Math.PI / 2);
-            geoB.translate(0, h / 2, 0);
+            const midIndices = [];
+            for (let i = 0; i < nPts; i++) {
+                midIndices.push(addVertex(xCutStart, profile2D[i].y, profile2D[i].z));
+            }
 
-            const merged = mergeSimpleGeometries([geoA, geoB]);
-            merged.computeVertexNormals();
-            applyBoxUVs(merged, w, h, d, 800);
-            merged.parameters = { width: w, height: h, depth: d, radius: r, cornerCut, isWorktop: true };
-            return merged;
+            for (let i = 0; i < nPts - 1; i++) {
+                addQuad(leftIndices[i], leftIndices[i + 1], midIndices[i + 1], midIndices[i]);
+            }
+            addQuad(midIndices[nPts - 1], leftIndices[nPts - 1], leftIndices[0], midIndices[0]);
+
+            for (let i = 1; i < nPts - 1; i++) {
+                addTri(leftIndices[0], leftIndices[i], leftIndices[i + 1]);
+            }
+
+            const vTop_midBack = midIndices[nPts - 1];
+            const vTop_midFront = midIndices[nPts - 2];
+            const vTop_rightBack = addVertex(xRight, hh, zBack);
+            const vTop_rightCut = addVertex(xRight, hh, zCutEnd);
+
+            addQuad(vTop_midBack, vTop_rightBack, vTop_rightCut, vTop_midFront);
+
+            const vBot_midBack = midIndices[0];
+            const vBot_midFront = midIndices[1];
+            const vBot_rightBack = addVertex(xRight, -hh, zBack);
+            const vBot_rightCut = addVertex(xRight, -hh, zCutEnd);
+
+            addQuad(vBot_midBack, vBot_midFront, vBot_rightCut, vBot_rightBack);
+            addQuad(vTop_midBack, vTop_rightBack, vBot_rightBack, vBot_midBack);
+            addQuad(vTop_rightBack, vTop_rightCut, vBot_rightCut, vBot_rightBack);
+            addQuad(vTop_midFront, vTop_rightCut, vBot_rightCut, vBot_midFront);
         } else {
-            // Balos végzáró munkalap
-            // A) Jobb oldali fő munkalap szakasz (R3 elülső él lekerekítéssel)
-            const geoA = createWorktopGeometry(wA, h, d, r);
-            const xA = w / 2 - wA / 2;
-            geoA.translate(xA, 0, 0);
+            const xCutEnd = -hw;
+            const xCutStart = -hw + cutX;
+            const xRight = hw;
+            const zBack = -hd;
+            const zCutSide = hd - cutZ;
 
-            // B) Bal oldali sarok szakasz (sík 90° vágásokkal)
-            const shapeB = new THREE.Shape();
-            const xStart = -w / 2;
-            const xEnd = -w / 2 + cutX;
-            const zBack = -d / 2;
-            const zCutSide = d / 2 - cutZ;
-            const zFront = d / 2;
-
-            shapeB.moveTo(xStart, zBack);
-            shapeB.lineTo(xEnd, zBack);
-            shapeB.lineTo(xEnd, zFront);
-            if (cornerType === 'round') {
-                const roundR = Math.min(cutX, cutZ);
-                shapeB.absarc(xStart + roundR, zFront - roundR, roundR, Math.PI / 2, Math.PI, false);
-            } else {
-                shapeB.lineTo(xStart, zCutSide);
+            const midIndices = [];
+            for (let i = 0; i < nPts; i++) {
+                midIndices.push(addVertex(xCutStart, profile2D[i].y, profile2D[i].z));
             }
-            shapeB.lineTo(xStart, zBack);
 
-            const geoB = new THREE.ExtrudeGeometry(shapeB, { depth: h, bevelEnabled: false, steps: 1 });
-            geoB.rotateX(Math.PI / 2);
-            geoB.translate(0, h / 2, 0);
+            const rightIndices = [];
+            for (let i = 0; i < nPts; i++) {
+                rightIndices.push(addVertex(xRight, profile2D[i].y, profile2D[i].z));
+            }
 
-            const merged = mergeSimpleGeometries([geoA, geoB]);
-            merged.computeVertexNormals();
-            applyBoxUVs(merged, w, h, d, 800);
-            merged.parameters = { width: w, height: h, depth: d, radius: r, cornerCut, isWorktop: true };
-            return merged;
+            for (let i = 0; i < nPts - 1; i++) {
+                addQuad(midIndices[i], midIndices[i + 1], rightIndices[i + 1], rightIndices[i]);
+            }
+            addQuad(rightIndices[nPts - 1], midIndices[nPts - 1], midIndices[0], rightIndices[0]);
+
+            for (let i = 1; i < nPts - 1; i++) {
+                addTri(rightIndices[0], rightIndices[i + 1], rightIndices[i]);
+            }
+
+            const vTop_midBack = midIndices[nPts - 1];
+            const vTop_midFront = midIndices[nPts - 2];
+            const vTop_leftBack = addVertex(xCutEnd, hh, zBack);
+            const vTop_leftCut = addVertex(xCutEnd, hh, zCutSide);
+
+            addQuad(vTop_midBack, vTop_midFront, vTop_leftCut, vTop_leftBack);
+
+            const vBot_midBack = midIndices[0];
+            const vBot_midFront = midIndices[1];
+            const vBot_leftBack = addVertex(xCutEnd, -hh, zBack);
+            const vBot_leftCut = addVertex(xCutEnd, -hh, zCutSide);
+
+            addQuad(vBot_midBack, vBot_leftBack, vBot_leftCut, vBot_midFront);
+            addQuad(vTop_leftBack, vTop_midBack, vBot_midBack, vBot_leftBack);
+            addQuad(vTop_leftCut, vTop_leftBack, vBot_leftBack, vBot_leftCut);
+            addQuad(vTop_leftCut, vTop_midFront, vBot_midFront, vBot_leftCut);
         }
+
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
+        geometry.setIndex(indices);
+        geometry.computeVertexNormals();
+        applyBoxUVs(geometry, w, h, d, 800);
+        geometry.parameters = { width: w, height: h, depth: d, radius: r, cornerCut, isWorktop: true };
+        return geometry;
     } catch (e) {
         console.warn('Fallback corner cut worktop geometry:', e);
         return createCornerCutBoardGeometry(w, h, d, cornerCut);
