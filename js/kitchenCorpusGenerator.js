@@ -349,50 +349,73 @@ export class KitchenCorpusGenerator {
         // ----------------------------------------------------
         // 4. HÁTFAL (HDF / Bútorlap)
         // ----------------------------------------------------
-        const backCfg = cfg.backPanel || cfg.back || { enabled: true };
-        const backEnabled = backCfg.enabled !== false;
-        if (backEnabled) {
-            const backTh = Number(backCfg.thickness) || 3;
-            const backType = backCfg.type || 'surface';
-            const insetBack = Number(backCfg.insetBack) || 20;
-            const gap = backCfg.gap !== undefined && backCfg.gap !== null ? Number(backCfg.gap) : 2.5;
-            const customH = (backCfg.height !== undefined && backCfg.height !== null && backCfg.height !== '') ? Number(backCfg.height) : null;
-            const offsetY = Number(backCfg.offsetY) || 0;
-
-            let backW = isEndUnit ? (W - Th - (2 * gap)) : innerW;
-            let backH = (customH && customH > 0) ? customH : H;
-            let backX = isEndUnit ? ((endSide === 'right') ? (Th / 2) : (-Th / 2)) : 0;
-            let backZ = 0;
-
-            if (backType === 'surface') {
-                backW = isEndUnit ? (W - Th - (2 * gap)) : (W - (2 * gap));
-                backH = (customH && customH > 0) ? customH : (H - (2 * gap));
-                backZ = (-D / 2) - (backTh / 2);
-            } else if (backType === 'groove') {
-                backW = isEndUnit ? (W - Th + 8) : (innerW + 16);
-                backH = (customH && customH > 0) ? customH : (H - (2 * Th) + 16);
-                backZ = (-D / 2) + insetBack + (backTh / 2);
-            } else if (backType === 'rabbet') {
-                backW = isEndUnit ? (W - Th + 8) : (innerW + 16);
-                backH = (customH && customH > 0) ? customH : (H - (2 * Th) + 16);
-                backZ = (-D / 2) + (backTh / 2);
-            }
-
-            const backY = corpusBaseY + H / 2 + offsetY;
+        if (isEndUnit) {
+            // Végzárónál a hátfal 18mm-es normál bútorlap, a korpusz színével megegyező
+            const backW = W - Th;
+            const backH = H - 2 * Th;
+            const backX = (endSide === 'right') ? (Th / 2) : (-Th / 2);
+            const backY = corpusBaseY + H / 2;
+            const backZ = (-D / 2) + (Th / 2);
 
             boards.push({
-                name: `Hátfal (${backTh}mm ${backType === 'surface' ? 'rászegelt' : (backType === 'rabbet' ? 'falcolt' : 'nútos')})`,
+                name: 'Hátfal Bútorlap (18mm)',
                 width: Math.round(backW),
                 height: Math.round(backH),
-                depth: backTh,
-                thickness: backTh,
-                type: 'back',
-                textureKey: backCfg.textureKey || 'white_matte',
+                depth: Th,
+                thickness: Th,
+                type: 'vertical',
+                textureKey: tex,
                 x: Math.round(backX),
                 y: Math.round(backY),
-                z: backZ,
-                edgeBanding: 'Nincs élzárás'
+                z: Math.round(backZ),
+                edgeBanding: '0.4mm ABS'
             });
+        } else {
+            const backCfg = cfg.backPanel || cfg.back || { enabled: true };
+            const backEnabled = backCfg.enabled !== false;
+            if (backEnabled) {
+                const backTh = Number(backCfg.thickness) || 3;
+                const backType = backCfg.type || 'surface';
+                const insetBack = Number(backCfg.insetBack) || 20;
+                const gap = backCfg.gap !== undefined && backCfg.gap !== null ? Number(backCfg.gap) : 2.5;
+                const customH = (backCfg.height !== undefined && backCfg.height !== null && backCfg.height !== '') ? Number(backCfg.height) : null;
+                const offsetY = Number(backCfg.offsetY) || 0;
+
+                let backW = innerW;
+                let backH = (customH && customH > 0) ? customH : H;
+                let backX = 0;
+                let backZ = 0;
+
+                if (backType === 'surface') {
+                    backW = W - (2 * gap);
+                    backH = (customH && customH > 0) ? customH : (H - (2 * gap));
+                    backZ = (-D / 2) - (backTh / 2);
+                } else if (backType === 'groove') {
+                    backW = innerW + 16;
+                    backH = (customH && customH > 0) ? customH : (H - (2 * Th) + 16);
+                    backZ = (-D / 2) + insetBack + (backTh / 2);
+                } else if (backType === 'rabbet') {
+                    backW = innerW + 16;
+                    backH = (customH && customH > 0) ? customH : (H - (2 * Th) + 16);
+                    backZ = (-D / 2) + (backTh / 2);
+                }
+
+                const backY = corpusBaseY + H / 2 + offsetY;
+
+                boards.push({
+                    name: `Hátfal (${backTh}mm ${backType === 'surface' ? 'rászegelt' : (backType === 'rabbet' ? 'falcolt' : 'nútos')})`,
+                    width: Math.round(backW),
+                    height: Math.round(backH),
+                    depth: backTh,
+                    thickness: backTh,
+                    type: 'back',
+                    textureKey: backCfg.textureKey || 'white_matte',
+                    x: Math.round(backX),
+                    y: Math.round(backY),
+                    z: backZ,
+                    edgeBanding: 'Nincs élzárás'
+                });
+            }
         }
 
         // ----------------------------------------------------
@@ -401,39 +424,64 @@ export class KitchenCorpusGenerator {
         if (cfg.shelves && Number(cfg.shelves.count) > 0) {
             const shelfCount = Number(cfg.shelves.count);
             const shelfTh = Number(cfg.shelves.thickness) || Th;
-            const insetF = Number(cfg.shelves.insetFront) || 15;
-            
-            let backInset = 0;
-            if (cfg.backPanel && cfg.backPanel.enabled) {
-                if (cfg.backPanel.type === 'groove') {
-                    backInset = Number(cfg.backPanel.insetBack) + Number(cfg.backPanel.thickness);
-                }
-            }
-
-            const shelfW = isEndUnit ? (W - Th - 2) : (innerW - 2);
-            const shelfX = isEndUnit ? ((endSide === 'right') ? (Th / 2) : (-Th / 2)) : 0;
-            const shelfD = D - insetF - backInset;
-            const shelfZ = (D / 2) - insetF - (shelfD / 2);
-
             const internalH = H - 2 * Th;
             const stepY = internalH / (shelfCount + 1);
 
-            for (let i = 1; i <= shelfCount; i++) {
-                const shelfY = corpusBaseY + Th + (i * stepY);
-                boards.push({
-                    name: `Belső Polc ${i}`,
-                    width: Math.round(shelfW),
-                    height: shelfTh,
-                    depth: Math.round(shelfD),
-                    thickness: shelfTh,
-                    type: 'shelf',
-                    textureKey: cfg.shelves.textureKey || tex,
-                    x: Math.round(shelfX),
-                    y: Math.round(shelfY),
-                    z: Math.round(shelfZ),
-                    cornerCut: isEndUnit ? cornerCutObj : null,
-                    edgeBanding: '0.4mm ABS'
-                });
+            if (isEndUnit) {
+                // Végzárónál a polcok teljesen elérnek a korpusz elejéig (+D/2), hátul a 18mm bútorlap hátfalhoz illeszkednek
+                const shelfW = W - Th;
+                const shelfX = (endSide === 'right') ? (Th / 2) : (-Th / 2);
+                const shelfD = D - Th;
+                const shelfZ = Th / 2;
+
+                for (let i = 1; i <= shelfCount; i++) {
+                    const shelfY = corpusBaseY + Th + (i * stepY);
+                    boards.push({
+                        name: `Belső Polc ${i} (Végzáró)`,
+                        width: Math.round(shelfW),
+                        height: shelfTh,
+                        depth: Math.round(shelfD),
+                        thickness: shelfTh,
+                        type: 'shelf',
+                        textureKey: cfg.shelves.textureKey || tex,
+                        x: Math.round(shelfX),
+                        y: Math.round(shelfY),
+                        z: Math.round(shelfZ),
+                        cornerCut: cornerCutObj,
+                        edgeBanding: '0.4mm ABS'
+                    });
+                }
+            } else {
+                const insetF = Number(cfg.shelves.insetFront) || 15;
+                let backInset = 0;
+                if (cfg.backPanel && cfg.backPanel.enabled) {
+                    if (cfg.backPanel.type === 'groove') {
+                        backInset = Number(cfg.backPanel.insetBack) + Number(cfg.backPanel.thickness);
+                    }
+                }
+
+                const shelfW = innerW - 2;
+                const shelfX = 0;
+                const shelfD = D - insetF - backInset;
+                const shelfZ = (D / 2) - insetF - (shelfD / 2);
+
+                for (let i = 1; i <= shelfCount; i++) {
+                    const shelfY = corpusBaseY + Th + (i * stepY);
+                    boards.push({
+                        name: `Belső Polc ${i}`,
+                        width: Math.round(shelfW),
+                        height: shelfTh,
+                        depth: Math.round(shelfD),
+                        thickness: shelfTh,
+                        type: 'shelf',
+                        textureKey: cfg.shelves.textureKey || tex,
+                        x: Math.round(shelfX),
+                        y: Math.round(shelfY),
+                        z: Math.round(shelfZ),
+                        cornerCut: null,
+                        edgeBanding: '0.4mm ABS'
+                    });
+                }
             }
         }
 
@@ -450,7 +498,13 @@ export class KitchenCorpusGenerator {
             const insetBackZ = insetZ;
 
             let legPositions = [];
-            if (isEndUnit) {
+            if (W <= 300) {
+                // 300mm vagy kisebb elemnél MINDEN esetben csak 2 láb van középen (X = 0)
+                legPositions = [
+                    { name: 'Középső Első Láb', x: 0, z: D / 2 - insetFrontZ },
+                    { name: 'Középső Hátsó Láb', x: 0, z: -D / 2 + insetBackZ }
+                ];
+            } else if (isEndUnit) {
                 const cutShiftX = Math.max(insetX, (cornerCutObj ? cornerCutObj.sizeX : 80) + 15);
                 const cutShiftZ = Math.max(insetFrontZ, (cornerCutObj ? cornerCutObj.sizeZ : 80) + 15);
 
@@ -471,11 +525,6 @@ export class KitchenCorpusGenerator {
                         { name: 'Jobb Hátsó Láb', x: W / 2 - insetX, z: -D / 2 + insetBackZ }
                     ];
                 }
-            } else if (W <= 300) {
-                legPositions = [
-                    { name: 'Középső Első Láb', x: 0, z: D / 2 - insetFrontZ },
-                    { name: 'Középső Hátsó Láb', x: 0, z: -D / 2 + insetBackZ }
-                ];
             } else {
                 legPositions = [
                     { name: 'Bal Első Láb', x: -W / 2 + insetX, z: D / 2 - insetFrontZ },
@@ -513,22 +562,169 @@ export class KitchenCorpusGenerator {
             const plinthH = Number(cfg.plinth.height) || legH;
             const plinthTh = Number(cfg.plinth.thickness) || 18;
             const insetFront = cfg.plinth.insetFront !== undefined ? Number(cfg.plinth.insetFront) : 20;
-            const plinthZ = (D / 2) - insetFront - (plinthTh / 2);
 
-            boards.push({
-                name: 'Szokli Előlap',
-                isPlinth: true,
-                width: W,
-                height: plinthH,
-                depth: plinthTh,
-                thickness: plinthTh,
-                type: 'plinth',
-                textureKey: cfg.plinth.textureKey || tex,
-                x: 0,
-                y: plinthH / 2,
-                z: plinthZ,
-                edgeBanding: '0.4mm ABS'
-            });
+            if (isEndUnit) {
+                const cutX = cornerCutObj ? cornerCutObj.sizeX : 80;
+                const cutZ = cornerCutObj ? cornerCutObj.sizeZ : 80;
+
+                if (endSide === 'right') {
+                    // 1. Elülső szoklilap (bal szélétől a levágás kezdetéig)
+                    const frontW = Math.max(10, W - cutX);
+                    const frontX = -W / 2 + frontW / 2;
+                    const frontZ = (D / 2) - insetFront - (plinthTh / 2);
+
+                    boards.push({
+                        name: 'Szokli Előlap',
+                        isPlinth: true,
+                        width: Math.round(frontW),
+                        height: plinthH,
+                        depth: plinthTh,
+                        thickness: plinthTh,
+                        type: 'plinth',
+                        textureKey: cfg.plinth.textureKey || tex,
+                        x: Math.round(frontX),
+                        y: plinthH / 2,
+                        z: Math.round(frontZ),
+                        edgeBanding: '0.4mm ABS'
+                    });
+
+                    // 2. Nyitott oldalsó szoklilap (a levágás végétől a hátfalig)
+                    const sideD = Math.max(10, D - cutZ);
+                    const sideX = (W / 2) - insetFront - (plinthTh / 2);
+                    const sideZ = -D / 2 + sideD / 2;
+
+                    boards.push({
+                        name: 'Szokli Nyitott Oldallap',
+                        isPlinth: true,
+                        width: plinthTh,
+                        height: plinthH,
+                        depth: Math.round(sideD),
+                        thickness: plinthTh,
+                        type: 'plinth',
+                        textureKey: cfg.plinth.textureKey || tex,
+                        x: Math.round(sideX),
+                        y: plinthH / 2,
+                        z: Math.round(sideZ),
+                        edgeBanding: '0.4mm ABS'
+                    });
+
+                    // 3. Átlós sarok szoklilap (összeköti az előlapot és az oldallapot)
+                    const p1x = W / 2 - cutX;
+                    const p1z = (D / 2) - insetFront - (plinthTh / 2);
+                    const p2x = (W / 2) - insetFront - (plinthTh / 2);
+                    const p2z = D / 2 - cutZ;
+
+                    const dx = p2x - p1x;
+                    const dz = p2z - p1z;
+                    const diagW = Math.hypot(dx, dz);
+                    const diagX = (p1x + p2x) / 2;
+                    const diagZ = (p1z + p2z) / 2;
+                    const rotAngle = Math.atan2(-dz, dx) * 180 / Math.PI;
+
+                    boards.push({
+                        name: 'Szokli Sarokcsapás',
+                        isPlinth: true,
+                        width: Math.round(diagW),
+                        height: plinthH,
+                        depth: plinthTh,
+                        thickness: plinthTh,
+                        type: 'plinth',
+                        textureKey: cfg.plinth.textureKey || tex,
+                        x: Math.round(diagX),
+                        y: plinthH / 2,
+                        z: Math.round(diagZ),
+                        rotY: Math.round(rotAngle),
+                        edgeBanding: '0.4mm ABS'
+                    });
+                } else {
+                    // Balos végzáró
+                    // 1. Elülső szoklilap (a levágás végétől a jobb széléig)
+                    const frontW = Math.max(10, W - cutX);
+                    const frontX = W / 2 - frontW / 2;
+                    const frontZ = (D / 2) - insetFront - (plinthTh / 2);
+
+                    boards.push({
+                        name: 'Szokli Előlap',
+                        isPlinth: true,
+                        width: Math.round(frontW),
+                        height: plinthH,
+                        depth: plinthTh,
+                        thickness: plinthTh,
+                        type: 'plinth',
+                        textureKey: cfg.plinth.textureKey || tex,
+                        x: Math.round(frontX),
+                        y: plinthH / 2,
+                        z: Math.round(frontZ),
+                        edgeBanding: '0.4mm ABS'
+                    });
+
+                    // 2. Nyitott oldalsó szoklilap (bal oldalon)
+                    const sideD = Math.max(10, D - cutZ);
+                    const sideX = -W / 2 + insetFront + (plinthTh / 2);
+                    const sideZ = -D / 2 + sideD / 2;
+
+                    boards.push({
+                        name: 'Szokli Nyitott Oldallap',
+                        isPlinth: true,
+                        width: plinthTh,
+                        height: plinthH,
+                        depth: Math.round(sideD),
+                        thickness: plinthTh,
+                        type: 'plinth',
+                        textureKey: cfg.plinth.textureKey || tex,
+                        x: Math.round(sideX),
+                        y: plinthH / 2,
+                        z: Math.round(sideZ),
+                        edgeBanding: '0.4mm ABS'
+                    });
+
+                    // 3. Átlós sarok szoklilap
+                    const p1x = -W / 2 + cutX;
+                    const p1z = (D / 2) - insetFront - (plinthTh / 2);
+                    const p2x = -W / 2 + insetFront + (plinthTh / 2);
+                    const p2z = D / 2 - cutZ;
+
+                    const dx = p2x - p1x;
+                    const dz = p2z - p1z;
+                    const diagW = Math.hypot(dx, dz);
+                    const diagX = (p1x + p2x) / 2;
+                    const diagZ = (p1z + p2z) / 2;
+                    const rotAngle = Math.atan2(-dz, dx) * 180 / Math.PI;
+
+                    boards.push({
+                        name: 'Szokli Sarokcsapás',
+                        isPlinth: true,
+                        width: Math.round(diagW),
+                        height: plinthH,
+                        depth: plinthTh,
+                        thickness: plinthTh,
+                        type: 'plinth',
+                        textureKey: cfg.plinth.textureKey || tex,
+                        x: Math.round(diagX),
+                        y: plinthH / 2,
+                        z: Math.round(diagZ),
+                        rotY: Math.round(rotAngle),
+                        edgeBanding: '0.4mm ABS'
+                    });
+                }
+            } else {
+                const plinthZ = (D / 2) - insetFront - (plinthTh / 2);
+
+                boards.push({
+                    name: 'Szokli Előlap',
+                    isPlinth: true,
+                    width: W,
+                    height: plinthH,
+                    depth: plinthTh,
+                    thickness: plinthTh,
+                    type: 'plinth',
+                    textureKey: cfg.plinth.textureKey || tex,
+                    x: 0,
+                    y: plinthH / 2,
+                    z: plinthZ,
+                    edgeBanding: '0.4mm ABS'
+                });
+            }
         }
 
         // ----------------------------------------------------
@@ -551,6 +747,15 @@ export class KitchenCorpusGenerator {
             const wtZ = (overhangF - overhangB) / 2;
             const wtTex = cfg.worktop.textureKey || 'wt_3025';
 
+            const wtCornerCut = isEndUnit && cornerCutObj ? {
+                enabled: true,
+                side: endSide,
+                type: cornerCutObj.type,
+                sizeX: cornerCutObj.sizeX + (endSide === 'right' ? overhangR : overhangL),
+                sizeZ: cornerCutObj.sizeZ + overhangF,
+                radius: (cornerCutObj.radius || cornerCutObj.sizeX) + (endSide === 'right' ? overhangR : overhangL)
+            } : null;
+
             boards.push({
                 name: `Munkalap (${wtTh}mm, ${wtW}×${wtD})`,
                 isWorktop: true,
@@ -564,6 +769,7 @@ export class KitchenCorpusGenerator {
                 x: (overhangR - overhangL) / 2,
                 y: wtY,
                 z: wtZ,
+                cornerCut: wtCornerCut,
                 edgeBanding: '2.0mm ABS'
             });
 

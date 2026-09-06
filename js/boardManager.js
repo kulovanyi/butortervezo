@@ -248,7 +248,7 @@ export function createCornerCutBoardGeometry(w, h, d, cornerCut) {
         };
 
         const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
-        geometry.rotateX(-Math.PI / 2);
+        geometry.rotateX(Math.PI / 2);
         geometry.center();
         geometry.computeVertexNormals();
         applyBoxUVs(geometry, w, h, d, 800);
@@ -444,6 +444,10 @@ export class BoardManager {
                 const material = MaterialManager.createMaterial(boardData.textureKey || config.textureKey || 'white_matte');
                 mesh = new THREE.Mesh(geometry, material);
                 mesh.position.set(boardData.x, boardData.y, boardData.z);
+                if (boardData.rotationY !== undefined) mesh.rotation.y = boardData.rotationY;
+                if (boardData.rotY !== undefined) mesh.rotation.y = boardData.rotY;
+                if (boardData.rotX !== undefined) mesh.rotation.x = boardData.rotX;
+                if (boardData.rotZ !== undefined) mesh.rotation.z = boardData.rotZ;
 
                 const edges = new THREE.EdgesGeometry(geometry, 20);
                 const lineMat = new THREE.LineBasicMaterial({ color: '#38bdf8', linewidth: 2 });

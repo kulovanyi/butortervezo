@@ -180,6 +180,10 @@ export class KitchenPreview3D {
 
                 mesh = new THREE.Mesh(geometry, material);
                 mesh.position.set(boardData.x, boardData.y, boardData.z);
+                if (boardData.rotY !== undefined) mesh.rotation.y = THREE.MathUtils.degToRad(boardData.rotY);
+                else if (boardData.rotationY !== undefined) mesh.rotation.y = boardData.rotationY;
+                if (boardData.rotX !== undefined) mesh.rotation.x = THREE.MathUtils.degToRad(boardData.rotX);
+                if (boardData.rotZ !== undefined) mesh.rotation.z = THREE.MathUtils.degToRad(boardData.rotZ);
                 mesh.castShadow = true;
                 mesh.receiveShadow = true;
 
