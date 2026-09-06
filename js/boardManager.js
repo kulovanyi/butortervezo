@@ -263,6 +263,127 @@ export function createCornerCutBoardGeometry(w, h, d, cornerCut) {
     }
 }
 
+export function mergeSimpleGeometries(geometries) {
+    const nonIndexed = geometries.map(g => g.index ? g.toNonIndexed() : g);
+    let totalCount = 0;
+    nonIndexed.forEach(g => {
+        totalCount += g.attributes.position.count;
+    });
+
+    const posArray = new Float32Array(totalCount * 3);
+    const normArray = new Float32Array(totalCount * 3);
+
+    let offset = 0;
+    nonIndexed.forEach(g => {
+        const pos = g.attributes.position.array;
+        const norm = g.attributes.normal ? g.attributes.normal.array : null;
+        posArray.set(pos, offset * 3);
+        if (norm) {
+            normArray.set(norm, offset * 3);
+        }
+        offset += g.attributes.position.count;
+    });
+
+    const merged = new THREE.BufferGeometry();
+    merged.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+    merged.setAttribute('normal', new THREE.BufferAttribute(normArray, 3));
+    return merged;
+}
+
+/**
+ * Saroklevágott Munkalap Geometria Generátor
+ * CSAK az elülső fő munkalap él kap 3mm lekerekítést (postforming),
+ * míg a 45°-os saroklevágás és a nyitott oldal 90°-os sík (éles) vágás marad.
+ */
+export function createCornerCutWorktopGeometry(w, h, d, radius = 3, cornerCut = {}) {
+    const side = cornerCut.side || 'right'; // 'right' | 'left'
+    const cornerType = cornerCut.type || 'chamfer'; // 'chamfer' | 'round'
+    const cutX = Math.min(Math.max(1, Number(cornerCut.sizeX) || 80), Math.max(1, w - 10));
+    const cutZ = Math.min(Math.max(1, Number(cornerCut.sizeZ) || 80), Math.max(1, d - 10));
+    const r = Math.min(Math.max(0, Number(radius) !== undefined ? Number(radius) : 3), Math.min(h / 2 - 0.1, d / 2 - 0.1));
+
+    try {
+        const wA = w - cutX;
+        if (wA <= 5) {
+            return createCornerCutBoardGeometry(w, h, d, cornerCut);
+        }
+
+        if (side === 'right') {
+            // A) Bal oldali fő munkalap szakasz (R3 elülső él lekerekítéssel)
+            const geoA = createWorktopGeometry(wA, h, d, r);
+            const xA = -w / 2 + wA / 2;
+            geoA.translate(xA, 0, 0);
+
+            // B) Jobb oldali sarok szakasz (sík 90° vágásokkal, nincs elülső R3 él)
+            const shapeB = new THREE.Shape();
+            const xStart = w / 2 - cutX;
+            const xEnd = w / 2;
+            const zBack = -d / 2;
+            const zCutSide = d / 2 - cutZ;
+            const zFront = d / 2;
+
+            shapeB.moveTo(xStart, zBack);
+            shapeB.lineTo(xEnd, zBack);
+            shapeB.lineTo(xEnd, zCutSide);
+            if (cornerType === 'round') {
+                const roundR = Math.min(cutX, cutZ);
+                shapeB.absarc(xEnd - roundR, zFront - roundR, roundR, 0, Math.PI / 2, false);
+            } else {
+                shapeB.lineTo(xStart, zFront);
+            }
+            shapeB.lineTo(xStart, zBack);
+
+            const geoB = new THREE.ExtrudeGeometry(shapeB, { depth: h, bevelEnabled: false, steps: 1 });
+            geoB.rotateX(Math.PI / 2);
+            geoB.translate(0, h / 2, 0);
+
+            const merged = mergeSimpleGeometries([geoA, geoB]);
+            merged.computeVertexNormals();
+            applyBoxUVs(merged, w, h, d, 800);
+            merged.parameters = { width: w, height: h, depth: d, radius: r, cornerCut, isWorktop: true };
+            return merged;
+        } else {
+            // Balos végzáró munkalap
+            // A) Jobb oldali fő munkalap szakasz (R3 elülső él lekerekítéssel)
+            const geoA = createWorktopGeometry(wA, h, d, r);
+            const xA = w / 2 - wA / 2;
+            geoA.translate(xA, 0, 0);
+
+            // B) Bal oldali sarok szakasz (sík 90° vágásokkal)
+            const shapeB = new THREE.Shape();
+            const xStart = -w / 2;
+            const xEnd = -w / 2 + cutX;
+            const zBack = -d / 2;
+            const zCutSide = d / 2 - cutZ;
+            const zFront = d / 2;
+
+            shapeB.moveTo(xStart, zBack);
+            shapeB.lineTo(xEnd, zBack);
+            shapeB.lineTo(xEnd, zFront);
+            if (cornerType === 'round') {
+                const roundR = Math.min(cutX, cutZ);
+                shapeB.absarc(xStart + roundR, zFront - roundR, roundR, Math.PI / 2, Math.PI, false);
+            } else {
+                shapeB.lineTo(xStart, zCutSide);
+            }
+            shapeB.lineTo(xStart, zBack);
+
+            const geoB = new THREE.ExtrudeGeometry(shapeB, { depth: h, bevelEnabled: false, steps: 1 });
+            geoB.rotateX(Math.PI / 2);
+            geoB.translate(0, h / 2, 0);
+
+            const merged = mergeSimpleGeometries([geoA, geoB]);
+            merged.computeVertexNormals();
+            applyBoxUVs(merged, w, h, d, 800);
+            merged.parameters = { width: w, height: h, depth: d, radius: r, cornerCut, isWorktop: true };
+            return merged;
+        }
+    } catch (e) {
+        console.warn('Fallback corner cut worktop geometry:', e);
+        return createCornerCutBoardGeometry(w, h, d, cornerCut);
+    }
+}
+
 /**
  * Megfelelő geometriát választ a bútorlap típusa alapján
  */
@@ -275,6 +396,10 @@ export function createBoardGeometry(boardData) {
     const isPlinth = boardData.isPlinth || boardData.type === 'plinth' || (boardData.name && boardData.name.includes('Szokli'));
 
     if (boardData.cornerCut && boardData.cornerCut.enabled) {
+        if (isWorktop) {
+            const rad = boardData.edgeRadius !== undefined ? Number(boardData.edgeRadius) : 3;
+            return createCornerCutWorktopGeometry(width, height, depth, rad, boardData.cornerCut);
+        }
         return createCornerCutBoardGeometry(width, height, depth, boardData.cornerCut);
     }
     if (boardData.isHardware || boardData.type === 'hardware') {
@@ -444,10 +569,12 @@ export class BoardManager {
                 const material = MaterialManager.createMaterial(boardData.textureKey || config.textureKey || 'white_matte');
                 mesh = new THREE.Mesh(geometry, material);
                 mesh.position.set(boardData.x, boardData.y, boardData.z);
-                if (boardData.rotationY !== undefined) mesh.rotation.y = boardData.rotationY;
-                if (boardData.rotY !== undefined) mesh.rotation.y = boardData.rotY;
-                if (boardData.rotX !== undefined) mesh.rotation.x = boardData.rotX;
-                if (boardData.rotZ !== undefined) mesh.rotation.z = boardData.rotZ;
+                if (boardData.rotY !== undefined) mesh.rotation.y = THREE.MathUtils.degToRad(boardData.rotY);
+                else if (boardData.rotationY !== undefined) mesh.rotation.y = boardData.rotationY;
+                if (boardData.rotX !== undefined) mesh.rotation.x = THREE.MathUtils.degToRad(boardData.rotX);
+                else if (boardData.rotationX !== undefined) mesh.rotation.x = boardData.rotationX;
+                if (boardData.rotZ !== undefined) mesh.rotation.z = THREE.MathUtils.degToRad(boardData.rotZ);
+                else if (boardData.rotationZ !== undefined) mesh.rotation.z = boardData.rotationZ;
 
                 const edges = new THREE.EdgesGeometry(geometry, 20);
                 const lineMat = new THREE.LineBasicMaterial({ color: '#38bdf8', linewidth: 2 });
@@ -485,19 +612,18 @@ export class BoardManager {
                 ...boardData,
                 id: bId,
                 corpusId: corpusId,
-                parentGroup: corpusGroup,
-                mesh: mesh
+                mesh: mesh,
+                name: boardData.name || `Korpusz Elem ${index + 1}`
             };
 
             mesh.userData = fullBoardData;
 
             corpusGroup.add(mesh);
-            this.scene3D.boardMeshes.push(mesh);
             this.boards.push(fullBoardData);
         });
 
-        this.scene3D.scene.add(corpusGroup);
         this.corpora.push(corpusGroup);
+        this.scene3D.scene.add(corpusGroup);
 
         this.updateKitchenContinuity();
         return corpusGroup;
@@ -506,34 +632,20 @@ export class BoardManager {
     /**
      * KONYHA ELEM MÓDOSÍTÁSA A VARÁZSLÓBÓL (In-place frissítés)
      */
-    updateCorpus(corpusId, newConfig) {
-        const corpusGroup = this.corpora.find(c => c.userData.id === corpusId);
-        if (!corpusGroup) return null;
+    updateCorpusConfig(corpusGroup, newConfig) {
+        if (!corpusGroup || !corpusGroup.userData || !corpusGroup.userData.isCorpus) return;
 
-        // 1. Régi alkatrészek törlése
-        const oldChildren = [...corpusGroup.children];
-        oldChildren.forEach(mesh => {
-            corpusGroup.remove(mesh);
-            if (mesh.isGroup) {
-                mesh.traverse(child => {
-                    if (child.isMesh) {
-                        if (child.geometry) child.geometry.dispose();
-                        if (child.material) {
-                            if (child.material.map) child.material.map.dispose();
-                            child.material.dispose();
-                        }
-                    }
-                });
-            } else {
-                if (mesh.geometry) mesh.geometry.dispose();
-                if (mesh.material) {
-                    if (mesh.material.map) mesh.material.map.dispose();
-                    mesh.material.dispose();
-                }
+        const corpusId = corpusGroup.userData.id;
+
+        // 1. Meglévő mesh-ek eltávolítása a csoportból és a globális listákból
+        const childrenToRemove = [...corpusGroup.children];
+        childrenToRemove.forEach(child => {
+            corpusGroup.remove(child);
+            if (child.geometry) child.geometry.dispose();
+            if (child.material) {
+                if (child.material.map) child.material.map.dispose();
+                child.material.dispose();
             }
-
-            const meshIdx = this.scene3D.boardMeshes.indexOf(mesh);
-            if (meshIdx > -1) this.scene3D.boardMeshes.splice(meshIdx, 1);
         });
 
         this.boards = this.boards.filter(b => b.corpusId !== corpusId);
@@ -563,6 +675,12 @@ export class BoardManager {
                 const material = MaterialManager.createMaterial(boardData.textureKey || newConfig.textureKey || 'white_matte');
                 mesh = new THREE.Mesh(geometry, material);
                 mesh.position.set(boardData.x, boardData.y, boardData.z);
+                if (boardData.rotY !== undefined) mesh.rotation.y = THREE.MathUtils.degToRad(boardData.rotY);
+                else if (boardData.rotationY !== undefined) mesh.rotation.y = boardData.rotationY;
+                if (boardData.rotX !== undefined) mesh.rotation.x = THREE.MathUtils.degToRad(boardData.rotX);
+                else if (boardData.rotationX !== undefined) mesh.rotation.x = boardData.rotationX;
+                if (boardData.rotZ !== undefined) mesh.rotation.z = THREE.MathUtils.degToRad(boardData.rotZ);
+                else if (boardData.rotationZ !== undefined) mesh.rotation.z = boardData.rotationZ;
 
                 const edges = new THREE.EdgesGeometry(geometry, 20);
                 const lineMat = new THREE.LineBasicMaterial({ color: '#38bdf8', linewidth: 2 });
