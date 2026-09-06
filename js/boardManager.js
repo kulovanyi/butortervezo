@@ -670,6 +670,7 @@ export class BoardManager {
                 ...boardData,
                 id: bId,
                 corpusId: corpusId,
+                parentGroup: corpusGroup,
                 mesh: mesh,
                 name: boardData.name || `Korpusz Elem ${index + 1}`
             };
@@ -677,6 +678,7 @@ export class BoardManager {
             mesh.userData = fullBoardData;
 
             corpusGroup.add(mesh);
+            this.scene3D.boardMeshes.push(mesh);
             this.boards.push(fullBoardData);
         });
 
@@ -690,6 +692,14 @@ export class BoardManager {
     /**
      * KONYHA ELEM MÓDOSÍTÁSA A VARÁZSLÓBÓL (In-place frissítés)
      */
+    updateCorpus(corpusGroupOrId, newConfig) {
+        const corpusGroup = typeof corpusGroupOrId === 'string'
+            ? this.corpora.find(c => c.userData.id === corpusGroupOrId)
+            : corpusGroupOrId;
+        if (!corpusGroup || !corpusGroup.userData || !corpusGroup.userData.isCorpus) return null;
+        return this.updateCorpusConfig(corpusGroup, newConfig);
+    }
+
     updateCorpusConfig(corpusGroup, newConfig) {
         if (!corpusGroup || !corpusGroup.userData || !corpusGroup.userData.isCorpus) return;
 

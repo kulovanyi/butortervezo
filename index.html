@@ -42,9 +42,13 @@
                     document.documentElement.appendChild(banner);
                 }
             }
+            var errText = (e.error && (e.error.message || e.error.stack)) ? (e.error.message || String(e.error)) : (e.message || 'Ismeretlen hiba');
             var file = e.filename ? e.filename.split('/').pop() : '';
             var loc = file ? ' (' + file + ':' + e.lineno + ':' + e.colno + ')' : '';
-            banner.innerHTML = '<span>⚠️ Hiba lépett fel: ' + (e.message || e.error) + loc + '</span><button onclick="this.parentElement.remove()" style="background:#fff;color:#dc2626;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-weight:700;">OK</button>';
+            banner.innerHTML = '<span>⚠️ Hiba lépett fel: ' + errText + loc + '</span><button onclick="this.parentElement.remove()" style="background:#fff;color:#dc2626;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-weight:700;margin-left:12px;">OK</button>';
+        });
+        window.addEventListener('unhandledrejection', function(e) {
+            console.error('UNHANDLED PROMISE REJECTION:', e.reason);
         });
     </script>
 </head>
