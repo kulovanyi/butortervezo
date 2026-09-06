@@ -4,6 +4,10 @@
  * Támogatja az egyedi bútorlapokat és az Egybefüggő Konyha Korpusz egységeket lebegő 3D buborékkal.
  */
 
+export const DEFAULT_HDRI_LIST = [
+    { id: 'hdri_200', name: '200 Studio Hall (2K EXR)', url: 'textures/hdri/200_hdrmaps_com_free_2K.exr', type: 'exr' }
+];
+
 export class Scene3D {
     constructor(containerElement, onBoardSelected, onBoardTransformChanged, onFloatingBubbleUpdate) {
         this.container = containerElement;
@@ -16,12 +20,26 @@ export class Scene3D {
         this.perspCamera = null;
         this.orthoCamera = null;
         this.currentViewMode = 'iso';
+
+        // Render módok és HDRI állapot
+        this.currentRenderMode = 'shading'; // 'wireframe' | 'shading' | 'realtime'
         this.isWireframeMode = false;
-        this.isStudioMode = false;
+        this.isStudioMode = true;
         this.studioEnvMap = null;
-        this.defaultEnvMap = null;
-        this.studioLights = [];
-        this.defaultLights = [];
+        this.hdriList = [...DEFAULT_HDRI_LIST];
+        this.currentHdriId = 'hdri_200';
+        this.hdriCache = {}; // id -> { texture, envMap }
+        this.currentHdrTexture = null;
+        this.currentHdrEnvMap = null;
+        this.isHdriLoading = false;
+
+        // 3D Padló (Talaj) állapot
+        this.floorMesh = null;
+        this.floorMaterial = null;
+        this.floorColor = '#242936';
+        this.floorTiling = 6;
+        this.floorTextureKey = null;
+
         this.renderer = null;
         this.controls = null;
         this.transformControls = null;
@@ -122,7 +140,12 @@ export class Scene3D {
         // 9. Eseménykezelők
         this.setupEvents();
 
-        // 10. Render loop
+        // 10. Alapértelmezett HDRI környezet aszinkron betöltése
+        if (this.hdriList.length > 0) {
+            this.loadHdri(this.hdriList[0]);
+        }
+
+        // 11. Render loop
         this.animate = this.animate.bind(this);
         requestAnimationFrame(this.animate);
     }
@@ -157,17 +180,32 @@ export class Scene3D {
     }
 
     setupGround() {
-        const size = 6000;
+        const size = 12000;
         const divisions = 60;
         this.gridHelper = new THREE.GridHelper(size, divisions, '#4a5568', '#2d3748');
-        this.gridHelper.position.y = 0;
+        this.gridHelper.position.y = 0.05;
         this.scene.add(this.gridHelper);
+
+        // 3D Talaj / Padló Mesh
+        const floorGeo = new THREE.PlaneGeometry(size, size);
+        this.floorMaterial = new THREE.MeshStandardMaterial({
+            color: new THREE.Color(this.floorColor),
+            roughness: 0.85,
+            metalness: 0.1,
+            side: THREE.FrontSide
+        });
+        this.floorMesh = new THREE.Mesh(floorGeo, this.floorMaterial);
+        this.floorMesh.rotation.x = -Math.PI / 2;
+        this.floorMesh.position.y = 0;
+        this.floorMesh.receiveShadow = true;
+        this.floorMesh.userData = { isFloor: true, name: 'Padló' };
+        this.scene.add(this.floorMesh);
 
         const shadowPlaneGeo = new THREE.PlaneGeometry(size, size);
         const shadowPlaneMat = new THREE.ShadowMaterial({ opacity: 0.28 });
         const shadowPlane = new THREE.Mesh(shadowPlaneGeo, shadowPlaneMat);
         shadowPlane.rotation.x = -Math.PI / 2;
-        shadowPlane.position.y = -0.1;
+        shadowPlane.position.y = 0.02;
         shadowPlane.receiveShadow = true;
         this.scene.add(shadowPlane);
     }
@@ -380,6 +418,14 @@ export class Scene3D {
                 this.selectBoard(target);
             }
         } else {
+            // Ellenőrizzük, hogy a padlóra (talajra) kattintott-e a felhasználó
+            if (this.floorMesh && this.floorMesh.visible && !isMultiModifier) {
+                const floorIntersects = this.raycaster.intersectObject(this.floorMesh, false);
+                if (floorIntersects.length > 0) {
+                    this.selectBoard(this.floorMesh);
+                    return;
+                }
+            }
             if (!this.transformControls.dragging) {
                 this.selectBoard(null);
             }
@@ -515,7 +561,9 @@ export class Scene3D {
 
         this.clearAllHighlights();
 
-        if (target) {
+        if (target && target.userData && target.userData.isFloor) {
+            this.transformControls.detach();
+        } else if (target) {
             this.transformControls.attach(target);
             const isGroupTarget = target.isGroup && target.userData && (target.userData.isCorpus || target.userData.isCustomGroup);
             const lineColor = isGroupTarget ? '#f59e0b' : '#38bdf8';
@@ -800,27 +848,94 @@ export class Scene3D {
     }
 
     // ==========================================
-    // VONALVÁZ (WIREFRAME) ÉS STÚDIÓ RENDER MÓD
+    // RENDER MÓDOK (WIREFRAME, SHADING, REALTIME) & HDRI & TALAJ
     // ==========================================
 
+    setRenderMode(mode) {
+        if (mode !== 'wireframe' && mode !== 'shading' && mode !== 'realtime') {
+            mode = 'shading';
+        }
+        this.currentRenderMode = mode;
+        this.isWireframeMode = (mode === 'wireframe');
+        this.isStudioMode = (mode !== 'wireframe');
+        this.applyRenderMode();
+        return this.currentRenderMode;
+    }
+
     toggleWireframeMode() {
-        this.setWireframeMode(!this.isWireframeMode);
-        return this.isWireframeMode;
+        const next = this.currentRenderMode === 'wireframe' ? 'shading' : 'wireframe';
+        return this.setRenderMode(next);
     }
 
     setWireframeMode(enabled) {
-        this.isWireframeMode = enabled;
-        this.applyRenderMode();
+        return this.setRenderMode(enabled ? 'wireframe' : 'shading');
     }
 
     toggleStudioMode() {
-        this.setStudioMode(!this.isStudioMode);
-        return this.isStudioMode;
+        const next = this.currentRenderMode === 'realtime' ? 'shading' : 'realtime';
+        return this.setRenderMode(next);
     }
 
     setStudioMode(enabled) {
-        this.isStudioMode = enabled;
-        this.applyRenderMode();
+        return this.setRenderMode(enabled ? 'realtime' : 'shading');
+    }
+
+    /**
+     * HDRI betöltése és környezeti térképpé alakítása (PMREM)
+     */
+    loadHdri(hdriItem, onComplete) {
+        if (!hdriItem) return;
+
+        if (this.hdriCache[hdriItem.id]) {
+            const cached = this.hdriCache[hdriItem.id];
+            this.currentHdrTexture = cached.texture;
+            this.currentHdrEnvMap = cached.envMap;
+            this.currentHdriId = hdriItem.id;
+            this.applyRenderMode();
+            if (onComplete) onComplete(cached);
+            return;
+        }
+
+        this.isHdriLoading = true;
+        const isExr = hdriItem.type === 'exr' || (hdriItem.url && hdriItem.url.toLowerCase().endsWith('.exr'));
+        const isHdr = hdriItem.type === 'hdr' || (hdriItem.url && hdriItem.url.toLowerCase().endsWith('.hdr'));
+
+        const handleLoadedTexture = (texture) => {
+            texture.mapping = THREE.EquirectangularReflectionMapping;
+            const pmremGenerator = new THREE.PMREMGenerator(this.renderer);
+            pmremGenerator.compileEquirectangularShader();
+            const envMap = pmremGenerator.fromEquirectangular(texture).texture;
+            pmremGenerator.dispose();
+
+            this.hdriCache[hdriItem.id] = { texture, envMap };
+            this.currentHdrTexture = texture;
+            this.currentHdrEnvMap = envMap;
+            this.currentHdriId = hdriItem.id;
+            this.isHdriLoading = false;
+            this.applyRenderMode();
+            if (onComplete) onComplete(this.hdriCache[hdriItem.id]);
+        };
+
+        const handleError = (err) => {
+            console.warn('HDRI betöltési hiba (' + hdriItem.url + '):', err);
+            this.isHdriLoading = false;
+        };
+
+        if (isExr && THREE.EXRLoader) {
+            new THREE.EXRLoader().load(hdriItem.url, handleLoadedTexture, undefined, handleError);
+        } else if (isHdr && THREE.RGBELoader) {
+            new THREE.RGBELoader().load(hdriItem.url, handleLoadedTexture, undefined, handleError);
+        } else {
+            console.warn('Nem található megfelelő Three.js HDRI loader (.exr / .hdr)!');
+            this.isHdriLoading = false;
+        }
+    }
+
+    setHdri(hdriId) {
+        const item = this.hdriList.find(h => h.id === hdriId);
+        if (item) {
+            this.loadHdri(item);
+        }
     }
 
     getOrCreateStudioEnvMap() {
@@ -882,15 +997,32 @@ export class Scene3D {
 
     applyRenderMode() {
         // 1. Környezeti térkép és jelenet háttér
-        if (this.isStudioMode) {
-            const env = this.getOrCreateStudioEnvMap();
-            this.scene.environment = env;
-            this.scene.background = new THREE.Color('#14171e');
-            this.renderer.toneMappingExposure = 1.35;
-        } else {
+        if (this.currentRenderMode === 'wireframe') {
             this.scene.environment = null;
-            this.scene.background = new THREE.Color('#1e222b');
-            this.renderer.toneMappingExposure = 1.1;
+            this.scene.background = new THREE.Color('#14171f');
+            this.renderer.toneMappingExposure = 1.0;
+            if (this.gridHelper) this.gridHelper.visible = true;
+            if (this.floorMesh) this.floorMesh.visible = false;
+        } else if (this.currentRenderMode === 'shading') {
+            // Shading: HDRI bevilágítás és tükröződés, de semleges stúdió háttér
+            const env = this.currentHdrEnvMap || this.getOrCreateStudioEnvMap();
+            this.scene.environment = env;
+            this.scene.background = new THREE.Color('#181b24');
+            this.renderer.toneMappingExposure = 1.15;
+            if (this.gridHelper) this.gridHelper.visible = true;
+            if (this.floorMesh) this.floorMesh.visible = true;
+        } else if (this.currentRenderMode === 'realtime') {
+            // Realtime: HDRI megvilágítás + HDRI 360° panoráma háttér a 3D térben
+            const env = this.currentHdrEnvMap || this.getOrCreateStudioEnvMap();
+            this.scene.environment = env;
+            if (this.currentHdrTexture) {
+                this.scene.background = this.currentHdrTexture;
+            } else {
+                this.scene.background = env;
+            }
+            this.renderer.toneMappingExposure = 1.25;
+            if (this.gridHelper) this.gridHelper.visible = false;
+            if (this.floorMesh) this.floorMesh.visible = true;
         }
 
         // 2. Bútorlapok anyagainak és éleinek frissítése
@@ -923,6 +1055,106 @@ export class Scene3D {
                 }
             }
         });
+    }
+
+    // ==========================================
+    // 3D TALAJ / PADLÓ METÓDUSOK
+    // ==========================================
+
+    setFloorVisible(visible) {
+        if (this.floorMesh) {
+            this.floorMesh.visible = !!visible;
+        }
+    }
+
+    setFloorColor(colorHex) {
+        this.floorColor = colorHex;
+        if (this.floorMaterial) {
+            this.floorMaterial.color.set(colorHex);
+            this.floorMaterial.needsUpdate = true;
+        }
+    }
+
+    setFloorMaterial(textureKey, repeat = this.floorTiling) {
+        this.floorTextureKey = textureKey;
+        if (!this.floorMaterial) return;
+
+        if (!textureKey) {
+            this.clearFloorTexture();
+            return;
+        }
+
+        if (typeof MaterialManager !== 'undefined') {
+            const pbr = MaterialManager.materials ? MaterialManager.materials[textureKey] : null;
+            if (pbr) {
+                if (pbr.color) this.floorMaterial.color.set(pbr.color);
+                this.floorMaterial.roughness = pbr.roughness !== undefined ? pbr.roughness : 0.85;
+                this.floorMaterial.metalness = pbr.metalness !== undefined ? pbr.metalness : 0.1;
+
+                const loader = new THREE.TextureLoader();
+                const applyTexMap = (mapUrl, mapProp) => {
+                    if (mapUrl) {
+                        loader.load(mapUrl, (tex) => {
+                            tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+                            tex.repeat.set(repeat, repeat);
+                            this.floorMaterial[mapProp] = tex;
+                            this.floorMaterial.needsUpdate = true;
+                        });
+                    } else {
+                        if (this.floorMaterial[mapProp]) {
+                            this.floorMaterial[mapProp].dispose();
+                            this.floorMaterial[mapProp] = null;
+                        }
+                    }
+                };
+
+                applyTexMap(pbr.albedoUrl || pbr.diffuseUrl || pbr.url, 'map');
+                applyTexMap(pbr.roughnessUrl, 'roughnessMap');
+                applyTexMap(pbr.normalUrl, 'normalMap');
+                applyTexMap(pbr.metalnessUrl, 'metalnessMap');
+                this.floorMaterial.needsUpdate = true;
+                return;
+            }
+
+            const legacyTex = MaterialManager.textures ? MaterialManager.textures[textureKey] : null;
+            if (legacyTex && legacyTex.url) {
+                const loader = new THREE.TextureLoader();
+                loader.load(legacyTex.url, (tex) => {
+                    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+                    tex.repeat.set(repeat, repeat);
+                    this.floorMaterial.map = tex;
+                    this.floorMaterial.needsUpdate = true;
+                });
+            }
+        }
+    }
+
+    setFloorTiling(repeat) {
+        this.floorTiling = Number(repeat) || 6;
+        if (!this.floorMaterial) return;
+        ['map', 'roughnessMap', 'normalMap', 'metalnessMap'].forEach(prop => {
+            if (this.floorMaterial[prop]) {
+                this.floorMaterial[prop].wrapS = this.floorMaterial[prop].wrapT = THREE.RepeatWrapping;
+                this.floorMaterial[prop].repeat.set(this.floorTiling, this.floorTiling);
+                this.floorMaterial[prop].needsUpdate = true;
+            }
+        });
+    }
+
+    clearFloorTexture() {
+        this.floorTextureKey = null;
+        if (this.floorMaterial) {
+            ['map', 'roughnessMap', 'normalMap', 'metalnessMap'].forEach(prop => {
+                if (this.floorMaterial[prop]) {
+                    this.floorMaterial[prop].dispose();
+                    this.floorMaterial[prop] = null;
+                }
+            });
+            this.floorMaterial.color.set(this.floorColor || '#242936');
+            this.floorMaterial.roughness = 0.85;
+            this.floorMaterial.metalness = 0.1;
+            this.floorMaterial.needsUpdate = true;
+        }
     }
 
     updateDimensionVisualizer() {

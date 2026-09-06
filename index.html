@@ -14,6 +14,9 @@
     <script src="libs/OrbitControls.js"></script>
     <script src="libs/TransformControls.js"></script>
     <script src="libs/GLTFLoader.js"></script>
+    <script src="libs/fflate.min.js"></script>
+    <script src="libs/RGBELoader.js"></script>
+    <script src="libs/EXRLoader.js"></script>
     <!-- Google Firebase SDK (Ingyenes valós idejű felhő szinkronizáció) -->
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
@@ -263,28 +266,44 @@
                         </button>
 
                         <div class="view-menu-divider"></div>
-                        <div class="view-menu-section-header">MEGJELENÍTÉSI MÓDOK</div>
+                        <div class="view-menu-section-header">MEGJELENÍTÉSI MÓDOK (RENDER)</div>
                         
-                        <div class="view-menu-toggle-row" id="toggle-row-wireframe">
-                            <div class="view-toggle-info">
-                                <span class="view-item-icon">🌐</span>
-                                <div>
-                                    <div class="view-item-title">Vonalváz / Műszaki rajz</div>
-                                    <div class="view-item-sub">Élek & rácsszerkezet</div>
-                                </div>
+                        <!-- 1. Vonalváz Mód (Wireframe) -->
+                        <button class="view-menu-item btn-render-mode" data-render-mode="wireframe" id="btn-mode-wireframe">
+                            <span class="view-item-icon">🌐</span>
+                            <div class="view-item-info">
+                                <div class="view-item-title">Vonalváz / Műszaki rajz</div>
+                                <div class="view-item-sub">Wireframe élek és rácsszerkezet</div>
                             </div>
-                            <input type="checkbox" id="check-wireframe-mode" class="view-toggle-switch">
-                        </div>
+                            <span class="render-mode-indicator" style="margin-left:auto; font-size:12px; display:none; color:#38bdf8;">✓</span>
+                        </button>
 
-                        <div class="view-menu-toggle-row" id="toggle-row-studio">
-                            <div class="view-toggle-info">
-                                <span class="view-item-icon">💎</span>
-                                <div>
-                                    <div class="view-item-title">Stúdió Raytrace Render</div>
-                                    <div class="view-item-sub">HDR fényládák & tónusok</div>
-                                </div>
+                        <!-- 2. Shading Mód (Anyagok & HDRI bevilágítás / reflexió, stúdió háttérrel) -->
+                        <button class="view-menu-item btn-render-mode active" data-render-mode="shading" id="btn-mode-shading">
+                            <span class="view-item-icon">🎨</span>
+                            <div class="view-item-info">
+                                <div class="view-item-title">Shading (Anyagok & Fények)</div>
+                                <div class="view-item-sub">HDRI bevilágítás & tükröződés</div>
                             </div>
-                            <input type="checkbox" id="check-studio-render" class="view-toggle-switch">
+                            <span class="render-mode-indicator" style="margin-left:auto; font-size:12px; display:inline-block; color:#38bdf8; font-weight:bold;">✓</span>
+                        </button>
+
+                        <!-- 3. Realtime Mód (Fotó Render HDRI környezeti háttérrel) -->
+                        <button class="view-menu-item btn-render-mode" data-render-mode="realtime" id="btn-mode-realtime">
+                            <span class="view-item-icon">💎</span>
+                            <div class="view-item-info">
+                                <div class="view-item-title">Realtime (Valós idejű Render)</div>
+                                <div class="view-item-sub">HDRI 360° panoráma háttérrel</div>
+                            </div>
+                            <span class="render-mode-indicator" style="margin-left:auto; font-size:12px; display:none; color:#38bdf8;">✓</span>
+                        </button>
+
+                        <div class="view-menu-divider"></div>
+                        <div class="view-menu-section-header">HDRI KÖRNYEZET (textures/hdri/)</div>
+                        <div style="padding: 4px 10px 8px 10px;">
+                            <select id="select-hdri-environment" class="form-control" style="font-size:11px; background:var(--bg-card); cursor:pointer; width:100%;">
+                                <option value="hdri_200">🌆 200 Studio Hall (2K EXR)</option>
+                            </select>
                         </div>
                     </div>
                 </div>
@@ -377,6 +396,48 @@
                         <button id="btn-edit-corpus-in-wizard" class="btn btn-primary" style="width:100%; justify-content:center; background:linear-gradient(135deg, #f59e0b, #d97706); border-color:#d97706; font-weight:700;">
                             <span>✏️ Módosítás a Konyha Elem Varázslóban...</span>
                         </button>
+                    </div>
+
+                    <!-- KIJELÖLT TALAJ / PADLÓ BEÁLLÍTÁSAI -->
+                    <div class="panel-section" id="floor-properties-panel" style="display:none; background:rgba(30, 41, 59, 0.5); border-left:3px solid #38bdf8;">
+                        <div class="panel-section-title" style="color:#38bdf8;">
+                            <span>🏡 Talaj / Padló Beállításai</span>
+                            <label style="display:flex; align-items:center; gap:6px; font-size:11px; cursor:pointer;">
+                                <input type="checkbox" id="check-floor-visible" checked style="accent-color:#38bdf8; cursor:pointer;">
+                                <span>Látható</span>
+                            </label>
+                        </div>
+
+                        <!-- Színválasztó -->
+                        <div class="form-group" style="margin-bottom:8px;">
+                            <label class="form-label">Padló Alapszín</label>
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <input type="color" id="floor-color-picker" value="#242936" style="width:36px; height:28px; border:none; cursor:pointer; background:transparent;">
+                                <input type="text" id="floor-color-hex" class="form-control" value="#242936" style="width:90px; font-size:11px; font-family:monospace; text-transform:uppercase;">
+                                <button id="btn-reset-floor-color" class="btn btn-sm" style="padding:2px 8px; font-size:10px;">Alaphelyzet</button>
+                            </div>
+                        </div>
+
+                        <!-- Aktuális Anyag / Textúra -->
+                        <div class="form-group" style="margin-bottom:8px;">
+                            <label class="form-label">Alkalmazott Textúra</label>
+                            <div style="display:flex; align-items:center; justify-content:space-between; background:var(--bg-panel); padding:6px 8px; border-radius:4px; border:1px solid var(--border-color);">
+                                <span id="floor-material-name" style="font-size:11px; font-weight:600; color:#fff;">Egyszínű Sötétszürke</span>
+                                <button id="btn-clear-floor-texture" class="btn btn-sm" style="padding:2px 6px; font-size:10px; color:#ef4444;" title="Textúra törlése">✕</button>
+                            </div>
+                            <div style="font-size:10px; color:var(--text-muted); margin-top:4px;">
+                                💡 Kattints az <strong>Anyagok</strong> fülre bármelyik fa, kő vagy munkalap padlóra alkalmazásához!
+                            </div>
+                        </div>
+
+                        <!-- Tiling / Ismétlődés csúszka -->
+                        <div class="form-group">
+                            <div style="display:flex; justify-content:space-between; margin-bottom:2px;">
+                                <label class="form-label" style="font-size:11px;">Mintázat Léptéke (Tiling)</label>
+                                <span id="floor-val-tiling" style="font-size:11px; font-weight:700; color:#38bdf8;">6 × 6</span>
+                            </div>
+                            <input type="range" id="floor-slider-tiling" min="1" max="24" step="0.5" value="6" class="form-range" style="width:100%;">
+                        </div>
                     </div>
 
                     <!-- KIJELÖLT EGYEDI LAP TULAJDONSÁGAI -->
@@ -602,12 +663,15 @@
                         </div>
 
                         <!-- Anyag alkalmazási hatókör -->
-                        <div style="display:flex; gap:6px; margin-bottom:8px;">
-                            <button id="btn-apply-tex-selected" class="btn btn-sm btn-primary" style="flex:1;">
-                                Kijelölt lapra
+                        <div style="display:flex; gap:4px; margin-bottom:8px;">
+                            <button id="btn-apply-tex-selected" class="btn btn-sm btn-primary" style="flex:1; padding:4px 4px; font-size:10px;">
+                                Kijelöltre
                             </button>
-                            <button id="btn-apply-tex-all" class="btn btn-sm" style="flex:1;">
-                                Minden lapra
+                            <button id="btn-apply-tex-floor" class="btn btn-sm" style="flex:1; padding:4px 4px; font-size:10px;" title="Textúra alkalmazása a padlóra">
+                                🏡 Padlóra
+                            </button>
+                            <button id="btn-apply-tex-all" class="btn btn-sm" style="flex:1; padding:4px 4px; font-size:10px;">
+                                Mindre
                             </button>
                         </div>
 

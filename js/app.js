@@ -888,33 +888,87 @@ class FurnitureApp {
             });
         });
 
-        // Vonalváz kapcsoló
-        const checkWireframe = document.getElementById('check-wireframe-mode');
-        const rowWireframe = document.getElementById('toggle-row-wireframe');
-        if (checkWireframe && rowWireframe) {
-            rowWireframe.addEventListener('click', (e) => {
-                if (e.target !== checkWireframe) {
-                    checkWireframe.checked = !checkWireframe.checked;
-                }
-                const isWireframe = this.scene3D.setWireframeMode(checkWireframe.checked);
+        // Render mód gombok (Vonalváz / Shading / Realtime)
+        const renderModeButtons = document.querySelectorAll('.btn-render-mode');
+        renderModeButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const mode = btn.getAttribute('data-render-mode');
+                if (!mode) return;
+
+                renderModeButtons.forEach(b => {
+                    b.classList.remove('active');
+                    const ind = b.querySelector('.render-mode-indicator');
+                    if (ind) ind.style.display = 'none';
+                });
+
+                btn.classList.add('active');
+                const ind = btn.querySelector('.render-mode-indicator');
+                if (ind) ind.style.display = 'inline-block';
+
+                this.scene3D.setRenderMode(mode);
+
+                if (viewMenuDropdown) viewMenuDropdown.classList.remove('open');
+                if (btnViewMenuTrigger) btnViewMenuTrigger.classList.remove('open');
             });
-            checkWireframe.addEventListener('change', () => {
-                this.scene3D.setWireframeMode(checkWireframe.checked);
+        });
+
+        // HDRI környezeti térkép választó dropdown
+        const selectHdri = document.getElementById('select-hdri-environment');
+        if (selectHdri) {
+            selectHdri.addEventListener('change', (e) => {
+                const hdriId = e.target.value;
+                this.scene3D.setHdri(hdriId);
             });
         }
 
-        // Stúdió Raytrace Render kapcsoló
-        const checkStudio = document.getElementById('check-studio-render');
-        const rowStudio = document.getElementById('toggle-row-studio');
-        if (checkStudio && rowStudio) {
-            rowStudio.addEventListener('click', (e) => {
-                if (e.target !== checkStudio) {
-                    checkStudio.checked = !checkStudio.checked;
-                }
-                this.scene3D.setStudioMode(checkStudio.checked);
+        // 3D Talaj / Padló vezérlők
+        const checkFloorVisible = document.getElementById('check-floor-visible');
+        if (checkFloorVisible) {
+            checkFloorVisible.addEventListener('change', (e) => {
+                this.scene3D.setFloorVisible(e.target.checked);
             });
-            checkStudio.addEventListener('change', () => {
-                this.scene3D.setStudioMode(checkStudio.checked);
+        }
+
+        const floorColorPicker = document.getElementById('floor-color-picker');
+        const floorColorHex = document.getElementById('floor-color-hex');
+        if (floorColorPicker && floorColorHex) {
+            floorColorPicker.addEventListener('input', (e) => {
+                floorColorHex.value = e.target.value.toUpperCase();
+                this.scene3D.setFloorColor(e.target.value);
+            });
+            floorColorHex.addEventListener('change', (e) => {
+                let val = e.target.value.trim();
+                if (!val.startsWith('#')) val = '#' + val;
+                floorColorPicker.value = val;
+                this.scene3D.setFloorColor(val);
+            });
+        }
+
+        const btnResetFloorColor = document.getElementById('btn-reset-floor-color');
+        if (btnResetFloorColor) {
+            btnResetFloorColor.addEventListener('click', () => {
+                if (floorColorPicker) floorColorPicker.value = '#242936';
+                if (floorColorHex) floorColorHex.value = '#242936';
+                this.scene3D.setFloorColor('#242936');
+            });
+        }
+
+        const floorSliderTiling = document.getElementById('floor-slider-tiling');
+        const floorValTiling = document.getElementById('floor-val-tiling');
+        if (floorSliderTiling) {
+            floorSliderTiling.addEventListener('input', (e) => {
+                const val = Number(e.target.value);
+                if (floorValTiling) floorValTiling.textContent = `${val} × ${val}`;
+                this.scene3D.setFloorTiling(val);
+            });
+        }
+
+        const btnClearFloorTex = document.getElementById('btn-clear-floor-texture');
+        if (btnClearFloorTex) {
+            btnClearFloorTex.addEventListener('click', () => {
+                this.scene3D.clearFloorTexture();
+                const floorMatName = document.getElementById('floor-material-name');
+                if (floorMatName) floorMatName.textContent = 'Egyszínű Sötétszürke';
             });
         }
 
@@ -1339,17 +1393,26 @@ class FurnitureApp {
         });
 
         // --- Textúra alkalmazás célpont gombok ---
-        document.getElementById('btn-apply-tex-selected').addEventListener('click', () => {
-            this.applyTextureTarget = 'selected';
-            document.getElementById('btn-apply-tex-selected').classList.add('btn-primary');
-            document.getElementById('btn-apply-tex-all').classList.remove('btn-primary');
-        });
+        const btnTexSel = document.getElementById('btn-apply-tex-selected');
+        const btnTexFloor = document.getElementById('btn-apply-tex-floor');
+        const btnTexAll = document.getElementById('btn-apply-tex-all');
 
-        document.getElementById('btn-apply-tex-all').addEventListener('click', () => {
-            this.applyTextureTarget = 'all';
-            document.getElementById('btn-apply-tex-all').classList.add('btn-primary');
-            document.getElementById('btn-apply-tex-selected').classList.remove('btn-primary');
-        });
+        const updateTexTargetButtons = (target) => {
+            this.applyTextureTarget = target;
+            if (btnTexSel) btnTexSel.classList.toggle('btn-primary', target === 'selected');
+            if (btnTexFloor) btnTexFloor.classList.toggle('btn-primary', target === 'floor');
+            if (btnTexAll) btnTexAll.classList.toggle('btn-primary', target === 'all');
+        };
+
+        if (btnTexSel) {
+            btnTexSel.addEventListener('click', () => updateTexTargetButtons('selected'));
+        }
+        if (btnTexFloor) {
+            btnTexFloor.addEventListener('click', () => updateTexTargetButtons('floor'));
+        }
+        if (btnTexAll) {
+            btnTexAll.addEventListener('click', () => updateTexTargetButtons('all'));
+        }
 
         // --- Textúra Kategória Szűrő Gombok (Front vs Munkalap) ---
         document.querySelectorAll('.btn-tex-cat').forEach(btn => {
@@ -1769,6 +1832,7 @@ class FurnitureApp {
         const btnTabGroup = document.getElementById('btn-tab-group');
         const btnTabDims = document.querySelector('.context-tab-btn[data-context-tab="ctx-tab-dims"]');
 
+        const floorPanel = document.getElementById('floor-properties-panel');
         const corpusPanel = document.getElementById('corpus-properties-panel');
         const boardPanel = document.getElementById('board-properties-panel');
         const groupPanel = document.getElementById('group-properties-panel');
@@ -1809,6 +1873,7 @@ class FurnitureApp {
             if (btnTabSnap) btnTabSnap.style.display = 'none';
             if (btnTabGroup) btnTabGroup.style.display = 'flex';
 
+            if (floorPanel) floorPanel.style.display = 'none';
             if (corpusPanel) corpusPanel.style.display = 'none';
             if (boardPanel) boardPanel.style.display = 'none';
             if (groupPanel) groupPanel.style.display = 'none';
@@ -1843,6 +1908,7 @@ class FurnitureApp {
             if (btnTabSnap) btnTabSnap.style.display = 'none';
             if (btnTabGroup) btnTabGroup.style.display = 'none';
 
+            if (floorPanel) floorPanel.style.display = 'none';
             if (corpusPanel) corpusPanel.style.display = 'none';
             if (boardPanel) boardPanel.style.display = 'block';
             if (groupPanel) groupPanel.style.display = 'none';
@@ -1855,6 +1921,41 @@ class FurnitureApp {
             this.highlightHierarchyItem(null);
             return;
         }
+
+        // 3. HA TALAJ / PADLÓ A KIJELÖLT ELEM
+        if (target.userData && target.userData.isFloor) {
+            this.selectedBoard = null;
+            this.selectedCorpus = null;
+            this.selectedCustomGroup = null;
+
+            if (contextTabsBar) contextTabsBar.style.display = 'flex';
+            if (contextTabContainer) contextTabContainer.style.display = 'flex';
+
+            if (btnTabDims) btnTabDims.style.display = 'flex';
+            if (btnTabSnap) btnTabSnap.style.display = 'none';
+            if (btnTabGroup) btnTabGroup.style.display = 'none';
+
+            if (floorPanel) floorPanel.style.display = 'block';
+            if (corpusPanel) corpusPanel.style.display = 'none';
+            if (boardPanel) boardPanel.style.display = 'none';
+            if (groupPanel) groupPanel.style.display = 'none';
+            if (singleBoardGroupPanel) singleBoardGroupPanel.style.display = 'none';
+            if (multiPanel) multiPanel.style.display = 'none';
+            if (noBoardMsg) noBoardMsg.style.display = 'none';
+            if (boardForm) boardForm.style.display = 'none';
+            if (snappingPanel) snappingPanel.style.display = 'none';
+            if (texturesPanel) texturesPanel.style.display = 'block';
+
+            const activeBtn = document.querySelector('.context-tab-btn.active');
+            if (!activeBtn || activeBtn === btnTabSnap || activeBtn === btnTabGroup) {
+                this.switchContextTab('ctx-tab-dims');
+            }
+
+            this.highlightHierarchyItem(null);
+            return;
+        }
+
+        if (floorPanel) floorPanel.style.display = 'none';
 
         if (contextTabsBar) contextTabsBar.style.display = 'flex';
         if (contextTabContainer) contextTabContainer.style.display = 'flex';
@@ -2787,6 +2888,17 @@ class FurnitureApp {
     applyTexture(textureKey) {
         const texInfo = MaterialManager.textures[textureKey] || MaterialManager.textures['front_k001'];
         const isWorktopTex = texInfo && texInfo.category === 'worktop';
+
+        // 0. TALAJ / PADLÓ CÉLPONT
+        if (this.applyTextureTarget === 'floor' || (this.scene3D.selectedTarget && this.scene3D.selectedTarget.userData && this.scene3D.selectedTarget.userData.isFloor)) {
+            const repeat = this.scene3D.floorTiling || 6;
+            this.scene3D.setFloorMaterial(textureKey, repeat);
+            const floorMatName = document.getElementById('floor-material-name');
+            if (floorMatName) {
+                floorMatName.textContent = texInfo ? texInfo.name : textureKey;
+            }
+            return;
+        }
 
         if (this.applyTextureTarget === 'all') {
             this.boardManager.applyTextureToAll(textureKey);
