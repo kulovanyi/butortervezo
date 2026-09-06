@@ -228,6 +228,194 @@ export class KitchenPreview3D {
         if (btn) {
             btn.classList.toggle('active', this.showWireframe);
         }
+/**
+ * 3D Anyag Előnézet és Fizikai Megjelenítés (PBR Preview) Gömb és 40x70 cm Bútorlap modellekkel
+ */
+export class PBRMaterialPreview3D {
+    constructor(containerId) {
+        this.container = document.getElementById(containerId);
+        if (!this.container) return;
+
+        this.scene = new THREE.Scene();
+        this.scene.background = new THREE.Color('#181b24');
+
+        const width = this.container.clientWidth || 320;
+        const height = this.container.clientHeight || 260;
+
+        this.camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
+        this.camera.position.set(0, 0, 3.8);
+
+        this.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+        this.renderer.setSize(width, height);
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        this.renderer.toneMappingExposure = 1.2;
+        this.container.appendChild(this.renderer.domElement);
+
+        this.controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
+        this.controls.enableDamping = true;
+        this.controls.dampingFactor = 0.08;
+        this.controls.minDistance = 1.2;
+        this.controls.maxDistance = 10;
+
+        // Fények (Stúdió megvilágítás a PBR reflexiókhoz)
+        const ambient = new THREE.AmbientLight(0xffffff, 0.65);
+        this.scene.add(ambient);
+
+        const keyLight = new THREE.DirectionalLight(0xffffff, 1.2);
+        keyLight.position.set(5, 5, 5);
+        this.scene.add(keyLight);
+
+        const fillLight = new THREE.DirectionalLight(0x90b0ff, 0.6);
+        fillLight.position.set(-5, -2, -3);
+        this.scene.add(fillLight);
+
+        const rimLight = new THREE.DirectionalLight(0xffd090, 0.7);
+        rimLight.position.set(0, 5, -5);
+        this.scene.add(rimLight);
+
+        // Geometriák: Gömb vs. 40x70 Bútorlap
+        this.sphereGeom = new THREE.SphereGeometry(1.0, 64, 64);
+        
+        // 40x70 cm arányos bútorlap Box geometria (1.4 x 2.45 x 0.08)
+        this.boardGeom = new THREE.BoxGeometry(1.4, 2.45, 0.08);
+        const pos = this.boardGeom.attributes.position;
+        const norm = this.boardGeom.attributes.normal;
+        const uvs = new Float32Array(pos.count * 2);
+        for (let i = 0; i < pos.count; i++) {
+            const x = pos.getX(i);
+            const y = pos.getY(i);
+            const z = pos.getZ(i);
+            const nx = Math.abs(norm.getX(i));
+            const ny = Math.abs(norm.getY(i));
+            const nz = Math.abs(norm.getZ(i));
+            if (nx >= ny && nx >= nz) {
+                uvs[i * 2] = (z + 0.04) / 0.08;
+                uvs[i * 2 + 1] = (y + 1.225) / 2.45;
+            } else if (ny >= nx && ny >= nz) {
+                uvs[i * 2] = (x + 0.7) / 1.4;
+                uvs[i * 2 + 1] = (z + 0.04) / 0.08;
+            } else {
+                uvs[i * 2] = (x + 0.7) / 1.4;
+                uvs[i * 2 + 1] = (y + 1.225) / 2.45;
+            }
+        }
+        this.boardGeom.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+
+        this.previewMaterial = new THREE.MeshStandardMaterial({
+            color: new THREE.Color('#ffffff'),
+            roughness: 0.65,
+            metalness: 0.05,
+            side: THREE.DoubleSide
+        });
+
+        this.sphereMesh = new THREE.Mesh(this.sphereGeom, this.previewMaterial);
+        this.boardMesh = new THREE.Mesh(this.boardGeom, this.previewMaterial);
+        this.boardMesh.visible = false;
+
+        this.scene.add(this.sphereMesh);
+        this.scene.add(this.boardMesh);
+
+        this.activeModel = 'sphere';
+        this.animationId = null;
+
+        if (window.ResizeObserver && this.container) {
+            this.resizeObserver = new ResizeObserver(() => this.resize());
+            this.resizeObserver.observe(this.container);
+        }
+
+        this.startLoop();
+    }
+
+    setModel(modelType) {
+        this.activeModel = modelType;
+        if (modelType === 'board') {
+            this.sphereMesh.visible = false;
+            this.boardMesh.visible = true;
+            this.camera.position.set(0, 0, 4.2);
+        } else {
+            this.sphereMesh.visible = true;
+            this.boardMesh.visible = false;
+            this.camera.position.set(0, 0, 3.8);
+        }
+        this.controls.target.set(0, 0, 0);
+        this.controls.update();
+    }
+
+    resetCamera() {
+        if (this.activeModel === 'board') {
+            this.camera.position.set(0, 0, 4.2);
+        } else {
+            this.camera.position.set(0, 0, 3.8);
+        }
+        this.controls.target.set(0, 0, 0);
+        this.controls.update();
+    }
+
+    updateMaterial(matConfig) {
+        if (!matConfig) return;
+        
+        const repeatX = matConfig.repeatX !== undefined ? Number(matConfig.repeatX) : 1.0;
+        const repeatY = matConfig.repeatY !== undefined ? Number(matConfig.repeatY) : 1.0;
+        const rotation = matConfig.rotation !== undefined ? Number(matConfig.rotation) : 0;
+
+        const color = matConfig.color ? new THREE.Color(matConfig.color) : new THREE.Color('#ffffff');
+        const roughness = matConfig.roughness !== undefined ? Number(matConfig.roughness) : 0.65;
+        const metalness = matConfig.metalness !== undefined ? Number(matConfig.metalness) : 0.05;
+        const normalScale = matConfig.normalScale !== undefined ? Number(matConfig.normalScale) : 1.0;
+
+        const colorMap = matConfig.dataUrl ? MaterialManager.createPBRTextureFromDataUrl(matConfig.dataUrl, repeatX, repeatY, rotation) : null;
+        const roughnessMap = matConfig.roughnessMapDataUrl ? MaterialManager.createPBRTextureFromDataUrl(matConfig.roughnessMapDataUrl, repeatX, repeatY, rotation) : null;
+        const metalnessMap = matConfig.metalnessMapDataUrl ? MaterialManager.createPBRTextureFromDataUrl(matConfig.metalnessMapDataUrl, repeatX, repeatY, rotation) : null;
+        const normalMap = matConfig.normalMapDataUrl ? MaterialManager.createPBRTextureFromDataUrl(matConfig.normalMapDataUrl, repeatX, repeatY, rotation) : null;
+
+        const newMat = new THREE.MeshStandardMaterial({
+            color: color,
+            map: colorMap,
+            roughness: roughness,
+            roughnessMap: roughnessMap,
+            metalness: metalness,
+            metalnessMap: metalnessMap,
+            normalMap: normalMap,
+            side: THREE.DoubleSide
+        });
+
+        if (normalMap) {
+            newMat.normalScale.set(normalScale, normalScale);
+        }
+
+        this.sphereMesh.material = newMat;
+        this.boardMesh.material = newMat;
+        this.previewMaterial = newMat;
+    }
+
+    startLoop() {
+        if (this.animationId) return;
+        const animate = () => {
+            this.animationId = requestAnimationFrame(animate);
+            if (this.controls) this.controls.update();
+            if (this.renderer && this.scene && this.camera) {
+                this.renderer.render(this.scene, this.camera);
+            }
+        };
+        animate();
+    }
+
+    stopLoop() {
+        if (this.animationId) {
+            cancelAnimationFrame(this.animationId);
+            this.animationId = null;
+        }
+    }
+
+    resize() {
+        if (!this.container || !this.renderer || !this.camera) return;
+        const width = this.container.clientWidth;
+        const height = this.container.clientHeight;
+        if (width <= 0 || height <= 0) return;
+        this.camera.aspect = width / height;
+        this.camera.updateProjectionMatrix();
+        this.renderer.setSize(width, height);
     }
 }
 
@@ -239,6 +427,8 @@ class FurnitureApp {
         this.catalogManager = null;
         this.cutListManager = null;
         this.kitchenPreview = null;
+        this.pbrPreview = null;
+        this.currentEditingPBR = null;
         this.selectedBoard = null;
         this.selectedCorpus = null;
         this.selectedCustomGroup = null;
@@ -287,7 +477,8 @@ class FurnitureApp {
         // 4. Konyha Varázsló Élőkép 3D inicializálása
         this.kitchenPreview = new KitchenPreview3D('kitchen-preview-3d-container');
 
-        // 5. UI Események feliratkozása
+        // 5. UI Események feliratkozása & PBR Szerkesztő
+        this.initPBRMaterialEditor();
         this.bindUIEvents();
         this.renderTextureGrid();
         this.renderCatalogUI();
@@ -599,6 +790,30 @@ class FurnitureApp {
             }
             e.target.value = '';
         });
+
+        // --- PBR Anyag Létrehozás & Gyorsfeltöltés ---
+        const btnCreatePBR = document.getElementById('btn-create-pbr-material');
+        if (btnCreatePBR) {
+            btnCreatePBR.addEventListener('click', () => {
+                this.openPBRMaterialEditor(null);
+            });
+        }
+
+        const inputCustomTex = document.getElementById('input-custom-texture');
+        if (inputCustomTex) {
+            inputCustomTex.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    MaterialManager.loadCustomImage(file).then(customMat => {
+                        this.renderTextureGrid('custom');
+                        this.openPBRMaterialEditor(customMat.id);
+                    }).catch(err => {
+                        alert('Hiba a kép betöltésekor: ' + err.message);
+                    });
+                }
+                e.target.value = '';
+            });
+        }
 
         // --- 3D Lebegő vezérlők (Gizmo & Nézőpontok) ---
         document.getElementById('gizmo-translate-btn').addEventListener('click', (e) => {
@@ -2093,7 +2308,7 @@ class FurnitureApp {
             btn.classList.toggle('btn-primary', btnCat === cat);
         });
 
-        // Csak a feltöltött front és worktop textúrák megjelenítése (készülékeket, fémeket, üvegeket és belső fehér hátfalat kizárjuk)
+        // Csak a feltöltött front, worktop és custom textúrák megjelenítése
         Object.keys(MaterialManager.textures).forEach(key => {
             const tex = MaterialManager.textures[key];
             if (!tex) return;
@@ -2112,36 +2327,446 @@ class FurnitureApp {
                 return;
             }
 
-            const item = document.createElement('div');
-            item.className = 'texture-item';
-            item.style.position = 'relative';
-            
             const isCurrentActive = (this.selectedBoard && this.selectedBoard.textureKey === key) ||
                 (this.selectedCorpus && this.selectedCorpus.userData?.config?.textureKey === key) ||
                 (this.selectedCorpus && this.selectedCorpus.userData?.config?.worktop?.textureKey === key);
 
-            if (isCurrentActive) {
-                item.classList.add('active');
-            }
+            const item = document.createElement('div');
+            item.className = `texture-item-row ${isCurrentActive ? 'active' : ''}`;
+            
+            const thumbHtml = tex.dataUrl 
+                ? `<img src="${tex.dataUrl}" class="texture-item-thumb" alt="${tex.name}">` 
+                : `<div class="texture-item-color-box" style="background:${tex.color || '#ffffff'};"></div>`;
 
-            const catBadge = tex.category === 'worktop' 
-                ? `<span style="position:absolute; top:2px; right:2px; font-size:8px; background:rgba(2,132,199,0.9); color:#fff; padding:1px 4px; border-radius:3px; font-weight:600;">Munkalap</span>`
-                : (tex.category === 'front' ? `<span style="position:absolute; top:2px; right:2px; font-size:8px; background:rgba(16,185,129,0.9); color:#fff; padding:1px 4px; border-radius:3px; font-weight:600;">Front</span>` : '');
+            const badgeClass = tex.category || 'front';
+            const badgeLabel = tex.category === 'worktop' ? 'Munkalap' : (tex.category === 'front' ? 'Front' : 'Egyedi');
+            const roughnessVal = (tex.roughness !== undefined ? Number(tex.roughness) : 0.65).toFixed(2);
+            const metalnessVal = (tex.metalness !== undefined ? Number(tex.metalness) : 0.05).toFixed(2);
 
             item.innerHTML = `
-                ${catBadge}
-                <img src="${tex.dataUrl}" class="texture-thumb" alt="${tex.name}">
-                <div class="texture-name" title="${tex.name}">${tex.name}</div>
+                <div class="texture-item-left">
+                    ${thumbHtml}
+                    <div class="texture-item-info">
+                        <div class="texture-item-name" title="${tex.name}">${tex.name}</div>
+                        <div class="texture-item-meta">
+                            <span class="texture-item-badge ${badgeClass}">${badgeLabel}</span>
+                            <span>Érd: ${roughnessVal}</span>
+                            <span>Fém: ${metalnessVal}</span>
+                        </div>
+                    </div>
+                </div>
+                <button class="texture-btn-edit" title="PBR Anyag Módosítása (Szín, Érdesség, Fémesség, Normal map, Tiling, Forgatás)">
+                    <span>⚙️ Módosítás</span>
+                </button>
             `;
 
-            item.addEventListener('click', () => {
-                document.querySelectorAll('.texture-item').forEach(i => i.classList.remove('active'));
+            // Sorra kattintás = Anyag azonnali alkalmazása
+            item.addEventListener('click', (e) => {
+                if (e.target.closest('.texture-btn-edit')) return;
+                document.querySelectorAll('.texture-item-row').forEach(i => i.classList.remove('active'));
                 item.classList.add('active');
                 this.applyTexture(key);
             });
 
+            // Módosítás gombra kattintás = PBR Szerkesztő megnyitása
+            const btnEdit = item.querySelector('.texture-btn-edit');
+            if (btnEdit) {
+                btnEdit.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.openPBRMaterialEditor(key);
+                });
+            }
+
             grid.appendChild(item);
         });
+    }
+
+    // ==========================================
+    // PBR ANYAGSZERKESZTŐ (PBR MATERIAL EDITOR)
+    // ==========================================
+
+    initPBRMaterialEditor() {
+        // 1. 3D Előnézeti Modell Váltó gombok
+        const btnSphere = document.getElementById('pbr-model-sphere-btn');
+        const btnBoard = document.getElementById('pbr-model-board-btn');
+        const btnResetCam = document.getElementById('pbr-preview-reset-cam');
+
+        if (btnSphere && btnBoard) {
+            btnSphere.addEventListener('click', () => {
+                btnSphere.classList.add('btn-primary', 'active');
+                btnBoard.classList.remove('btn-primary', 'active');
+                if (this.pbrPreview) this.pbrPreview.setModel('sphere');
+            });
+
+            btnBoard.addEventListener('click', () => {
+                btnBoard.classList.add('btn-primary', 'active');
+                btnSphere.classList.remove('btn-primary', 'active');
+                if (this.pbrPreview) this.pbrPreview.setModel('board');
+            });
+        }
+
+        if (btnResetCam) {
+            btnResetCam.addEventListener('click', () => {
+                if (this.pbrPreview) this.pbrPreview.resetCamera();
+            });
+        }
+
+        // 2. Színválasztó & Hex mező
+        const colorPicker = document.getElementById('pbr-color-picker');
+        const hexInput = document.getElementById('pbr-hex-input');
+        const btnResetColor = document.getElementById('pbr-btn-reset-color');
+
+        if (colorPicker && hexInput) {
+            colorPicker.addEventListener('input', (e) => {
+                hexInput.value = e.target.value;
+                if (this.currentEditingPBR) {
+                    this.currentEditingPBR.color = e.target.value;
+                    if (this.pbrPreview) this.pbrPreview.updateMaterial(this.currentEditingPBR);
+                }
+            });
+
+            hexInput.addEventListener('input', (e) => {
+                let val = e.target.value;
+                if (!val.startsWith('#')) val = '#' + val;
+                if (/^#[0-9A-Fa-f]{6}$/.test(val)) {
+                    colorPicker.value = val;
+                    if (this.currentEditingPBR) {
+                        this.currentEditingPBR.color = val;
+                        if (this.pbrPreview) this.pbrPreview.updateMaterial(this.currentEditingPBR);
+                    }
+                }
+            });
+
+            if (btnResetColor) {
+                btnResetColor.addEventListener('click', () => {
+                    colorPicker.value = '#ffffff';
+                    hexInput.value = '#ffffff';
+                    if (this.currentEditingPBR) {
+                        this.currentEditingPBR.color = '#ffffff';
+                        if (this.pbrPreview) this.pbrPreview.updateMaterial(this.currentEditingPBR);
+                    }
+                });
+            }
+        }
+
+        // 3. Érdesség (Roughness) csúszka
+        const sliderRoughness = document.getElementById('pbr-slider-roughness');
+        const valRoughness = document.getElementById('pbr-val-roughness');
+        if (sliderRoughness && valRoughness) {
+            sliderRoughness.addEventListener('input', (e) => {
+                const val = Number(e.target.value);
+                valRoughness.textContent = val.toFixed(2);
+                if (this.currentEditingPBR) {
+                    this.currentEditingPBR.roughness = val;
+                    if (this.pbrPreview) this.pbrPreview.updateMaterial(this.currentEditingPBR);
+                }
+            });
+        }
+
+        // 4. Fémesség (Metalness) csúszka
+        const sliderMetalness = document.getElementById('pbr-slider-metalness');
+        const valMetalness = document.getElementById('pbr-val-metalness');
+        if (sliderMetalness && valMetalness) {
+            sliderMetalness.addEventListener('input', (e) => {
+                const val = Number(e.target.value);
+                valMetalness.textContent = val.toFixed(2);
+                if (this.currentEditingPBR) {
+                    this.currentEditingPBR.metalness = val;
+                    if (this.pbrPreview) this.pbrPreview.updateMaterial(this.currentEditingPBR);
+                }
+            });
+        }
+
+        // 5. Normal Map intenzitás csúszka
+        const sliderNormal = document.getElementById('pbr-slider-normal-scale');
+        const valNormal = document.getElementById('pbr-val-normal-scale');
+        if (sliderNormal && valNormal) {
+            sliderNormal.addEventListener('input', (e) => {
+                const val = Number(e.target.value);
+                valNormal.textContent = val.toFixed(2);
+                if (this.currentEditingPBR) {
+                    this.currentEditingPBR.normalScale = val;
+                    if (this.pbrPreview) this.pbrPreview.updateMaterial(this.currentEditingPBR);
+                }
+            });
+        }
+
+        // 6. Tiling X / Y és Forgatás
+        const sliderTilingX = document.getElementById('pbr-slider-tiling-x');
+        const sliderTilingY = document.getElementById('pbr-slider-tiling-y');
+        const valTiling = document.getElementById('pbr-val-tiling');
+
+        const updateTiling = () => {
+            if (!sliderTilingX || !sliderTilingY || !valTiling) return;
+            const rx = Number(sliderTilingX.value);
+            const ry = Number(sliderTilingY.value);
+            valTiling.textContent = `${rx.toFixed(1)} × ${ry.toFixed(1)}`;
+            if (this.currentEditingPBR) {
+                this.currentEditingPBR.repeatX = rx;
+                this.currentEditingPBR.repeatY = ry;
+                if (this.pbrPreview) this.pbrPreview.updateMaterial(this.currentEditingPBR);
+            }
+        };
+
+        if (sliderTilingX) sliderTilingX.addEventListener('input', updateTiling);
+        if (sliderTilingY) sliderTilingY.addEventListener('input', updateTiling);
+
+        const sliderRotation = document.getElementById('pbr-slider-rotation');
+        const valRotation = document.getElementById('pbr-val-rotation');
+        if (sliderRotation && valRotation) {
+            sliderRotation.addEventListener('input', (e) => {
+                const val = Number(e.target.value);
+                valRotation.textContent = `${val}°`;
+                if (this.currentEditingPBR) {
+                    this.currentEditingPBR.rotation = val;
+                    if (this.pbrPreview) this.pbrPreview.updateMaterial(this.currentEditingPBR);
+                }
+            });
+        }
+
+        // Gyors rotáció gombok
+        document.querySelectorAll('.btn-pbr-rot').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const rot = Number(btn.getAttribute('data-rot') || 0);
+                if (sliderRotation) sliderRotation.value = rot;
+                if (valRotation) valRotation.textContent = `${rot}°`;
+                if (this.currentEditingPBR) {
+                    this.currentEditingPBR.rotation = rot;
+                    if (this.pbrPreview) this.pbrPreview.updateMaterial(this.currentEditingPBR);
+                }
+            });
+        });
+
+        // 7. Képfeltöltők (Albedo, Roughness, Metalness, Normal)
+        const setupMapUploader = (fileInputId, clearBtnId, channelKey) => {
+            const fileInput = document.getElementById(fileInputId);
+            const clearBtn = document.getElementById(clearBtnId);
+
+            if (fileInput) {
+                fileInput.addEventListener('change', (e) => {
+                    const file = e.target.files[0];
+                    if (file) {
+                        const reader = new FileReader();
+                        reader.onload = (ev) => {
+                            const dataUrl = ev.target.result;
+                            if (this.currentEditingPBR) {
+                                if (channelKey === 'albedo') this.currentEditingPBR.dataUrl = dataUrl;
+                                else if (channelKey === 'roughness') this.currentEditingPBR.roughnessMapDataUrl = dataUrl;
+                                else if (channelKey === 'metalness') this.currentEditingPBR.metalnessMapDataUrl = dataUrl;
+                                else if (channelKey === 'normal') this.currentEditingPBR.normalMapDataUrl = dataUrl;
+
+                                this.updatePBRMapThumb(channelKey, dataUrl);
+                                if (this.pbrPreview) this.pbrPreview.updateMaterial(this.currentEditingPBR);
+                            }
+                        };
+                        reader.readAsDataURL(file);
+                    }
+                    e.target.value = '';
+                });
+            }
+
+            if (clearBtn) {
+                clearBtn.addEventListener('click', () => {
+                    if (this.currentEditingPBR) {
+                        if (channelKey === 'albedo') this.currentEditingPBR.dataUrl = null;
+                        else if (channelKey === 'roughness') this.currentEditingPBR.roughnessMapDataUrl = null;
+                        else if (channelKey === 'metalness') this.currentEditingPBR.metalnessMapDataUrl = null;
+                        else if (channelKey === 'normal') this.currentEditingPBR.normalMapDataUrl = null;
+
+                        this.updatePBRMapThumb(channelKey, null);
+                        if (this.pbrPreview) this.pbrPreview.updateMaterial(this.currentEditingPBR);
+                    }
+                });
+            }
+        };
+
+        setupMapUploader('pbr-file-albedo', 'pbr-btn-clear-albedo', 'albedo');
+        setupMapUploader('pbr-file-roughness', 'pbr-btn-clear-roughness', 'roughness');
+        setupMapUploader('pbr-file-metalness', 'pbr-btn-clear-metalness', 'metalness');
+        setupMapUploader('pbr-file-normal', 'pbr-btn-clear-normal', 'normal');
+
+        // 8. Mentés gombok
+        const btnSave = document.getElementById('pbr-btn-save');
+        const btnSaveApply = document.getElementById('pbr-btn-save-apply');
+        const btnDelete = document.getElementById('pbr-btn-delete');
+
+        if (btnSave) {
+            btnSave.addEventListener('click', () => {
+                this.saveCurrentPBRMaterial(false);
+            });
+        }
+
+        if (btnSaveApply) {
+            btnSaveApply.addEventListener('click', () => {
+                this.saveCurrentPBRMaterial(true);
+            });
+        }
+
+        if (btnDelete) {
+            btnDelete.addEventListener('click', () => {
+                if (this.currentEditingPBR && this.currentEditingPBR.id) {
+                    if (confirm(`Biztosan törölni szeretnéd a(z) "${this.currentEditingPBR.name}" anyagot?`)) {
+                        MaterialManager.deletePBRMaterial(this.currentEditingPBR.id);
+                        this.closeModal('modal-pbr-editor');
+                        this.renderTextureGrid();
+                    }
+                }
+            });
+        }
+    }
+
+    openPBRMaterialEditor(materialKey = null) {
+        if (!this.pbrPreview) {
+            this.pbrPreview = new PBRMaterialPreview3D('pbr-preview-canvas-container');
+        }
+
+        let matData = null;
+        if (materialKey && MaterialManager.textures[materialKey]) {
+            const src = MaterialManager.textures[materialKey];
+            matData = {
+                id: src.id,
+                name: src.name || 'PBR Anyag',
+                category: src.category || 'front',
+                type: src.type || 'custom',
+                color: src.color || '#ffffff',
+                dataUrl: src.dataUrl || null,
+                roughness: src.roughness !== undefined ? Number(src.roughness) : 0.65,
+                roughnessMapDataUrl: src.roughnessMapDataUrl || null,
+                metalness: src.metalness !== undefined ? Number(src.metalness) : 0.05,
+                metalnessMapDataUrl: src.metalnessMapDataUrl || null,
+                normalMapDataUrl: src.normalMapDataUrl || null,
+                normalScale: src.normalScale !== undefined ? Number(src.normalScale) : 1.0,
+                repeatX: src.repeatX !== undefined ? Number(src.repeatX) : 1.0,
+                repeatY: src.repeatY !== undefined ? Number(src.repeatY) : 1.0,
+                rotation: src.rotation !== undefined ? Number(src.rotation) : 0,
+                isCustom: src.isCustom !== undefined ? src.isCustom : false,
+                isModified: true
+            };
+        } else {
+            matData = {
+                id: 'pbr_custom_' + Date.now(),
+                name: 'Új PBR Anyag',
+                category: this.activeTextureCategory === 'worktop' ? 'worktop' : 'front',
+                type: 'custom',
+                color: '#ffffff',
+                dataUrl: null,
+                roughness: 0.65,
+                roughnessMapDataUrl: null,
+                metalness: 0.05,
+                metalnessMapDataUrl: null,
+                normalMapDataUrl: null,
+                normalScale: 1.0,
+                repeatX: 1.0,
+                repeatY: 1.0,
+                rotation: 0,
+                isCustom: true,
+                isModified: false
+            };
+        }
+
+        this.currentEditingPBR = matData;
+
+        // UI Űrlap kitöltése
+        const inputName = document.getElementById('pbr-input-name');
+        const selectCat = document.getElementById('pbr-select-category');
+        const colorPicker = document.getElementById('pbr-color-picker');
+        const hexInput = document.getElementById('pbr-hex-input');
+        
+        const sliderRoughness = document.getElementById('pbr-slider-roughness');
+        const valRoughness = document.getElementById('pbr-val-roughness');
+        
+        const sliderMetalness = document.getElementById('pbr-slider-metalness');
+        const valMetalness = document.getElementById('pbr-val-metalness');
+        
+        const sliderNormal = document.getElementById('pbr-slider-normal-scale');
+        const valNormal = document.getElementById('pbr-val-normal-scale');
+        
+        const sliderTilingX = document.getElementById('pbr-slider-tiling-x');
+        const sliderTilingY = document.getElementById('pbr-slider-tiling-y');
+        const valTiling = document.getElementById('pbr-val-tiling');
+        
+        const sliderRotation = document.getElementById('pbr-slider-rotation');
+        const valRotation = document.getElementById('pbr-val-rotation');
+        
+        const btnDelete = document.getElementById('pbr-btn-delete');
+
+        if (inputName) inputName.value = matData.name;
+        if (selectCat) selectCat.value = matData.category;
+        if (colorPicker) colorPicker.value = matData.color;
+        if (hexInput) hexInput.value = matData.color;
+
+        if (sliderRoughness) sliderRoughness.value = matData.roughness;
+        if (valRoughness) valRoughness.textContent = Number(matData.roughness).toFixed(2);
+
+        if (sliderMetalness) sliderMetalness.value = matData.metalness;
+        if (valMetalness) valMetalness.textContent = Number(matData.metalness).toFixed(2);
+
+        if (sliderNormal) sliderNormal.value = matData.normalScale;
+        if (valNormal) valNormal.textContent = Number(matData.normalScale).toFixed(2);
+
+        if (sliderTilingX) sliderTilingX.value = matData.repeatX;
+        if (sliderTilingY) sliderTilingY.value = matData.repeatY;
+        if (valTiling) valTiling.textContent = `${Number(matData.repeatX).toFixed(1)} × ${Number(matData.repeatY).toFixed(1)}`;
+
+        if (sliderRotation) sliderRotation.value = matData.rotation;
+        if (valRotation) valRotation.textContent = `${matData.rotation}°`;
+
+        // Térképek thumbnail és törlés gombok állapota
+        this.updatePBRMapThumb('albedo', matData.dataUrl);
+        this.updatePBRMapThumb('roughness', matData.roughnessMapDataUrl);
+        this.updatePBRMapThumb('metalness', matData.metalnessMapDataUrl);
+        this.updatePBRMapThumb('normal', matData.normalMapDataUrl);
+
+        if (btnDelete) {
+            btnDelete.style.display = matData.isCustom ? 'inline-flex' : 'none';
+        }
+
+        // 3D előnézet frissítése
+        this.pbrPreview.updateMaterial(matData);
+        this.openModal('modal-pbr-editor');
+        setTimeout(() => {
+            if (this.pbrPreview) this.pbrPreview.resize();
+        }, 50);
+    }
+
+    updatePBRMapThumb(channel, dataUrl) {
+        const thumbEl = document.getElementById(`pbr-thumb-${channel}`);
+        const clearBtn = document.getElementById(`pbr-btn-clear-${channel}`);
+        if (!thumbEl) return;
+
+        if (dataUrl) {
+            thumbEl.innerHTML = `<img src="${dataUrl}" alt="${channel}">`;
+            thumbEl.style.borderStyle = 'solid';
+            thumbEl.style.borderColor = '#38bdf8';
+            if (clearBtn) clearBtn.style.display = 'inline-flex';
+        } else {
+            thumbEl.innerHTML = `<span>Nincs</span>`;
+            thumbEl.style.borderStyle = 'dashed';
+            thumbEl.style.borderColor = 'rgba(255,255,255,0.2)';
+            if (clearBtn) clearBtn.style.display = 'none';
+        }
+    }
+
+    saveCurrentPBRMaterial(applyToSelection = false) {
+        if (!this.currentEditingPBR) return;
+
+        const inputName = document.getElementById('pbr-input-name');
+        const selectCat = document.getElementById('pbr-select-category');
+
+        if (inputName && inputName.value.trim() !== '') {
+            this.currentEditingPBR.name = inputName.value.trim();
+        }
+        if (selectCat) {
+            this.currentEditingPBR.category = selectCat.value;
+        }
+
+        const savedMat = MaterialManager.savePBRMaterial(this.currentEditingPBR);
+        this.closeModal('modal-pbr-editor');
+        this.renderTextureGrid(savedMat.category);
+
+        if (applyToSelection) {
+            this.applyTexture(savedMat.id);
+        }
     }
 
     applyTexture(textureKey) {

@@ -623,10 +623,13 @@
                             <!-- Dinamikusan feltöltve JavaScriptből -->
                         </div>
 
-                        <!-- Egyéni textúra feltöltés -->
-                        <div style="margin-top:14px; padding-top:10px; border-top:1px solid var(--border-color);">
+                        <!-- Egyéni PBR Anyag Gombok -->
+                        <div style="margin-top:12px; padding-top:10px; border-top:1px solid var(--border-color); display:flex; flex-direction:column; gap:6px;">
+                            <button id="btn-create-pbr-material" class="btn btn-sm btn-primary" style="width:100%; justify-content:center; font-weight:700;">
+                                <span>✨ ➕ Új PBR Anyag Létrehozása</span>
+                            </button>
                             <label class="btn btn-sm" style="width:100%; justify-content:center; cursor:pointer;">
-                                <span>📷 Saját Textúra Feltöltése...</span>
+                                <span>📷 Gyors Képfeltöltés...</span>
                                 <input type="file" id="input-custom-texture" accept="image/*" style="display:none;">
                             </label>
                         </div>
@@ -1498,7 +1501,233 @@
         </div>
     </div>
 
+    <!-- PBR Anyagszerkesztő Modális Ablak (PBR Material Editor Studio) -->
+    <div id="modal-pbr-editor" class="modal-overlay" style="display:none;">
+        <div class="modal-container" style="max-width: 980px; width: 95%;">
+            <div class="modal-header">
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="font-size:18px;">🎨</span>
+                    <div>
+                        <div class="modal-title" style="margin:0;">PBR Anyagszerkesztő Stúdió</div>
+                        <div style="font-size:11px; color:var(--text-muted);">Valós idejű fizikai alapú renderelés (PBR), térképek, érdeség és fémesség</div>
+                    </div>
+                </div>
+                <button class="modal-close-btn btn-close-modal" data-modal="modal-pbr-editor">✕</button>
+            </div>
+
+            <div class="modal-body pbr-editor-body" style="display:grid; grid-template-columns: 340px 1fr; gap:16px; max-height:75vh; overflow-y:auto;">
+                
+                <!-- BAL OSZLOP: 3D Anyag Előnézet és Modell Váltó -->
+                <div class="pbr-preview-column" style="display:flex; flex-direction:column; gap:10px; background:#11151e; border:1px solid var(--border-color); border-radius:var(--radius-md); padding:12px;">
+                    
+                    <!-- Modell váltó: Gömb vs. 40x70 Bútorlap -->
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="font-size:12px; font-weight:700; color:#38bdf8;">🔍 3D Előnézet</span>
+                        <div class="pbr-preview-model-tabs" style="display:flex; gap:4px; background:rgba(0,0,0,0.3); padding:2px; border-radius:var(--radius-sm);">
+                            <button id="pbr-model-sphere-btn" class="btn btn-sm btn-primary" style="padding:2px 8px; font-size:11px;" title="PBR Anyag gömb">🔮 Gömb</button>
+                            <button id="pbr-model-board-btn" class="btn btn-sm" style="padding:2px 8px; font-size:11px;" title="40 × 70 cm élzárt bútorlap">🪵 40×70 Lap</button>
+                        </div>
+                    </div>
+
+                    <!-- 3D Canvas Konténer -->
+                    <div id="pbr-preview-canvas-container" style="width:100%; height:260px; background:#181b24; border-radius:var(--radius-sm); overflow:hidden; position:relative; border:1px solid rgba(255,255,255,0.06); cursor:grab;"></div>
+
+                    <!-- Segédlet & Fény Információ -->
+                    <div style="display:flex; justify-content:space-between; align-items:center; font-size:10px; color:var(--text-muted);">
+                        <span>🖱️ Forgatás: Bal gomb | Zoom: Görgő</span>
+                        <button id="pbr-preview-reset-cam" class="btn btn-sm" style="padding:1px 6px; font-size:10px;">🔄 Kamera Reset</button>
+                    </div>
+
+                    <!-- Anyag Alapadatok -->
+                    <div style="margin-top:auto; padding-top:10px; border-top:1px solid var(--border-color); display:flex; flex-direction:column; gap:8px;">
+                        <div>
+                            <label class="form-label" style="font-size:11px;">Anyag Megnevezése</label>
+                            <input type="text" id="pbr-input-name" class="form-control" value="Egyedi PBR Anyag" placeholder="Pl. Tölgyfa Prémium PBR">
+                        </div>
+                        <div>
+                            <label class="form-label" style="font-size:11px;">Kategória</label>
+                            <select id="pbr-select-category" class="form-control" style="font-size:12px;">
+                                <option value="front">🚪 Front / Bútorlap</option>
+                                <option value="worktop">🪵 Munkalap</option>
+                                <option value="custom">✨ Egyedi Anyag</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- JOBB OSZLOP: PBR Csatornák (Szín, Érdesség, Fémesség, Normal, Tiling, Forgatás) -->
+                <div class="pbr-controls-column" style="display:flex; flex-direction:column; gap:12px;">
+
+                    <!-- 1. ALAPSZÍN (Base Color / Albedo Map) -->
+                    <div class="pbr-channel-card">
+                        <div class="pbr-channel-header">
+                            <span class="pbr-channel-title">🎨 1. Alapszín & Színkép (Base Color / Albedo)</span>
+                        </div>
+                        <div class="pbr-channel-body">
+                            <!-- Képfeltöltés & Előnézet -->
+                            <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+                                <div id="pbr-thumb-albedo" class="pbr-map-thumb" title="Nincs színkép feltöltve">
+                                    <span>Nincs</span>
+                                </div>
+                                <div style="flex:1;">
+                                    <label class="btn btn-sm" style="cursor:pointer; display:inline-flex; margin-bottom:4px;">
+                                        <span>📁 Színkép Feltöltése (JPG/PNG)...</span>
+                                        <input type="file" id="pbr-file-albedo" accept="image/*" style="display:none;">
+                                    </label>
+                                    <button id="pbr-btn-clear-albedo" class="btn btn-sm" style="display:none; color:#ef4444; border-color:rgba(239,68,68,0.3);">✕ Kép Törlése</button>
+                                    <div style="font-size:10px; color:var(--text-muted);">Albedo / Diffuse textúratérkép faerezetekhez vagy mintákhoz.</div>
+                                </div>
+                            </div>
+
+                            <!-- RGB / Hex Színválasztó -->
+                            <div style="display:flex; align-items:center; gap:10px; background:rgba(0,0,0,0.2); padding:6px 10px; border-radius:var(--radius-sm); border:1px solid var(--border-color);">
+                                <label style="font-size:11px; font-weight:600; color:var(--text-secondary);">RGB Alapszín:</label>
+                                <input type="color" id="pbr-color-picker" value="#ffffff" style="width:36px; height:26px; border:none; cursor:pointer; background:transparent; padding:0;">
+                                <input type="text" id="pbr-hex-input" class="form-control" value="#ffffff" style="width:90px; font-size:12px; font-family:monospace; text-transform:uppercase;">
+                                <button id="pbr-btn-reset-color" class="btn btn-sm" style="padding:2px 8px; font-size:10px;" title="Visszaállítás fehérre">Fehér</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 2. ÉRDESSÉG (Roughness Map & Slider) -->
+                    <div class="pbr-channel-card">
+                        <div class="pbr-channel-header">
+                            <span class="pbr-channel-title">🌫️ 2. Érdesség (Roughness / Matt vs. Fényes)</span>
+                            <span id="pbr-val-roughness" class="pbr-badge-val">0.65</span>
+                        </div>
+                        <div class="pbr-channel-body">
+                            <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+                                <div id="pbr-thumb-roughness" class="pbr-map-thumb"><span>Nincs</span></div>
+                                <div style="flex:1;">
+                                    <label class="btn btn-sm" style="cursor:pointer; display:inline-flex; margin-bottom:4px;">
+                                        <span>📁 Roughness Térkép...</span>
+                                        <input type="file" id="pbr-file-roughness" accept="image/*" style="display:none;">
+                                    </label>
+                                    <button id="pbr-btn-clear-roughness" class="btn btn-sm" style="display:none; color:#ef4444;">✕ Törlés</button>
+                                </div>
+                            </div>
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <span style="font-size:10px; color:var(--text-muted); width:50px;">Tükör (0)</span>
+                                <input type="range" id="pbr-slider-roughness" min="0" max="1" step="0.01" value="0.65" class="form-range" style="flex:1;">
+                                <span style="font-size:10px; color:var(--text-muted); width:50px; text-align:right;">Matt (1.0)</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 3. FÉMESSÉG (Metalness Map & Slider) -->
+                    <div class="pbr-channel-card">
+                        <div class="pbr-channel-header">
+                            <span class="pbr-channel-title">🪙 3. Fémesség (Metalness / Nem-fém vs. Tiszta Fém)</span>
+                            <span id="pbr-val-metalness" class="pbr-badge-val">0.05</span>
+                        </div>
+                        <div class="pbr-channel-body">
+                            <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+                                <div id="pbr-thumb-metalness" class="pbr-map-thumb"><span>Nincs</span></div>
+                                <div style="flex:1;">
+                                    <label class="btn btn-sm" style="cursor:pointer; display:inline-flex; margin-bottom:4px;">
+                                        <span>📁 Metalness Térkép...</span>
+                                        <input type="file" id="pbr-file-metalness" accept="image/*" style="display:none;">
+                                    </label>
+                                    <button id="pbr-btn-clear-metalness" class="btn btn-sm" style="display:none; color:#ef4444;">✕ Törlés</button>
+                                </div>
+                            </div>
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <span style="font-size:10px; color:var(--text-muted); width:50px;">Fa / Nem fém</span>
+                                <input type="range" id="pbr-slider-metalness" min="0" max="1" step="0.01" value="0.05" class="form-range" style="flex:1;">
+                                <span style="font-size:10px; color:var(--text-muted); width:50px; text-align:right;">Fém / Króm</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 4. NORMAL MAP (Domborulat & Mélység) -->
+                    <div class="pbr-channel-card">
+                        <div class="pbr-channel-header">
+                            <span class="pbr-channel-title">🌊 4. Normal Map (3D Felületi Domborulat)</span>
+                            <span id="pbr-val-normal-scale" class="pbr-badge-val">1.00</span>
+                        </div>
+                        <div class="pbr-channel-body">
+                            <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+                                <div id="pbr-thumb-normal" class="pbr-map-thumb"><span>Nincs</span></div>
+                                <div style="flex:1;">
+                                    <label class="btn btn-sm" style="cursor:pointer; display:inline-flex; margin-bottom:4px;">
+                                        <span>📁 Normal Map Feltöltése (RGB)...</span>
+                                        <input type="file" id="pbr-file-normal" accept="image/*" style="display:none;">
+                                    </label>
+                                    <button id="pbr-btn-clear-normal" class="btn btn-sm" style="display:none; color:#ef4444;">✕ Törlés</button>
+                                </div>
+                            </div>
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <span style="font-size:10px; color:var(--text-muted); width:50px;">Sima (0.0)</span>
+                                <input type="range" id="pbr-slider-normal-scale" min="0" max="3" step="0.05" value="1.0" class="form-range" style="flex:1;">
+                                <span style="font-size:10px; color:var(--text-muted); width:50px; text-align:right;">Mély (3.0)</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 5. TILING & ROTATION (Méretezés & Szálirány) -->
+                    <div class="pbr-channel-card">
+                        <div class="pbr-channel-header">
+                            <span class="pbr-channel-title">📐 5. UV Tiling (Lépték) & Szálirány (Forgatás)</span>
+                        </div>
+                        <div class="pbr-channel-body" style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
+                            <!-- Tiling X / Y -->
+                            <div>
+                                <div style="display:flex; justify-content:space-between; margin-bottom:2px;">
+                                    <label class="form-label" style="font-size:10px;">Tiling (Ismétlődés / Lépték)</label>
+                                    <span id="pbr-val-tiling" style="font-size:10px; font-weight:700; color:#38bdf8;">1.0 × 1.0</span>
+                                </div>
+                                <div style="display:flex; gap:6px;">
+                                    <div style="flex:1;">
+                                        <input type="range" id="pbr-slider-tiling-x" min="0.1" max="8" step="0.1" value="1.0" class="form-range" title="Tiling X">
+                                    </div>
+                                    <div style="flex:1;">
+                                        <input type="range" id="pbr-slider-tiling-y" min="0.1" max="8" step="0.1" value="1.0" class="form-range" title="Tiling Y">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Forgatás / Szálirány -->
+                            <div>
+                                <div style="display:flex; justify-content:space-between; margin-bottom:2px;">
+                                    <label class="form-label" style="font-size:10px;">Szálirány / Forgatás</label>
+                                    <span id="pbr-val-rotation" style="font-size:10px; font-weight:700; color:#38bdf8;">0°</span>
+                                </div>
+                                <div style="display:flex; align-items:center; gap:6px;">
+                                    <input type="range" id="pbr-slider-rotation" min="0" max="360" step="1" value="0" class="form-range" style="flex:1;">
+                                    <div style="display:flex; gap:2px;">
+                                        <button class="btn btn-sm btn-pbr-rot" data-rot="0" style="padding:1px 5px; font-size:9px;">0°</button>
+                                        <button class="btn btn-sm btn-pbr-rot" data-rot="90" style="padding:1px 5px; font-size:9px;">90°</button>
+                                        <button class="btn btn-sm btn-pbr-rot" data-rot="180" style="padding:1px 5px; font-size:9px;">180°</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+
+            </div>
+
+            <div class="modal-footer" style="display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                    <button id="pbr-btn-delete" class="btn" style="color:#ef4444; border-color:rgba(239,68,68,0.3); display:none;">
+                        <span>🗑️ Anyag Törlése</span>
+                    </button>
+                </div>
+                <div style="display:flex; gap:8px;">
+                    <button class="btn btn-close-modal" data-modal="modal-pbr-editor">Mégse</button>
+                    <button id="pbr-btn-save" class="btn" style="background:var(--bg-card);">
+                        <span>💾 Mentés</span>
+                    </button>
+                    <button id="pbr-btn-save-apply" class="btn btn-primary">
+                        <span>✨ Mentés & Alkalmazás</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Betöltjük a fő alkalmazás scriptet (Működik közvetlen fájlmegnyitással és webszerverrel is) -->
-    <script src="js/bundle.js?v=3.9"></script>
+    <script src="js/bundle.js?v=4.0"></script>
 </body>
 </html>

@@ -9,6 +9,7 @@ export const MaterialManager = {
 
     init() {
         this.generateDefaultTextures();
+        this.loadSavedCustomMaterials();
     },
 
     /**
@@ -387,7 +388,32 @@ export const MaterialManager = {
     },
 
     /**
-     * Egyedi képfájl betöltése és Three.js textúrává alakítása
+     * Helper Three.js Textúra létrehozása DataURL-ből vagy képből, Tiling és Rotation támogatással
+     */
+    createPBRTextureFromDataUrl(dataUrl, repeatX = 1, repeatY = 1, rotationDeg = 0) {
+        if (!dataUrl) return null;
+        const loader = new THREE.TextureLoader();
+        const tex = loader.load(dataUrl, (t) => {
+            t.wrapS = THREE.RepeatWrapping;
+            t.wrapT = THREE.RepeatWrapping;
+            t.repeat.set(repeatX, repeatY);
+            t.center.set(0.5, 0.5);
+            t.rotation = (rotationDeg * Math.PI) / 180;
+            t.generateMipmaps = true;
+            t.minFilter = THREE.LinearMipmapLinearFilter;
+            t.magFilter = THREE.LinearFilter;
+            t.needsUpdate = true;
+        });
+        tex.wrapS = THREE.RepeatWrapping;
+        tex.wrapT = THREE.RepeatWrapping;
+        tex.repeat.set(repeatX, repeatY);
+        tex.center.set(0.5, 0.5);
+        tex.rotation = (rotationDeg * Math.PI) / 180;
+        return tex;
+    },
+
+    /**
+     * Egyedi PBR képfájl betöltése és Three.js textúrává alakítása
      */
     loadCustomImage(file, name) {
         return new Promise((resolve, reject) => {
@@ -395,25 +421,31 @@ export const MaterialManager = {
             reader.onload = (e) => {
                 const img = new Image();
                 img.onload = () => {
-                    const texture = new THREE.Texture(img);
-                    texture.wrapS = THREE.RepeatWrapping;
-                    texture.wrapT = THREE.RepeatWrapping;
-                    texture.needsUpdate = true;
-
                     const id = 'custom_' + Date.now();
                     const customTex = {
                         id: id,
                         name: name || file.name.replace(/\.[^/.]+$/, ''),
-                        texture: texture,
+                        color: '#ffffff',
                         dataUrl: e.target.result,
                         roughness: 0.6,
+                        roughnessMapDataUrl: null,
                         metalness: 0.05,
-                        color: '#ffffff',
+                        metalnessMapDataUrl: null,
+                        normalMapDataUrl: null,
+                        normalScale: 1.0,
+                        repeatX: 1.0,
+                        repeatY: 1.0,
+                        rotation: 0,
+                        category: 'front',
+                        type: 'custom',
                         isCustom: true
                     };
 
+                    customTex.texture = this.createPBRTextureFromDataUrl(customTex.dataUrl, 1, 1, 0);
+
                     this.textures[id] = customTex;
                     this.customTextures[id] = customTex;
+                    this.saveCustomMaterialsToStorage();
                     resolve(customTex);
                 };
                 img.onerror = reject;
@@ -425,51 +457,237 @@ export const MaterialManager = {
     },
 
     /**
-     * Three.js MeshStandardMaterial létrehozása
+     * Mentett egyedi és módosított anyagok betöltése LocalStorage-ből
+     */
+    loadSavedCustomMaterials() {
+        try {
+            const saved = localStorage.getItem('butortervezo_custom_pbr_materials');
+            if (saved) {
+                const list = JSON.parse(saved);
+                if (Array.isArray(list)) {
+                    list.forEach(m => {
+                        this.registerPBRMaterial(m, false);
+                    });
+                }
+            }
+        } catch (err) {
+            console.warn('Nem sikerült betölteni a mentett PBR anyagokat:', err);
+        }
+    },
+
+    /**
+     * Egyedi anyagok mentése LocalStorage-be
+     */
+    saveCustomMaterialsToStorage() {
+        try {
+            const toSave = [];
+            Object.keys(this.textures).forEach(k => {
+                const t = this.textures[k];
+                if (t && (t.isCustom || t.isModified)) {
+                    toSave.push({
+                        id: t.id,
+                        name: t.name,
+                        category: t.category || 'front',
+                        type: t.type || 'custom',
+                        color: t.color || '#ffffff',
+                        dataUrl: t.dataUrl || null,
+                        roughness: t.roughness !== undefined ? t.roughness : 0.65,
+                        roughnessMapDataUrl: t.roughnessMapDataUrl || null,
+                        metalness: t.metalness !== undefined ? t.metalness : 0.05,
+                        metalnessMapDataUrl: t.metalnessMapDataUrl || null,
+                        normalMapDataUrl: t.normalMapDataUrl || null,
+                        normalScale: t.normalScale !== undefined ? t.normalScale : 1.0,
+                        repeatX: t.repeatX !== undefined ? t.repeatX : 1.0,
+                        repeatY: t.repeatY !== undefined ? t.repeatY : 1.0,
+                        rotation: t.rotation !== undefined ? t.rotation : 0,
+                        isCustom: !!t.isCustom,
+                        isModified: !!t.isModified
+                    });
+                }
+            });
+            localStorage.setItem('butortervezo_custom_pbr_materials', JSON.stringify(toSave));
+        } catch (err) {
+            console.warn('Nem sikerült elmenteni a PBR anyagokat a helyi tárhelybe:', err);
+        }
+    },
+
+    /**
+     * PBR anyag regisztrálása és Three.js textúrák felépítése
+     */
+    registerPBRMaterial(config, shouldSave = true) {
+        const id = config.id || ('pbr_' + Date.now());
+        const repeatX = config.repeatX !== undefined ? Number(config.repeatX) : 1.0;
+        const repeatY = config.repeatY !== undefined ? Number(config.repeatY) : 1.0;
+        const rotation = config.rotation !== undefined ? Number(config.rotation) : 0;
+
+        const matObj = {
+            id: id,
+            name: config.name || 'Új PBR Anyag',
+            category: config.category || 'front',
+            type: config.type || 'custom',
+            color: config.color || '#ffffff',
+            dataUrl: config.dataUrl || null,
+            roughness: config.roughness !== undefined ? Number(config.roughness) : 0.65,
+            roughnessMapDataUrl: config.roughnessMapDataUrl || null,
+            metalness: config.metalness !== undefined ? Number(config.metalness) : 0.05,
+            metalnessMapDataUrl: config.metalnessMapDataUrl || null,
+            normalMapDataUrl: config.normalMapDataUrl || null,
+            normalScale: config.normalScale !== undefined ? Number(config.normalScale) : 1.0,
+            repeatX: repeatX,
+            repeatY: repeatY,
+            rotation: rotation,
+            isCustom: config.isCustom !== undefined ? config.isCustom : true,
+            isModified: config.isModified !== undefined ? config.isModified : false
+        };
+
+        // Textúrák inicializálása
+        if (matObj.dataUrl) {
+            matObj.texture = this.createPBRTextureFromDataUrl(matObj.dataUrl, repeatX, repeatY, rotation);
+        } else {
+            matObj.texture = null;
+        }
+
+        if (matObj.roughnessMapDataUrl) {
+            matObj.roughnessMap = this.createPBRTextureFromDataUrl(matObj.roughnessMapDataUrl, repeatX, repeatY, rotation);
+        } else {
+            matObj.roughnessMap = null;
+        }
+
+        if (matObj.metalnessMapDataUrl) {
+            matObj.metalnessMap = this.createPBRTextureFromDataUrl(matObj.metalnessMapDataUrl, repeatX, repeatY, rotation);
+        } else {
+            matObj.metalnessMap = null;
+        }
+
+        if (matObj.normalMapDataUrl) {
+            matObj.normalMap = this.createPBRTextureFromDataUrl(matObj.normalMapDataUrl, repeatX, repeatY, rotation);
+        } else {
+            matObj.normalMap = null;
+        }
+
+        this.textures[id] = matObj;
+        if (matObj.isCustom) {
+            this.customTextures[id] = matObj;
+        }
+
+        if (shouldSave) {
+            this.saveCustomMaterialsToStorage();
+        }
+
+        return matObj;
+    },
+
+    /**
+     * PBR anyag mentése vagy frissítése
+     */
+    savePBRMaterial(config) {
+        return this.registerPBRMaterial(config, true);
+    },
+
+    /**
+     * PBR anyag törlése
+     */
+    deletePBRMaterial(id) {
+        if (this.textures[id]) {
+            delete this.textures[id];
+            delete this.customTextures[id];
+            this.saveCustomMaterialsToStorage();
+            return true;
+        }
+        return false;
+    },
+
+    /**
+     * Three.js MeshStandardMaterial létrehozása a teljes PBR pipeline-nal
      */
     createMaterial(textureKey = 'front_k001') {
         const texInfo = this.textures[textureKey] || this.textures['front_k001'] || this.textures['white_matte'];
         
+        const repeatX = texInfo && texInfo.repeatX !== undefined ? texInfo.repeatX : 1.0;
+        const repeatY = texInfo && texInfo.repeatY !== undefined ? texInfo.repeatY : 1.0;
+        const rotation = texInfo && texInfo.rotation !== undefined ? texInfo.rotation : 0;
+
+        const color = texInfo && texInfo.color ? new THREE.Color(texInfo.color) : new THREE.Color('#ffffff');
+        const roughness = texInfo && texInfo.roughness !== undefined ? texInfo.roughness : 0.65;
+        const metalness = texInfo && texInfo.metalness !== undefined ? texInfo.metalness : 0.05;
+        const normalScale = texInfo && texInfo.normalScale !== undefined ? texInfo.normalScale : 1.0;
+
         const mat = new THREE.MeshStandardMaterial({
-            map: texInfo ? texInfo.texture : null,
-            roughness: texInfo && texInfo.roughness !== undefined ? texInfo.roughness : 0.65,
-            metalness: texInfo && texInfo.metalness !== undefined ? texInfo.metalness : 0.05,
+            color: color,
+            map: texInfo && texInfo.dataUrl ? this.createPBRTextureFromDataUrl(texInfo.dataUrl, repeatX, repeatY, rotation) : (texInfo ? texInfo.texture : null),
+            roughness: roughness,
+            roughnessMap: texInfo && texInfo.roughnessMapDataUrl ? this.createPBRTextureFromDataUrl(texInfo.roughnessMapDataUrl, repeatX, repeatY, rotation) : (texInfo ? texInfo.roughnessMap : null),
+            metalness: metalness,
+            metalnessMap: texInfo && texInfo.metalnessMapDataUrl ? this.createPBRTextureFromDataUrl(texInfo.metalnessMapDataUrl, repeatX, repeatY, rotation) : (texInfo ? texInfo.metalnessMap : null),
+            normalMap: texInfo && texInfo.normalMapDataUrl ? this.createPBRTextureFromDataUrl(texInfo.normalMapDataUrl, repeatX, repeatY, rotation) : (texInfo ? texInfo.normalMap : null),
             side: THREE.DoubleSide
         });
 
+        if (mat.normalMap) {
+            mat.normalScale.set(normalScale, normalScale);
+        }
+
         mat.userData = {
             textureKey: textureKey,
-            textureName: texInfo ? texInfo.name : 'Alapértelmezett'
+            textureName: texInfo ? texInfo.name : 'Alapértelmezett',
+            repeatX: repeatX,
+            repeatY: repeatY,
+            rotation: rotation
         };
 
         return mat;
     },
 
     /**
-     * Kijelölt lap textúrájának frissítése
+     * Kijelölt lap / mesh textúrájának és PBR paramétereinek frissítése
      */
-    applyTextureToMesh(mesh, textureKey, repeatX = 1, repeatY = 1) {
+    applyTextureToMesh(mesh, textureKey, repeatX = null, repeatY = null, rotationDeg = null) {
         if (!mesh) return;
         const texInfo = this.textures[textureKey] || this.textures['front_k001'] || this.textures['white_matte'];
         if (!texInfo) return;
-        
-        const clonedTexture = texInfo.texture ? texInfo.texture.clone() : null;
-        if (clonedTexture) {
-            clonedTexture.wrapS = THREE.RepeatWrapping;
-            clonedTexture.wrapT = THREE.RepeatWrapping;
-            clonedTexture.repeat.set(repeatX, repeatY);
-            clonedTexture.needsUpdate = true;
-        }
 
-        mesh.material = new THREE.MeshStandardMaterial({
-            map: clonedTexture,
-            roughness: texInfo.roughness,
-            metalness: texInfo.metalness
+        const rx = repeatX !== null ? repeatX : (texInfo.repeatX !== undefined ? texInfo.repeatX : 1.0);
+        const ry = repeatY !== null ? repeatY : (texInfo.repeatY !== undefined ? texInfo.repeatY : 1.0);
+        const rot = rotationDeg !== null ? rotationDeg : (texInfo.rotation !== undefined ? texInfo.rotation : 0);
+
+        const color = texInfo.color ? new THREE.Color(texInfo.color) : new THREE.Color('#ffffff');
+        const roughness = texInfo.roughness !== undefined ? texInfo.roughness : 0.65;
+        const metalness = texInfo.metalness !== undefined ? texInfo.metalness : 0.05;
+        const normalScale = texInfo.normalScale !== undefined ? texInfo.normalScale : 1.0;
+
+        const colorMap = texInfo.dataUrl ? this.createPBRTextureFromDataUrl(texInfo.dataUrl, rx, ry, rot) : (texInfo.texture ? texInfo.texture.clone() : null);
+        const roughnessMap = texInfo.roughnessMapDataUrl ? this.createPBRTextureFromDataUrl(texInfo.roughnessMapDataUrl, rx, ry, rot) : (texInfo.roughnessMap ? texInfo.roughnessMap.clone() : null);
+        const metalnessMap = texInfo.metalnessMapDataUrl ? this.createPBRTextureFromDataUrl(texInfo.metalnessMapDataUrl, rx, ry, rot) : (texInfo.metalnessMap ? texInfo.metalnessMap.clone() : null);
+        const normalMap = texInfo.normalMapDataUrl ? this.createPBRTextureFromDataUrl(texInfo.normalMapDataUrl, rx, ry, rot) : (texInfo.normalMap ? texInfo.normalMap.clone() : null);
+
+        const newMat = new THREE.MeshStandardMaterial({
+            color: color,
+            map: colorMap,
+            roughness: roughness,
+            roughnessMap: roughnessMap,
+            metalness: metalness,
+            metalnessMap: metalnessMap,
+            normalMap: normalMap,
+            side: THREE.DoubleSide
         });
 
+        if (newMat.normalMap) {
+            newMat.normalScale.set(normalScale, normalScale);
+        }
+
+        newMat.userData = {
+            textureKey: textureKey,
+            textureName: texInfo.name,
+            repeatX: rx,
+            repeatY: ry,
+            rotation: rot
+        };
+
+        mesh.material = newMat;
         mesh.userData.textureKey = textureKey;
         mesh.userData.textureName = texInfo.name;
-        mesh.userData.repeatX = repeatX;
-        mesh.userData.repeatY = repeatY;
+        mesh.userData.repeatX = rx;
+        mesh.userData.repeatY = ry;
+        mesh.userData.rotation = rot;
     }
 };
