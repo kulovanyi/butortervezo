@@ -17,6 +17,14 @@
     <script src="libs/fflate.min.js"></script>
     <script src="libs/RGBELoader.js"></script>
     <script src="libs/EXRLoader.js"></script>
+    <!-- Three.js Post-Processing & SSAO (Valós idejű kontakt árnyékok és mélységi árnyalás) -->
+    <script src="libs/EffectComposer.js"></script>
+    <script src="libs/RenderPass.js"></script>
+    <script src="libs/ShaderPass.js"></script>
+    <script src="libs/CopyShader.js"></script>
+    <script src="libs/SSAOShader.js"></script>
+    <script src="libs/SimplexNoise.js"></script>
+    <script src="libs/SSAOPass.js"></script>
     <!-- Google Firebase SDK (Ingyenes valós idejű felhő szinkronizáció) -->
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
@@ -398,48 +406,6 @@
                         </button>
                     </div>
 
-                    <!-- KIJELÖLT TALAJ / PADLÓ BEÁLLÍTÁSAI -->
-                    <div class="panel-section" id="floor-properties-panel" style="display:none; background:rgba(30, 41, 59, 0.5); border-left:3px solid #38bdf8;">
-                        <div class="panel-section-title" style="color:#38bdf8;">
-                            <span>🏡 Talaj / Padló Beállításai</span>
-                            <label style="display:flex; align-items:center; gap:6px; font-size:11px; cursor:pointer;">
-                                <input type="checkbox" id="check-floor-visible" checked style="accent-color:#38bdf8; cursor:pointer;">
-                                <span>Látható</span>
-                            </label>
-                        </div>
-
-                        <!-- Színválasztó -->
-                        <div class="form-group" style="margin-bottom:8px;">
-                            <label class="form-label">Padló Alapszín</label>
-                            <div style="display:flex; align-items:center; gap:8px;">
-                                <input type="color" id="floor-color-picker" value="#242936" style="width:36px; height:28px; border:none; cursor:pointer; background:transparent;">
-                                <input type="text" id="floor-color-hex" class="form-control" value="#242936" style="width:90px; font-size:11px; font-family:monospace; text-transform:uppercase;">
-                                <button id="btn-reset-floor-color" class="btn btn-sm" style="padding:2px 8px; font-size:10px;">Alaphelyzet</button>
-                            </div>
-                        </div>
-
-                        <!-- Aktuális Anyag / Textúra -->
-                        <div class="form-group" style="margin-bottom:8px;">
-                            <label class="form-label">Alkalmazott Textúra</label>
-                            <div style="display:flex; align-items:center; justify-content:space-between; background:var(--bg-panel); padding:6px 8px; border-radius:4px; border:1px solid var(--border-color);">
-                                <span id="floor-material-name" style="font-size:11px; font-weight:600; color:#fff;">Egyszínű Sötétszürke</span>
-                                <button id="btn-clear-floor-texture" class="btn btn-sm" style="padding:2px 6px; font-size:10px; color:#ef4444;" title="Textúra törlése">✕</button>
-                            </div>
-                            <div style="font-size:10px; color:var(--text-muted); margin-top:4px;">
-                                💡 Kattints az <strong>Anyagok</strong> fülre bármelyik fa, kő vagy munkalap padlóra alkalmazásához!
-                            </div>
-                        </div>
-
-                        <!-- Tiling / Ismétlődés csúszka -->
-                        <div class="form-group">
-                            <div style="display:flex; justify-content:space-between; margin-bottom:2px;">
-                                <label class="form-label" style="font-size:11px;">Mintázat Léptéke (Tiling)</label>
-                                <span id="floor-val-tiling" style="font-size:11px; font-weight:700; color:#38bdf8;">6 × 6</span>
-                            </div>
-                            <input type="range" id="floor-slider-tiling" min="1" max="24" step="0.5" value="6" class="form-range" style="width:100%;">
-                        </div>
-                    </div>
-
                     <!-- KIJELÖLT EGYEDI LAP TULAJDONSÁGAI -->
                     <div class="panel-section" id="board-properties-panel" style="display:none;">
                         <div class="panel-section-title">
@@ -666,9 +632,6 @@
                         <div style="display:flex; gap:4px; margin-bottom:8px;">
                             <button id="btn-apply-tex-selected" class="btn btn-sm btn-primary" style="flex:1; padding:4px 4px; font-size:10px;">
                                 Kijelöltre
-                            </button>
-                            <button id="btn-apply-tex-floor" class="btn btn-sm" style="flex:1; padding:4px 4px; font-size:10px;" title="Textúra alkalmazása a padlóra">
-                                🏡 Padlóra
                             </button>
                             <button id="btn-apply-tex-all" class="btn btn-sm" style="flex:1; padding:4px 4px; font-size:10px;">
                                 Mindre

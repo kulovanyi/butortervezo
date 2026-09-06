@@ -1167,17 +1167,16 @@ class Scene3D {
         this.currentHdrEnvMap = null;
         this.isHdriLoading = false;
 
-        // 3D Padló (Talaj) állapot
-        this.floorMesh = null;
-        this.floorMaterial = null;
-        this.floorColor = '#242936';
-        this.floorTiling = 6;
-        this.floorTextureKey = null;
+        // Post-Processing & SSAO (Ambient Occlusion a belső falfelületek és sarkok mélységi árnyékolásához)
+        this.composer = null;
+        this.renderPass = null;
+        this.ssaoPass = null;
 
         this.renderer = null;
         this.controls = null;
         this.transformControls = null;
         this.gridHelper = null;
+        this.shadowPlane = null;
         this.raycaster = new THREE.Raycaster();
         this.mouse = new THREE.Vector2();
         this.isPointerDown = false;
@@ -1232,7 +1231,7 @@ class Scene3D {
 
         this.camera = this.perspCamera;
 
-        // 3. Renderelő
+        // 3. Renderelő fizikai tónusleképezéssel
         this.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
         this.renderer.setSize(width, height);
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -1261,7 +1260,7 @@ class Scene3D {
         // 5. Fények
         this.setupLights();
 
-        // 6. Padlórács és segédvonalak
+        // 6. Padlórács és árnyéksík
         this.setupGround();
 
         // 7. TransformControls (Gizmo)
@@ -1279,69 +1278,84 @@ class Scene3D {
             this.loadHdri(this.hdriList[0]);
         }
 
-        // 11. Render loop
+        // 11. Post-Processing & SSAO (Valós idejű sarok- és belső árnyalás)
+        this.setupPostProcessing(width, height);
+
+        // 12. Render loop
         this.animate = this.animate.bind(this);
         requestAnimationFrame(this.animate);
     }
 
     setupLights() {
-        const hemiLight = new THREE.HemisphereLight('#ffffff', '#333945', 0.65);
-        hemiLight.position.set(0, 3000, 0);
-        this.scene.add(hemiLight);
+        // 1. Lágy égbolt-talaj ellenfény (nagyon alacsony intenzitás, hogy a szekrény belseje sötét maradjon)
+        this.hemiLight = new THREE.HemisphereLight('#f8fafc', '#0f172a', 0.14);
+        this.hemiLight.position.set(0, 3000, 0);
+        this.scene.add(this.hemiLight);
 
-        const dirLight = new THREE.DirectionalLight('#ffffff', 0.85);
-        dirLight.position.set(1500, 2500, 1800);
-        dirLight.castShadow = true;
-        dirLight.shadow.mapSize.width = 2048;
-        dirLight.shadow.mapSize.height = 2048;
-        dirLight.shadow.camera.near = 500;
-        dirLight.shadow.camera.far = 7000;
-        const d = 1500;
-        dirLight.shadow.camera.left = -d;
-        dirLight.shadow.camera.right = d;
-        dirLight.shadow.camera.top = d;
-        dirLight.shadow.camera.bottom = -d;
-        dirLight.shadow.bias = -0.0005;
-        this.scene.add(dirLight);
+        // 2. Fő Fényforrás (Key Light) - 4096-os felbontású, éles PCFSoft kontakt árnyékokkal
+        this.dirLight = new THREE.DirectionalLight('#ffffff', 1.25);
+        this.dirLight.position.set(1800, 2600, 2000);
+        this.dirLight.castShadow = true;
+        this.dirLight.shadow.mapSize.width = 4096;
+        this.dirLight.shadow.mapSize.height = 4096;
+        this.dirLight.shadow.camera.near = 200;
+        this.dirLight.shadow.camera.far = 9000;
+        const d = 1800;
+        this.dirLight.shadow.camera.left = -d;
+        this.dirLight.shadow.camera.right = d;
+        this.dirLight.shadow.camera.top = d;
+        this.dirLight.shadow.camera.bottom = -d;
+        this.dirLight.shadow.bias = -0.0001;
+        this.dirLight.shadow.normalBias = 0.04; // Megszünteti a fény átszivárgását a bútorlap illesztéseknél
+        this.scene.add(this.dirLight);
 
-        const fillLight = new THREE.DirectionalLight('#a6c8ff', 0.35);
-        fillLight.position.set(-1500, 1500, -1200);
-        this.scene.add(fillLight);
+        // 3. Elölről érkező derítő fény (Fill Light) - lágy, elölről jön, így NEM világítja át a bútor hátfalát
+        this.fillLight = new THREE.DirectionalLight('#e2e8f0', 0.15);
+        this.fillLight.position.set(-1600, 1400, 1600);
+        this.scene.add(this.fillLight);
 
-        const backLight = new THREE.DirectionalLight('#ffffff', 0.25);
-        backLight.position.set(0, 1000, -2000);
-        this.scene.add(backLight);
+        // 4. Enyhe peremfény (Rim Light)
+        this.backLight = new THREE.DirectionalLight('#94a3b8', 0.08);
+        this.backLight.position.set(0, 1500, -2200);
+        this.scene.add(this.backLight);
     }
 
     setupGround() {
-        const size = 12000;
+        const size = 6000;
         const divisions = 60;
         this.gridHelper = new THREE.GridHelper(size, divisions, '#4a5568', '#2d3748');
-        this.gridHelper.position.y = 0.05;
+        this.gridHelper.position.y = 0;
         this.scene.add(this.gridHelper);
 
-        // 3D Talaj / Padló Mesh
-        const floorGeo = new THREE.PlaneGeometry(size, size);
-        this.floorMaterial = new THREE.MeshStandardMaterial({
-            color: new THREE.Color(this.floorColor),
-            roughness: 0.85,
-            metalness: 0.1,
-            side: THREE.FrontSide
-        });
-        this.floorMesh = new THREE.Mesh(floorGeo, this.floorMaterial);
-        this.floorMesh.rotation.x = -Math.PI / 2;
-        this.floorMesh.position.y = 0;
-        this.floorMesh.receiveShadow = true;
-        this.floorMesh.userData = { isFloor: true, name: 'Padló' };
-        this.scene.add(this.floorMesh);
-
+        // Lágy kontakt árnyékfogó sík a rácson
         const shadowPlaneGeo = new THREE.PlaneGeometry(size, size);
-        const shadowPlaneMat = new THREE.ShadowMaterial({ opacity: 0.28 });
-        const shadowPlane = new THREE.Mesh(shadowPlaneGeo, shadowPlaneMat);
-        shadowPlane.rotation.x = -Math.PI / 2;
-        shadowPlane.position.y = 0.02;
-        shadowPlane.receiveShadow = true;
-        this.scene.add(shadowPlane);
+        const shadowPlaneMat = new THREE.ShadowMaterial({ opacity: 0.32 });
+        this.shadowPlane = new THREE.Mesh(shadowPlaneGeo, shadowPlaneMat);
+        this.shadowPlane.rotation.x = -Math.PI / 2;
+        this.shadowPlane.position.y = -0.1;
+        this.shadowPlane.receiveShadow = true;
+        this.scene.add(this.shadowPlane);
+    }
+
+    setupPostProcessing(width, height) {
+        if (typeof THREE.EffectComposer === 'undefined' || typeof THREE.SSAOPass === 'undefined') {
+            return;
+        }
+        try {
+            this.composer = new THREE.EffectComposer(this.renderer);
+            this.renderPass = new THREE.RenderPass(this.scene, this.camera);
+            this.composer.addPass(this.renderPass);
+
+            this.ssaoPass = new THREE.SSAOPass(this.scene, this.camera, width, height);
+            this.ssaoPass.kernelRadius = 28;
+            this.ssaoPass.minDistance = 0.001;
+            this.ssaoPass.maxDistance = 0.15;
+            this.ssaoPass.output = THREE.SSAOPass.OUTPUT.Default;
+            this.composer.addPass(this.ssaoPass);
+        } catch (err) {
+            console.warn('Post-processing inicializálás nem sikerült, fallback normál renderre:', err);
+            this.composer = null;
+        }
     }
 
     setupTransformControls() {
@@ -1552,14 +1566,6 @@ class Scene3D {
                 this.selectBoard(target);
             }
         } else {
-            // Ellenőrizzük, hogy a padlóra (talajra) kattintott-e a felhasználó
-            if (this.floorMesh && this.floorMesh.visible && !isMultiModifier) {
-                const floorIntersects = this.raycaster.intersectObject(this.floorMesh, false);
-                if (floorIntersects.length > 0) {
-                    this.selectBoard(this.floorMesh);
-                    return;
-                }
-            }
             if (!this.transformControls.dragging) {
                 this.selectBoard(null);
             }
@@ -1695,9 +1701,7 @@ class Scene3D {
 
         this.clearAllHighlights();
 
-        if (target && target.userData && target.userData.isFloor) {
-            this.transformControls.detach();
-        } else if (target) {
+        if (target) {
             this.transformControls.attach(target);
             const isGroupTarget = target.isGroup && target.userData && (target.userData.isCorpus || target.userData.isCustomGroup);
             const lineColor = isGroupTarget ? '#f59e0b' : '#38bdf8';
@@ -2135,18 +2139,23 @@ class Scene3D {
             this.scene.environment = null;
             this.scene.background = new THREE.Color('#14171f');
             this.renderer.toneMappingExposure = 1.0;
+            if (this.hemiLight) this.hemiLight.intensity = 0.35;
+            if (this.dirLight) this.dirLight.intensity = 0.8;
             if (this.gridHelper) this.gridHelper.visible = true;
-            if (this.floorMesh) this.floorMesh.visible = false;
+            if (this.shadowPlane) this.shadowPlane.visible = false;
         } else if (this.currentRenderMode === 'shading') {
-            // Shading: HDRI bevilágítás és tükröződés, de semleges stúdió háttér
+            // Shading: HDRI bevilágítás és tükröződés, semleges stúdió háttér, mély belső szekrény árnyékok
             const env = this.currentHdrEnvMap || this.getOrCreateStudioEnvMap();
             this.scene.environment = env;
             this.scene.background = new THREE.Color('#181b24');
-            this.renderer.toneMappingExposure = 1.15;
+            this.renderer.toneMappingExposure = 1.1;
+            if (this.hemiLight) this.hemiLight.intensity = 0.12;
+            if (this.dirLight) this.dirLight.intensity = 1.25;
+            if (this.fillLight) this.fillLight.intensity = 0.14;
             if (this.gridHelper) this.gridHelper.visible = true;
-            if (this.floorMesh) this.floorMesh.visible = true;
+            if (this.shadowPlane) this.shadowPlane.visible = true;
         } else if (this.currentRenderMode === 'realtime') {
-            // Realtime: HDRI megvilágítás + HDRI 360° panoráma háttér a 3D térben
+            // Realtime: HDRI fotó-környezet, 360° panoráma háttér, valósághű bevilágítás és mélységi árnyékok
             const env = this.currentHdrEnvMap || this.getOrCreateStudioEnvMap();
             this.scene.environment = env;
             if (this.currentHdrTexture) {
@@ -2154,9 +2163,12 @@ class Scene3D {
             } else {
                 this.scene.background = env;
             }
-            this.renderer.toneMappingExposure = 1.25;
+            this.renderer.toneMappingExposure = 1.15;
+            if (this.hemiLight) this.hemiLight.intensity = 0.10;
+            if (this.dirLight) this.dirLight.intensity = 1.30;
+            if (this.fillLight) this.fillLight.intensity = 0.12;
             if (this.gridHelper) this.gridHelper.visible = false;
-            if (this.floorMesh) this.floorMesh.visible = true;
+            if (this.shadowPlane) this.shadowPlane.visible = true;
         }
 
         // 2. Bútorlapok anyagainak és éleinek frissítése
@@ -2189,106 +2201,6 @@ class Scene3D {
                 }
             }
         });
-    }
-
-    // ==========================================
-    // 3D TALAJ / PADLÓ METÓDUSOK
-    // ==========================================
-
-    setFloorVisible(visible) {
-        if (this.floorMesh) {
-            this.floorMesh.visible = !!visible;
-        }
-    }
-
-    setFloorColor(colorHex) {
-        this.floorColor = colorHex;
-        if (this.floorMaterial) {
-            this.floorMaterial.color.set(colorHex);
-            this.floorMaterial.needsUpdate = true;
-        }
-    }
-
-    setFloorMaterial(textureKey, repeat = this.floorTiling) {
-        this.floorTextureKey = textureKey;
-        if (!this.floorMaterial) return;
-
-        if (!textureKey) {
-            this.clearFloorTexture();
-            return;
-        }
-
-        if (typeof MaterialManager !== 'undefined') {
-            const pbr = MaterialManager.materials ? MaterialManager.materials[textureKey] : null;
-            if (pbr) {
-                if (pbr.color) this.floorMaterial.color.set(pbr.color);
-                this.floorMaterial.roughness = pbr.roughness !== undefined ? pbr.roughness : 0.85;
-                this.floorMaterial.metalness = pbr.metalness !== undefined ? pbr.metalness : 0.1;
-
-                const loader = new THREE.TextureLoader();
-                const applyTexMap = (mapUrl, mapProp) => {
-                    if (mapUrl) {
-                        loader.load(mapUrl, (tex) => {
-                            tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-                            tex.repeat.set(repeat, repeat);
-                            this.floorMaterial[mapProp] = tex;
-                            this.floorMaterial.needsUpdate = true;
-                        });
-                    } else {
-                        if (this.floorMaterial[mapProp]) {
-                            this.floorMaterial[mapProp].dispose();
-                            this.floorMaterial[mapProp] = null;
-                        }
-                    }
-                };
-
-                applyTexMap(pbr.albedoUrl || pbr.diffuseUrl || pbr.url, 'map');
-                applyTexMap(pbr.roughnessUrl, 'roughnessMap');
-                applyTexMap(pbr.normalUrl, 'normalMap');
-                applyTexMap(pbr.metalnessUrl, 'metalnessMap');
-                this.floorMaterial.needsUpdate = true;
-                return;
-            }
-
-            const legacyTex = MaterialManager.textures ? MaterialManager.textures[textureKey] : null;
-            if (legacyTex && legacyTex.url) {
-                const loader = new THREE.TextureLoader();
-                loader.load(legacyTex.url, (tex) => {
-                    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-                    tex.repeat.set(repeat, repeat);
-                    this.floorMaterial.map = tex;
-                    this.floorMaterial.needsUpdate = true;
-                });
-            }
-        }
-    }
-
-    setFloorTiling(repeat) {
-        this.floorTiling = Number(repeat) || 6;
-        if (!this.floorMaterial) return;
-        ['map', 'roughnessMap', 'normalMap', 'metalnessMap'].forEach(prop => {
-            if (this.floorMaterial[prop]) {
-                this.floorMaterial[prop].wrapS = this.floorMaterial[prop].wrapT = THREE.RepeatWrapping;
-                this.floorMaterial[prop].repeat.set(this.floorTiling, this.floorTiling);
-                this.floorMaterial[prop].needsUpdate = true;
-            }
-        });
-    }
-
-    clearFloorTexture() {
-        this.floorTextureKey = null;
-        if (this.floorMaterial) {
-            ['map', 'roughnessMap', 'normalMap', 'metalnessMap'].forEach(prop => {
-                if (this.floorMaterial[prop]) {
-                    this.floorMaterial[prop].dispose();
-                    this.floorMaterial[prop] = null;
-                }
-            });
-            this.floorMaterial.color.set(this.floorColor || '#242936');
-            this.floorMaterial.roughness = 0.85;
-            this.floorMaterial.metalness = 0.1;
-            this.floorMaterial.needsUpdate = true;
-        }
     }
 
     updateDimensionVisualizer() {
@@ -2530,6 +2442,13 @@ class Scene3D {
         }
 
         this.renderer.setSize(width, height);
+
+        if (this.composer) {
+            this.composer.setSize(width, height);
+        }
+        if (this.ssaoPass) {
+            this.ssaoPass.setSize(width, height);
+        }
     }
 
     /**
@@ -2825,7 +2744,13 @@ class Scene3D {
             }
         }
 
-        this.renderer.render(this.scene, this.camera);
+        if (this.composer && this.currentRenderMode !== 'wireframe') {
+            if (this.renderPass) this.renderPass.camera = this.camera;
+            if (this.ssaoPass) this.ssaoPass.camera = this.camera;
+            this.composer.render();
+        } else {
+            this.renderer.render(this.scene, this.camera);
+        }
     }
 }
 
@@ -8313,57 +8238,6 @@ class FurnitureApp {
             });
         }
 
-        // 3D Talaj / Padló vezérlők
-        const checkFloorVisible = document.getElementById('check-floor-visible');
-        if (checkFloorVisible) {
-            checkFloorVisible.addEventListener('change', (e) => {
-                this.scene3D.setFloorVisible(e.target.checked);
-            });
-        }
-
-        const floorColorPicker = document.getElementById('floor-color-picker');
-        const floorColorHex = document.getElementById('floor-color-hex');
-        if (floorColorPicker && floorColorHex) {
-            floorColorPicker.addEventListener('input', (e) => {
-                floorColorHex.value = e.target.value.toUpperCase();
-                this.scene3D.setFloorColor(e.target.value);
-            });
-            floorColorHex.addEventListener('change', (e) => {
-                let val = e.target.value.trim();
-                if (!val.startsWith('#')) val = '#' + val;
-                floorColorPicker.value = val;
-                this.scene3D.setFloorColor(val);
-            });
-        }
-
-        const btnResetFloorColor = document.getElementById('btn-reset-floor-color');
-        if (btnResetFloorColor) {
-            btnResetFloorColor.addEventListener('click', () => {
-                if (floorColorPicker) floorColorPicker.value = '#242936';
-                if (floorColorHex) floorColorHex.value = '#242936';
-                this.scene3D.setFloorColor('#242936');
-            });
-        }
-
-        const floorSliderTiling = document.getElementById('floor-slider-tiling');
-        const floorValTiling = document.getElementById('floor-val-tiling');
-        if (floorSliderTiling) {
-            floorSliderTiling.addEventListener('input', (e) => {
-                const val = Number(e.target.value);
-                if (floorValTiling) floorValTiling.textContent = `${val} × ${val}`;
-                this.scene3D.setFloorTiling(val);
-            });
-        }
-
-        const btnClearFloorTex = document.getElementById('btn-clear-floor-texture');
-        if (btnClearFloorTex) {
-            btnClearFloorTex.addEventListener('click', () => {
-                this.scene3D.clearFloorTexture();
-                const floorMatName = document.getElementById('floor-material-name');
-                if (floorMatName) floorMatName.textContent = 'Egyszínű Sötétszürke';
-            });
-        }
-
         // --- Robbantott nézet csúszka ---
         const explodeSlider = document.getElementById('exploded-slider');
         explodeSlider.addEventListener('input', (e) => {
@@ -8786,21 +8660,16 @@ class FurnitureApp {
 
         // --- Textúra alkalmazás célpont gombok ---
         const btnTexSel = document.getElementById('btn-apply-tex-selected');
-        const btnTexFloor = document.getElementById('btn-apply-tex-floor');
         const btnTexAll = document.getElementById('btn-apply-tex-all');
 
         const updateTexTargetButtons = (target) => {
             this.applyTextureTarget = target;
             if (btnTexSel) btnTexSel.classList.toggle('btn-primary', target === 'selected');
-            if (btnTexFloor) btnTexFloor.classList.toggle('btn-primary', target === 'floor');
             if (btnTexAll) btnTexAll.classList.toggle('btn-primary', target === 'all');
         };
 
         if (btnTexSel) {
             btnTexSel.addEventListener('click', () => updateTexTargetButtons('selected'));
-        }
-        if (btnTexFloor) {
-            btnTexFloor.addEventListener('click', () => updateTexTargetButtons('floor'));
         }
         if (btnTexAll) {
             btnTexAll.addEventListener('click', () => updateTexTargetButtons('all'));
@@ -9224,7 +9093,6 @@ class FurnitureApp {
         const btnTabGroup = document.getElementById('btn-tab-group');
         const btnTabDims = document.querySelector('.context-tab-btn[data-context-tab="ctx-tab-dims"]');
 
-        const floorPanel = document.getElementById('floor-properties-panel');
         const corpusPanel = document.getElementById('corpus-properties-panel');
         const boardPanel = document.getElementById('board-properties-panel');
         const groupPanel = document.getElementById('group-properties-panel');
@@ -9265,7 +9133,6 @@ class FurnitureApp {
             if (btnTabSnap) btnTabSnap.style.display = 'none';
             if (btnTabGroup) btnTabGroup.style.display = 'flex';
 
-            if (floorPanel) floorPanel.style.display = 'none';
             if (corpusPanel) corpusPanel.style.display = 'none';
             if (boardPanel) boardPanel.style.display = 'none';
             if (groupPanel) groupPanel.style.display = 'none';
@@ -9300,7 +9167,6 @@ class FurnitureApp {
             if (btnTabSnap) btnTabSnap.style.display = 'none';
             if (btnTabGroup) btnTabGroup.style.display = 'none';
 
-            if (floorPanel) floorPanel.style.display = 'none';
             if (corpusPanel) corpusPanel.style.display = 'none';
             if (boardPanel) boardPanel.style.display = 'block';
             if (groupPanel) groupPanel.style.display = 'none';
@@ -9313,41 +9179,6 @@ class FurnitureApp {
             this.highlightHierarchyItem(null);
             return;
         }
-
-        // 3. HA TALAJ / PADLÓ A KIJELÖLT ELEM
-        if (target.userData && target.userData.isFloor) {
-            this.selectedBoard = null;
-            this.selectedCorpus = null;
-            this.selectedCustomGroup = null;
-
-            if (contextTabsBar) contextTabsBar.style.display = 'flex';
-            if (contextTabContainer) contextTabContainer.style.display = 'flex';
-
-            if (btnTabDims) btnTabDims.style.display = 'flex';
-            if (btnTabSnap) btnTabSnap.style.display = 'none';
-            if (btnTabGroup) btnTabGroup.style.display = 'none';
-
-            if (floorPanel) floorPanel.style.display = 'block';
-            if (corpusPanel) corpusPanel.style.display = 'none';
-            if (boardPanel) boardPanel.style.display = 'none';
-            if (groupPanel) groupPanel.style.display = 'none';
-            if (singleBoardGroupPanel) singleBoardGroupPanel.style.display = 'none';
-            if (multiPanel) multiPanel.style.display = 'none';
-            if (noBoardMsg) noBoardMsg.style.display = 'none';
-            if (boardForm) boardForm.style.display = 'none';
-            if (snappingPanel) snappingPanel.style.display = 'none';
-            if (texturesPanel) texturesPanel.style.display = 'block';
-
-            const activeBtn = document.querySelector('.context-tab-btn.active');
-            if (!activeBtn || activeBtn === btnTabSnap || activeBtn === btnTabGroup) {
-                this.switchContextTab('ctx-tab-dims');
-            }
-
-            this.highlightHierarchyItem(null);
-            return;
-        }
-
-        if (floorPanel) floorPanel.style.display = 'none';
 
         if (contextTabsBar) contextTabsBar.style.display = 'flex';
         if (contextTabContainer) contextTabContainer.style.display = 'flex';
@@ -10280,17 +10111,6 @@ class FurnitureApp {
     applyTexture(textureKey) {
         const texInfo = MaterialManager.textures[textureKey] || MaterialManager.textures['front_k001'];
         const isWorktopTex = texInfo && texInfo.category === 'worktop';
-
-        // 0. TALAJ / PADLÓ CÉLPONT
-        if (this.applyTextureTarget === 'floor' || (this.scene3D.selectedTarget && this.scene3D.selectedTarget.userData && this.scene3D.selectedTarget.userData.isFloor)) {
-            const repeat = this.scene3D.floorTiling || 6;
-            this.scene3D.setFloorMaterial(textureKey, repeat);
-            const floorMatName = document.getElementById('floor-material-name');
-            if (floorMatName) {
-                floorMatName.textContent = texInfo ? texInfo.name : textureKey;
-            }
-            return;
-        }
 
         if (this.applyTextureTarget === 'all') {
             this.boardManager.applyTextureToAll(textureKey);
