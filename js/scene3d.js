@@ -404,13 +404,35 @@ export class Scene3D {
     }
 
     handleRaycastSelect(event) {
+        // Ha a TransformControls gizmoval történt interakció, ne változtassunk a kijelölésen
+        if (this.transformControls && (this.transformControls.dragging || this.transformControls.axis !== null)) {
+            return;
+        }
+
         const rect = this.renderer.domElement.getBoundingClientRect();
         this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
         this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
         this.raycaster.setFromCamera(this.mouse, this.camera);
-        const intersects = this.raycaster.intersectObjects(this.boardMeshes, false);
 
+        // Csak a ténylegesen a 3D színtérben lévő, látható bútorlap mesh-eket vizsgáljuk
+        this.boardMeshes = this.boardMeshes.filter(mesh => {
+            if (!mesh || !mesh.isMesh) return false;
+            let p = mesh.parent;
+            while (p) {
+                if (p === this.scene) return true;
+                p = p.parent;
+            }
+            return false;
+        });
+
+        const activeMeshes = this.boardMeshes.filter(mesh => {
+            if (mesh.visible === false) return false;
+            if (mesh.name === '__selection_outline__' || mesh.name === '__selection_highlight__') return false;
+            return true;
+        });
+
+        const intersects = this.raycaster.intersectObjects(activeMeshes, false);
         const isMultiModifier = event.shiftKey || event.ctrlKey || event.metaKey;
 
         if (intersects.length > 0) {
@@ -424,9 +446,7 @@ export class Scene3D {
                 this.selectBoard(target);
             }
         } else {
-            if (!this.transformControls.dragging) {
-                this.selectBoard(null);
-            }
+            this.selectBoard(null);
         }
     }
 

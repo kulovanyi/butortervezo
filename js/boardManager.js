@@ -609,15 +609,30 @@ export class BoardManager {
 
         // 1. Meglévő mesh-ek eltávolítása a csoportból és a globális listákból
         const childrenToRemove = [...corpusGroup.children];
+        const removedMeshes = new Set();
         childrenToRemove.forEach(child => {
             corpusGroup.remove(child);
-            if (child.geometry) child.geometry.dispose();
-            if (child.material) {
-                if (child.material.map) child.material.map.dispose();
-                child.material.dispose();
-            }
+            child.traverse(c => {
+                if (c.isMesh) {
+                    removedMeshes.add(c);
+                    if (c.geometry) c.geometry.dispose();
+                    if (c.material) {
+                        if (Array.isArray(c.material)) {
+                            c.material.forEach(m => {
+                                if (m.map) m.map.dispose();
+                                m.dispose();
+                            });
+                        } else {
+                            if (c.material.map) c.material.map.dispose();
+                            c.material.dispose();
+                        }
+                    }
+                }
+            });
+            removedMeshes.add(child);
         });
 
+        this.scene3D.boardMeshes = this.scene3D.boardMeshes.filter(m => !removedMeshes.has(m) && m.userData?.corpusId !== corpusId);
         this.boards = this.boards.filter(b => b.corpusId !== corpusId);
 
         // 2. Új konfiguráció mentése
@@ -784,44 +799,30 @@ export class BoardManager {
         }
 
         const children = [...corpusGroup.children];
+        const removedMeshes = new Set();
         children.forEach(mesh => {
             corpusGroup.remove(mesh);
-            if (mesh.isGroup || (mesh.children && mesh.children.length > 0)) {
-                mesh.traverse(child => {
-                    if (child.isMesh) {
-                        if (child.geometry) child.geometry.dispose();
-                        if (child.material) {
-                            if (Array.isArray(child.material)) {
-                                child.material.forEach(m => {
-                                    if (m.map) m.map.dispose();
-                                    m.dispose();
-                                });
-                            } else {
-                                if (child.material.map) child.material.map.dispose();
-                                child.material.dispose();
-                            }
+            mesh.traverse(child => {
+                if (child.isMesh) {
+                    removedMeshes.add(child);
+                    if (child.geometry) child.geometry.dispose();
+                    if (child.material) {
+                        if (Array.isArray(child.material)) {
+                            child.material.forEach(m => {
+                                if (m.map) m.map.dispose();
+                                m.dispose();
+                            });
+                        } else {
+                            if (child.material.map) child.material.map.dispose();
+                            child.material.dispose();
                         }
                     }
-                });
-            } else {
-                if (mesh.geometry) mesh.geometry.dispose();
-                if (mesh.material) {
-                    if (Array.isArray(mesh.material)) {
-                        mesh.material.forEach(m => {
-                            if (m.map) m.map.dispose();
-                            m.dispose();
-                        });
-                    } else {
-                        if (mesh.material.map) mesh.material.map.dispose();
-                        mesh.material.dispose();
-                    }
                 }
-            }
-
-            const meshIdx = this.scene3D.boardMeshes.indexOf(mesh);
-            if (meshIdx > -1) this.scene3D.boardMeshes.splice(meshIdx, 1);
+            });
+            removedMeshes.add(mesh);
         });
 
+        this.scene3D.boardMeshes = this.scene3D.boardMeshes.filter(m => !removedMeshes.has(m) && m.userData?.corpusId !== corpusId);
         this.boards = this.boards.filter(b => b.corpusId !== corpusId);
         this.scene3D.scene.remove(corpusGroup);
         this.corpora.splice(corpusIdx, 1);
@@ -1579,47 +1580,31 @@ export class BoardManager {
 
         if (board.mesh) {
             this.scene3D.scene.remove(board.mesh);
-            if (board.mesh.isGroup || (board.mesh.children && board.mesh.children.length > 0)) {
-                board.mesh.traverse(child => {
-                    if (child.isMesh) {
-                        if (child.geometry) child.geometry.dispose();
-                        if (child.material) {
-                            if (Array.isArray(child.material)) {
-                                child.material.forEach(m => {
-                                    if (m.map) m.map.dispose();
-                                    m.dispose();
-                                });
-                            } else {
-                                if (child.material.map) child.material.map.dispose();
-                                child.material.dispose();
-                            }
+            const removedMeshes = new Set();
+            board.mesh.traverse(child => {
+                if (child.isMesh) {
+                    removedMeshes.add(child);
+                    if (child.geometry) child.geometry.dispose();
+                    if (child.material) {
+                        if (Array.isArray(child.material)) {
+                            child.material.forEach(m => {
+                                if (m.map) m.map.dispose();
+                                m.dispose();
+                            });
+                        } else {
+                            if (child.material.map) child.material.map.dispose();
+                            child.material.dispose();
                         }
                     }
-                });
-            } else {
-                if (board.mesh.geometry) board.mesh.geometry.dispose();
-                if (board.mesh.material) {
-                    if (Array.isArray(board.mesh.material)) {
-                        board.mesh.material.forEach(m => {
-                            if (m.map) m.map.dispose();
-                            m.dispose();
-                        });
-                    } else {
-                        if (board.mesh.material.map) board.mesh.material.map.dispose();
-                        board.mesh.material.dispose();
-                    }
                 }
-            }
+            });
+            removedMeshes.add(board.mesh);
+            this.scene3D.boardMeshes = this.scene3D.boardMeshes.filter(m => !removedMeshes.has(m) && m.userData?.id !== id);
         }
 
         if (board.outlineMesh) {
             if (board.outlineMesh.geometry) board.outlineMesh.geometry.dispose();
             if (board.outlineMesh.material) board.outlineMesh.material.dispose();
-        }
-
-        const meshIdx = this.scene3D.boardMeshes.indexOf(board.mesh);
-        if (meshIdx > -1) {
-            this.scene3D.boardMeshes.splice(meshIdx, 1);
         }
 
         this.boards.splice(index, 1);
@@ -1691,6 +1676,7 @@ export class BoardManager {
         while (this.boards.length > 0) {
             this.deleteBoard(this.boards[0].id);
         }
+        this.scene3D.boardMeshes = [];
         this.boardCounter = 1;
         this.corpusCounter = 1;
         this.groupCounter = 1;
