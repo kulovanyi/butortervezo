@@ -3018,173 +3018,75 @@ function createCornerCutBoardGeometry(w, h, d, cornerCut) {
 
 /**
  * Saroklevágott Munkalap Geometria Generátor
- * CSAK az elülső fő munkalap él kap 3mm lekerekítést (postforming),
- * míg a 45°-os saroklevágás és a nyitott oldal 90°-os sík (éles) vágás marad.
+ * Az elülső, 45°-os saroklevágott és nyitott oldali élek egyenletes 3mm lekerekítést kapnak (postforming/bevel).
  */
 function createCornerCutWorktopGeometry(w, h, d, radius = 3, cornerCut = {}) {
     const side = cornerCut.side || 'right'; // 'right' | 'left'
     const cornerType = cornerCut.type || 'chamfer'; // 'chamfer' | 'round'
     const cutX = Math.min(Math.max(1, Number(cornerCut.sizeX) || 80), Math.max(1, w - 10));
     const cutZ = Math.min(Math.max(1, Number(cornerCut.sizeZ) || 80), Math.max(1, d - 10));
+    const cutRadius = Math.min(Math.max(1, Number(cornerCut.radius) || Number(cornerCut.sizeX) || 80), Math.max(1, Math.min(w - 10, d - 10)));
     const r = Math.min(Math.max(0, Number(radius) !== undefined ? Number(radius) : 3), Math.min(h / 2 - 0.1, d / 2 - 0.1));
 
-    if (r <= 0.05 || (w - cutX) <= 5) {
+    if (r <= 0.05) {
         return createCornerCutBoardGeometry(w, h, d, cornerCut);
     }
 
     try {
-        const positions = [];
-        const indices = [];
-
+        const shape = new THREE.Shape();
         const hw = w / 2;
         const hd = d / 2;
-        const hh = h / 2;
-
-        const nArc = 3;
-        const profile2D = [];
-
-        // 1. Back bottom
-        profile2D.push({ y: -hh, z: -hd });
-        // 2. Bottom before curve
-        profile2D.push({ y: -hh, z: hd - r });
-        // 3. Bottom-front arc
-        for (let i = 1; i <= nArc; i++) {
-            const angle = (-Math.PI / 2) + (i / nArc) * (Math.PI / 2);
-            profile2D.push({
-                y: -hh + r + r * Math.sin(angle),
-                z: hd - r + r * Math.cos(angle)
-            });
-        }
-        // 4. Top-front arc
-        for (let i = 1; i <= nArc; i++) {
-            const angle = (i / nArc) * (Math.PI / 2);
-            profile2D.push({
-                y: hh - r + r * Math.sin(angle),
-                z: hd - r + r * Math.cos(angle)
-            });
-        }
-        // 5. Back top
-        profile2D.push({ y: hh, z: -hd });
-
-        const nPts = profile2D.length;
-
-        function addVertex(x, y, z) {
-            positions.push(x, y, z);
-            return (positions.length / 3) - 1;
-        }
-
-        function addQuad(v1, v2, v3, v4) {
-            indices.push(v1, v2, v3, v1, v3, v4);
-        }
-
-        function addTri(v1, v2, v3) {
-            indices.push(v1, v2, v3);
-        }
 
         if (side === 'right') {
-            const xLeft = -hw;
-            const xCutStart = hw - cutX;
-            const xRight = hw;
-            const zBack = -hd;
-            const zCutEnd = hd - cutZ;
-            const zFront = hd;
-
-            const leftIndices = [];
-            for (let i = 0; i < nPts; i++) {
-                leftIndices.push(addVertex(xLeft, profile2D[i].y, profile2D[i].z));
+            // Jobbos végzáró: A nyitott sarok a jobb elülső (+hw, +hd)
+            if (cornerType === 'chamfer') {
+                shape.moveTo(-hw, -hd);              // Bal hátsó sarok
+                shape.lineTo(+hw, -hd);              // Jobb hátsó sarok
+                shape.lineTo(+hw, +hd - cutZ);       // Jobb oldal a levágásig
+                shape.lineTo(+hw - cutX, +hd);       // Levágás az elülső oldalra
+                shape.lineTo(-hw, +hd);              // Bal első sarok
+                shape.lineTo(-hw, -hd);              // Zárás
+            } else {
+                // Lekerekített íves sarok (+hw, +hd)
+                shape.moveTo(-hw, -hd);
+                shape.lineTo(+hw, -hd);
+                shape.lineTo(+hw, +hd - cutRadius);
+                shape.absarc(+hw - cutRadius, +hd - cutRadius, cutRadius, 0, Math.PI / 2, false);
+                shape.lineTo(-hw, +hd);
+                shape.lineTo(-hw, -hd);
             }
-
-            const midIndices = [];
-            for (let i = 0; i < nPts; i++) {
-                midIndices.push(addVertex(xCutStart, profile2D[i].y, profile2D[i].z));
-            }
-
-            for (let i = 0; i < nPts - 1; i++) {
-                addQuad(leftIndices[i], midIndices[i], midIndices[i + 1], leftIndices[i + 1]);
-            }
-            // Back face of main body
-            addQuad(leftIndices[nPts - 1], leftIndices[0], midIndices[0], midIndices[nPts - 1]);
-
-            // Left end cap (Triangulate profile on the left)
-            for (let i = 1; i < nPts - 1; i++) {
-                addTri(leftIndices[0], leftIndices[i + 1], leftIndices[i]);
-            }
-
-            const vTop_midBack = midIndices[nPts - 1];
-            const vTop_midFront = midIndices[nPts - 2];
-            const vTop_rightBack = addVertex(xRight, hh, zBack);
-            const vTop_rightCut = addVertex(xRight, hh, zCutEnd);
-
-            // Top face corner
-            addQuad(vTop_midBack, vTop_midFront, vTop_rightCut, vTop_rightBack);
-
-            const vBot_midBack = midIndices[0];
-            const vBot_midFront = midIndices[1];
-            const vBot_rightBack = addVertex(xRight, -hh, zBack);
-            const vBot_rightCut = addVertex(xRight, -hh, zCutEnd);
-
-            // Bottom face corner
-            addQuad(vBot_midBack, vBot_rightBack, vBot_rightCut, vBot_midFront);
-            // Back face corner
-            addQuad(vTop_midBack, vTop_rightBack, vBot_rightBack, vBot_midBack);
-            // Right side face
-            addQuad(vTop_rightBack, vTop_rightCut, vBot_rightCut, vBot_rightBack);
-            // 45° chamfer vertical face
-            addQuad(vBot_midFront, vBot_rightCut, vTop_rightCut, vTop_midFront);
         } else {
-            const xCutEnd = -hw;
-            const xCutStart = -hw + cutX;
-            const xRight = hw;
-            const zBack = -hd;
-            const zCutSide = hd - cutZ;
-
-            const midIndices = [];
-            for (let i = 0; i < nPts; i++) {
-                midIndices.push(addVertex(xCutStart, profile2D[i].y, profile2D[i].z));
+            // Balos végzáró: A nyitott sarok a bal elülső (-hw, +hd)
+            if (cornerType === 'chamfer') {
+                shape.moveTo(+hw, -hd);              // Jobb hátsó sarok
+                shape.lineTo(+hw, +hd);              // Jobb első sarok
+                shape.lineTo(-hw + cutX, +hd);       // Elülső él a levágásig
+                shape.lineTo(-hw, +hd - cutZ);       // Levágás a bal oldalra
+                shape.lineTo(-hw, -hd);              // Bal hátsó sarok
+                shape.lineTo(+hw, -hd);              // Zárás
+            } else {
+                // Lekerekített íves sarok (-hw, +hd)
+                shape.moveTo(+hw, -hd);
+                shape.lineTo(+hw, +hd);
+                shape.lineTo(-hw + cutRadius, +hd);
+                shape.absarc(-hw + cutRadius, +hd - cutRadius, cutRadius, Math.PI / 2, Math.PI, false);
+                shape.lineTo(-hw, -hd);
+                shape.lineTo(+hw, -hd);
             }
-
-            const rightIndices = [];
-            for (let i = 0; i < nPts; i++) {
-                rightIndices.push(addVertex(xRight, profile2D[i].y, profile2D[i].z));
-            }
-
-            for (let i = 0; i < nPts - 1; i++) {
-                addQuad(midIndices[i], rightIndices[i], rightIndices[i + 1], midIndices[i + 1]);
-            }
-            // Back face of main body
-            addQuad(midIndices[nPts - 1], midIndices[0], rightIndices[0], rightIndices[nPts - 1]);
-
-            // Right end cap
-            for (let i = 1; i < nPts - 1; i++) {
-                addTri(rightIndices[0], rightIndices[i], rightIndices[i + 1]);
-            }
-
-            const vTop_midBack = midIndices[nPts - 1];
-            const vTop_midFront = midIndices[nPts - 2];
-            const vTop_leftBack = addVertex(xCutEnd, hh, zBack);
-            const vTop_leftCut = addVertex(xCutEnd, hh, zCutSide);
-
-            // Top face left corner
-            addQuad(vTop_midBack, vTop_leftBack, vTop_leftCut, vTop_midFront);
-
-            const vBot_midBack = midIndices[0];
-            const vBot_midFront = midIndices[1];
-            const vBot_leftBack = addVertex(xCutEnd, -hh, zBack);
-            const vBot_leftCut = addVertex(xCutEnd, -hh, zCutSide);
-
-            // Bottom face left corner
-            addQuad(vBot_midBack, vBot_midFront, vBot_leftCut, vBot_leftBack);
-            // Back face left corner
-            addQuad(vTop_leftBack, vTop_midBack, vBot_midBack, vBot_leftBack);
-            // Left side face
-            addQuad(vTop_leftCut, vTop_leftBack, vBot_leftBack, vBot_leftCut);
-            // 45° chamfer vertical face
-            addQuad(vTop_midFront, vTop_leftCut, vBot_leftCut, vBot_midFront);
         }
 
-        const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
-        geometry.setIndex(indices);
+        const extrudeSettings = {
+            depth: Math.max(0.1, h - 2 * r),
+            bevelEnabled: true,
+            bevelSegments: 3,
+            bevelSize: r,
+            bevelThickness: r,
+            steps: 1
+        };
+
+        const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+        geometry.rotateX(Math.PI / 2);
+        geometry.center();
         geometry.computeVertexNormals();
         applyBoxUVs(geometry, w, h, d, 800);
         geometry.parameters = { width: w, height: h, depth: d, radius: r, cornerCut, isWorktop: true };
