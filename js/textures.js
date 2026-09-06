@@ -10,6 +10,40 @@ export const MaterialManager = {
     init() {
         this.generateDefaultTextures();
         this.loadSavedCustomMaterials();
+        this.initFirebaseSync();
+    },
+
+    /**
+     * Firebase felhő szinkron figyelő regisztrálása
+     */
+    initFirebaseSync() {
+        if (typeof window !== 'undefined' && window.FirebaseSync) {
+            window.FirebaseSync.onMaterialUpdate((materialsData) => {
+                this.handleCloudMaterialUpdate(materialsData);
+            });
+        }
+    },
+
+    /**
+     * Felhőből érkező PBR anyagok feldolgozása
+     */
+    handleCloudMaterialUpdate(materialsData) {
+        if (!materialsData || typeof materialsData !== 'object') return;
+        let hasChanges = false;
+        Object.keys(materialsData).forEach(id => {
+            const m = materialsData[id];
+            if (m && m.id) {
+                this.registerPBRMaterial(m, false);
+                hasChanges = true;
+            }
+        });
+
+        if (hasChanges) {
+            this.saveCustomMaterialsToStorage();
+            if (typeof window !== 'undefined' && window.app && typeof window.app.renderTextureGrid === 'function') {
+                window.app.renderTextureGrid();
+            }
+        }
     },
 
     /**
@@ -424,7 +458,7 @@ export const MaterialManager = {
                     const id = 'custom_' + Date.now();
                     const customTex = {
                         id: id,
-                        name: name || file.name.replace(/\.[^/.]+$/, ''),
+                        name: name || file.name.replace(/\.[^\/.]+$/, ''),
                         color: '#ffffff',
                         dataUrl: e.target.result,
                         roughness: 0.6,
@@ -581,7 +615,13 @@ export const MaterialManager = {
      * PBR anyag mentése vagy frissítése
      */
     savePBRMaterial(config) {
-        return this.registerPBRMaterial(config, true);
+        const mat = this.registerPBRMaterial(config, true);
+        if (typeof window !== 'undefined' && window.FirebaseSync && window.FirebaseSync.isConnected) {
+            window.FirebaseSync.saveMaterial(mat).catch(err => {
+                console.warn('Firebase material save warning:', err);
+            });
+        }
+        return mat;
     },
 
     /**
@@ -592,6 +632,11 @@ export const MaterialManager = {
             delete this.textures[id];
             delete this.customTextures[id];
             this.saveCustomMaterialsToStorage();
+            if (typeof window !== 'undefined' && window.FirebaseSync && window.FirebaseSync.isConnected) {
+                window.FirebaseSync.deleteMaterial(id).catch(err => {
+                    console.warn('Firebase material delete warning:', err);
+                });
+            }
             return true;
         }
         return false;

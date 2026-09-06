@@ -228,6 +228,9 @@ export class KitchenPreview3D {
         if (btn) {
             btn.classList.toggle('active', this.showWireframe);
         }
+    }
+}
+
 /**
  * 3D Anyag Előnézet és Fizikai Megjelenítés (PBR Preview) Gömb és 40x70 cm Bútorlap modellekkel
  */
@@ -2543,12 +2546,19 @@ class FurnitureApp {
             const clearBtn = document.getElementById(clearBtnId);
 
             if (fileInput) {
-                fileInput.addEventListener('change', (e) => {
+                fileInput.addEventListener('change', async (e) => {
                     const file = e.target.files[0];
                     if (file) {
-                        const reader = new FileReader();
-                        reader.onload = (ev) => {
-                            const dataUrl = ev.target.result;
+                        try {
+                            const dataUrl = (typeof window !== 'undefined' && window.FirebaseSync && window.FirebaseSync.compressImageFile)
+                                ? await window.FirebaseSync.compressImageFile(file, 1024, 1024, 0.85)
+                                : await new Promise((res, rej) => {
+                                    const r = new FileReader();
+                                    r.onload = ev => res(ev.target.result);
+                                    r.onerror = rej;
+                                    r.readAsDataURL(file);
+                                });
+
                             if (this.currentEditingPBR) {
                                 if (channelKey === 'albedo') this.currentEditingPBR.dataUrl = dataUrl;
                                 else if (channelKey === 'roughness') this.currentEditingPBR.roughnessMapDataUrl = dataUrl;
@@ -2558,8 +2568,9 @@ class FurnitureApp {
                                 this.updatePBRMapThumb(channelKey, dataUrl);
                                 if (this.pbrPreview) this.pbrPreview.updateMaterial(this.currentEditingPBR);
                             }
-                        };
-                        reader.readAsDataURL(file);
+                        } catch (err) {
+                            console.error('Képfeltöltési hiba:', err);
+                        }
                     }
                     e.target.value = '';
                 });

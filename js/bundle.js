@@ -18,6 +18,40 @@ const MaterialManager = {
     init() {
         this.generateDefaultTextures();
         this.loadSavedCustomMaterials();
+        this.initFirebaseSync();
+    },
+
+    /**
+     * Firebase felhő szinkron figyelő regisztrálása
+     */
+    initFirebaseSync() {
+        if (typeof window !== 'undefined' && window.FirebaseSync) {
+            window.FirebaseSync.onMaterialUpdate((materialsData) => {
+                this.handleCloudMaterialUpdate(materialsData);
+            });
+        }
+    },
+
+    /**
+     * Felhőből érkező PBR anyagok feldolgozása
+     */
+    handleCloudMaterialUpdate(materialsData) {
+        if (!materialsData || typeof materialsData !== 'object') return;
+        let hasChanges = false;
+        Object.keys(materialsData).forEach(id => {
+            const m = materialsData[id];
+            if (m && m.id) {
+                this.registerPBRMaterial(m, false);
+                hasChanges = true;
+            }
+        });
+
+        if (hasChanges) {
+            this.saveCustomMaterialsToStorage();
+            if (typeof window !== 'undefined' && window.app && typeof window.app.renderTextureGrid === 'function') {
+                window.app.renderTextureGrid();
+            }
+        }
     },
 
     /**
@@ -432,7 +466,7 @@ const MaterialManager = {
                     const id = 'custom_' + Date.now();
                     const customTex = {
                         id: id,
-                        name: name || file.name.replace(/\.[^/.]+$/, ''),
+                        name: name || file.name.replace(/\.[^\/.]+$/, ''),
                         color: '#ffffff',
                         dataUrl: e.target.result,
                         roughness: 0.6,
@@ -589,7 +623,13 @@ const MaterialManager = {
      * PBR anyag mentése vagy frissítése
      */
     savePBRMaterial(config) {
-        return this.registerPBRMaterial(config, true);
+        const mat = this.registerPBRMaterial(config, true);
+        if (typeof window !== 'undefined' && window.FirebaseSync && window.FirebaseSync.isConnected) {
+            window.FirebaseSync.saveMaterial(mat).catch(err => {
+                console.warn('Firebase material save warning:', err);
+            });
+        }
+        return mat;
     },
 
     /**
@@ -600,6 +640,11 @@ const MaterialManager = {
             delete this.textures[id];
             delete this.customTextures[id];
             this.saveCustomMaterialsToStorage();
+            if (typeof window !== 'undefined' && window.FirebaseSync && window.FirebaseSync.isConnected) {
+                window.FirebaseSync.deleteMaterial(id).catch(err => {
+                    console.warn('Firebase material delete warning:', err);
+                });
+            }
             return true;
         }
         return false;
@@ -7344,6 +7389,9 @@ class KitchenPreview3D {
         if (btn) {
             btn.classList.toggle('active', this.showWireframe);
         }
+    }
+}
+
 /**
  * 3D Anyag Előnézet és Fizikai Megjelenítés (PBR Preview) Gömb és 40x70 cm Bútorlap modellekkel
  */
@@ -9659,12 +9707,19 @@ class FurnitureApp {
             const clearBtn = document.getElementById(clearBtnId);
 
             if (fileInput) {
-                fileInput.addEventListener('change', (e) => {
+                fileInput.addEventListener('change', async (e) => {
                     const file = e.target.files[0];
                     if (file) {
-                        const reader = new FileReader();
-                        reader.onload = (ev) => {
-                            const dataUrl = ev.target.result;
+                        try {
+                            const dataUrl = (typeof window !== 'undefined' && window.FirebaseSync && window.FirebaseSync.compressImageFile)
+                                ? await window.FirebaseSync.compressImageFile(file, 1024, 1024, 0.85)
+                                : await new Promise((res, rej) => {
+                                    const r = new FileReader();
+                                    r.onload = ev => res(ev.target.result);
+                                    r.onerror = rej;
+                                    r.readAsDataURL(file);
+                                });
+
                             if (this.currentEditingPBR) {
                                 if (channelKey === 'albedo') this.currentEditingPBR.dataUrl = dataUrl;
                                 else if (channelKey === 'roughness') this.currentEditingPBR.roughnessMapDataUrl = dataUrl;
@@ -9674,8 +9729,9 @@ class FurnitureApp {
                                 this.updatePBRMapThumb(channelKey, dataUrl);
                                 if (this.pbrPreview) this.pbrPreview.updateMaterial(this.currentEditingPBR);
                             }
-                        };
-                        reader.readAsDataURL(file);
+                        } catch (err) {
+                            console.error('Képfeltöltési hiba:', err);
+                        }
                     }
                     e.target.value = '';
                 });
