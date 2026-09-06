@@ -1167,11 +1167,6 @@ class Scene3D {
         this.currentHdrEnvMap = null;
         this.isHdriLoading = false;
 
-        // Post-Processing & SSAO (Ambient Occlusion a belső falfelületek és sarkok mélységi árnyékolásához)
-        this.composer = null;
-        this.renderPass = null;
-        this.ssaoPass = null;
-
         this.renderer = null;
         this.controls = null;
         this.transformControls = null;
@@ -1218,7 +1213,7 @@ class Scene3D {
         this.scene.background = new THREE.Color('#1e222b');
 
         // 2. Dual Kamerarendszer: Perspektivikus (3D) + Ortografikus (2D Műszaki rajz torzításmentes)
-        this.perspCamera = new THREE.PerspectiveCamera(45, aspect, 1, 30000);
+        this.perspCamera = new THREE.PerspectiveCamera(45, aspect, 10, 20000);
         this.perspCamera.position.set(1200, 900, 1600);
 
         const orthoSize = 1000;
@@ -1278,45 +1273,42 @@ class Scene3D {
             this.loadHdri(this.hdriList[0]);
         }
 
-        // 11. Post-Processing & SSAO (Valós idejű sarok- és belső árnyalás)
-        this.setupPostProcessing(width, height);
-
-        // 12. Render loop
+        // 11. Render loop
         this.animate = this.animate.bind(this);
         requestAnimationFrame(this.animate);
     }
 
     setupLights() {
-        // 1. Lágy égbolt-talaj ellenfény (nagyon alacsony intenzitás, hogy a szekrény belseje sötét maradjon)
-        this.hemiLight = new THREE.HemisphereLight('#f8fafc', '#0f172a', 0.14);
+        // 1. Lágy környezeti fény
+        this.hemiLight = new THREE.HemisphereLight('#f8fafc', '#202530', 0.28);
         this.hemiLight.position.set(0, 3000, 0);
         this.scene.add(this.hemiLight);
 
-        // 2. Fő Fényforrás (Key Light) - 4096-os felbontású, éles PCFSoft kontakt árnyékokkal
-        this.dirLight = new THREE.DirectionalLight('#ffffff', 1.25);
-        this.dirLight.position.set(1800, 2600, 2000);
+        // 2. Fő Fényforrás (Key Light) - Tiszta, sima, csíkozódásmentes PCFSoft árnyékokkal
+        this.dirLight = new THREE.DirectionalLight('#ffffff', 1.05);
+        this.dirLight.position.set(1600, 2500, 1800);
         this.dirLight.castShadow = true;
-        this.dirLight.shadow.mapSize.width = 4096;
-        this.dirLight.shadow.mapSize.height = 4096;
-        this.dirLight.shadow.camera.near = 200;
-        this.dirLight.shadow.camera.far = 9000;
-        const d = 1800;
+        this.dirLight.shadow.mapSize.width = 2048;
+        this.dirLight.shadow.mapSize.height = 2048;
+        this.dirLight.shadow.camera.near = 500;
+        this.dirLight.shadow.camera.far = 7500;
+        const d = 1600;
         this.dirLight.shadow.camera.left = -d;
         this.dirLight.shadow.camera.right = d;
         this.dirLight.shadow.camera.top = d;
         this.dirLight.shadow.camera.bottom = -d;
-        this.dirLight.shadow.bias = -0.0001;
-        this.dirLight.shadow.normalBias = 0.04; // Megszünteti a fény átszivárgását a bútorlap illesztéseknél
+        this.dirLight.shadow.bias = -0.0005;
+        this.dirLight.shadow.normalBias = 0.0; // 0 normalBias megszünteti a sávos csíkozódást (shadow acne)
         this.scene.add(this.dirLight);
 
-        // 3. Elölről érkező derítő fény (Fill Light) - lágy, elölről jön, így NEM világítja át a bútor hátfalát
-        this.fillLight = new THREE.DirectionalLight('#e2e8f0', 0.15);
-        this.fillLight.position.set(-1600, 1400, 1600);
+        // 3. Elölről érkező derítő fény (Fill Light)
+        this.fillLight = new THREE.DirectionalLight('#cbd5e1', 0.20);
+        this.fillLight.position.set(-1500, 1500, 1200);
         this.scene.add(this.fillLight);
 
         // 4. Enyhe peremfény (Rim Light)
-        this.backLight = new THREE.DirectionalLight('#94a3b8', 0.08);
-        this.backLight.position.set(0, 1500, -2200);
+        this.backLight = new THREE.DirectionalLight('#ffffff', 0.12);
+        this.backLight.position.set(0, 1000, -2000);
         this.scene.add(this.backLight);
     }
 
@@ -1329,7 +1321,7 @@ class Scene3D {
 
         // Lágy kontakt árnyékfogó sík a rácson
         const shadowPlaneGeo = new THREE.PlaneGeometry(size, size);
-        const shadowPlaneMat = new THREE.ShadowMaterial({ opacity: 0.32 });
+        const shadowPlaneMat = new THREE.ShadowMaterial({ opacity: 0.30 });
         this.shadowPlane = new THREE.Mesh(shadowPlaneGeo, shadowPlaneMat);
         this.shadowPlane.rotation.x = -Math.PI / 2;
         this.shadowPlane.position.y = -0.1;
@@ -2139,23 +2131,24 @@ class Scene3D {
             this.scene.environment = null;
             this.scene.background = new THREE.Color('#14171f');
             this.renderer.toneMappingExposure = 1.0;
-            if (this.hemiLight) this.hemiLight.intensity = 0.35;
-            if (this.dirLight) this.dirLight.intensity = 0.8;
+            if (this.hemiLight) this.hemiLight.intensity = 0.45;
+            if (this.dirLight) this.dirLight.intensity = 0.75;
+            if (this.fillLight) this.fillLight.intensity = 0.15;
             if (this.gridHelper) this.gridHelper.visible = true;
             if (this.shadowPlane) this.shadowPlane.visible = false;
         } else if (this.currentRenderMode === 'shading') {
-            // Shading: HDRI bevilágítás és tükröződés, semleges stúdió háttér, mély belső szekrény árnyékok
-            const env = this.currentHdrEnvMap || this.getOrCreateStudioEnvMap();
+            // Shading: Egyszerű tiszta árnyékok, semleges stúdió háttér, gyors és csíkozódásmentes
+            const env = this.getOrCreateStudioEnvMap();
             this.scene.environment = env;
-            this.scene.background = new THREE.Color('#181b24');
+            this.scene.background = new THREE.Color('#1e222b');
             this.renderer.toneMappingExposure = 1.1;
-            if (this.hemiLight) this.hemiLight.intensity = 0.12;
-            if (this.dirLight) this.dirLight.intensity = 1.25;
-            if (this.fillLight) this.fillLight.intensity = 0.14;
+            if (this.hemiLight) this.hemiLight.intensity = 0.35;
+            if (this.dirLight) this.dirLight.intensity = 0.95;
+            if (this.fillLight) this.fillLight.intensity = 0.22;
             if (this.gridHelper) this.gridHelper.visible = true;
             if (this.shadowPlane) this.shadowPlane.visible = true;
         } else if (this.currentRenderMode === 'realtime') {
-            // Realtime: HDRI fotó-környezet, 360° panoráma háttér, valósághű bevilágítás és mélységi árnyékok
+            // Realtime: HDRI fotó-környezet (textures/hdri/), 360° panoráma háttér, sötétebb belső árnyékokkal
             const env = this.currentHdrEnvMap || this.getOrCreateStudioEnvMap();
             this.scene.environment = env;
             if (this.currentHdrTexture) {
@@ -2164,8 +2157,8 @@ class Scene3D {
                 this.scene.background = env;
             }
             this.renderer.toneMappingExposure = 1.15;
-            if (this.hemiLight) this.hemiLight.intensity = 0.10;
-            if (this.dirLight) this.dirLight.intensity = 1.30;
+            if (this.hemiLight) this.hemiLight.intensity = 0.15; // Sötétebb belső tér!
+            if (this.dirLight) this.dirLight.intensity = 1.25;
             if (this.fillLight) this.fillLight.intensity = 0.12;
             if (this.gridHelper) this.gridHelper.visible = false;
             if (this.shadowPlane) this.shadowPlane.visible = true;
@@ -2442,13 +2435,6 @@ class Scene3D {
         }
 
         this.renderer.setSize(width, height);
-
-        if (this.composer) {
-            this.composer.setSize(width, height);
-        }
-        if (this.ssaoPass) {
-            this.ssaoPass.setSize(width, height);
-        }
     }
 
     /**
@@ -2744,13 +2730,7 @@ class Scene3D {
             }
         }
 
-        if (this.composer && this.currentRenderMode !== 'wireframe') {
-            if (this.renderPass) this.renderPass.camera = this.camera;
-            if (this.ssaoPass) this.ssaoPass.camera = this.camera;
-            this.composer.render();
-        } else {
-            this.renderer.render(this.scene, this.camera);
-        }
+        this.renderer.render(this.scene, this.camera);
     }
 }
 
