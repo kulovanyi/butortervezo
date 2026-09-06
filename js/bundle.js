@@ -2770,16 +2770,16 @@ function applyBoxUVs(geometry, w, h, d, tileSize = 800) {
 
         let u, v;
 
-        if (absX >= absY && absX >= absZ) {
-            // X felület normálvektora (Oldallap nagy síkja: Z-Y sík)
-            u = (z + d / 2) / tileSize;
-            v = (y + h / 2) / tileSize;
-        } else if (absY >= absX && absY >= absZ) {
-            // Y felület normálvektora (Fenéklap, tetőlap, polc nagy síkja: X-Z sík)
+        if (absY >= 0.5) {
+            // Y felület normálvektora (Fenéklap, tetőlap, polc, munkalap felső és alsó síkja: X-Z sík)
             u = (x + w / 2) / tileSize;
             v = (z + d / 2) / tileSize;
+        } else if (absX > absZ) {
+            // X felület normálvektora (Oldallapok: Z-Y sík)
+            u = (z + d / 2) / tileSize;
+            v = (y + h / 2) / tileSize;
         } else {
-            // Z felület normálvektora (Hátfal, ajtó nagy síkja: X-Y sík)
+            // Z felület vagy 45°-os sarokcsapás felülete: X-Y sík
             u = (x + w / 2) / tileSize;
             v = (y + h / 2) / tileSize;
         }
@@ -3083,12 +3083,14 @@ function createCornerCutWorktopGeometry(w, h, d, radius = 3, cornerCut = {}) {
             }
 
             for (let i = 0; i < nPts - 1; i++) {
-                addQuad(leftIndices[i], leftIndices[i + 1], midIndices[i + 1], midIndices[i]);
+                addQuad(leftIndices[i], midIndices[i], midIndices[i + 1], leftIndices[i + 1]);
             }
-            addQuad(midIndices[nPts - 1], leftIndices[nPts - 1], leftIndices[0], midIndices[0]);
+            // Back face of main body
+            addQuad(leftIndices[nPts - 1], leftIndices[0], midIndices[0], midIndices[nPts - 1]);
 
+            // Left end cap (Triangulate profile on the left)
             for (let i = 1; i < nPts - 1; i++) {
-                addTri(leftIndices[0], leftIndices[i], leftIndices[i + 1]);
+                addTri(leftIndices[0], leftIndices[i + 1], leftIndices[i]);
             }
 
             const vTop_midBack = midIndices[nPts - 1];
@@ -3096,17 +3098,22 @@ function createCornerCutWorktopGeometry(w, h, d, radius = 3, cornerCut = {}) {
             const vTop_rightBack = addVertex(xRight, hh, zBack);
             const vTop_rightCut = addVertex(xRight, hh, zCutEnd);
 
-            addQuad(vTop_midBack, vTop_rightBack, vTop_rightCut, vTop_midFront);
+            // Top face corner
+            addQuad(vTop_midBack, vTop_midFront, vTop_rightCut, vTop_rightBack);
 
             const vBot_midBack = midIndices[0];
             const vBot_midFront = midIndices[1];
             const vBot_rightBack = addVertex(xRight, -hh, zBack);
             const vBot_rightCut = addVertex(xRight, -hh, zCutEnd);
 
-            addQuad(vBot_midBack, vBot_midFront, vBot_rightCut, vBot_rightBack);
+            // Bottom face corner
+            addQuad(vBot_midBack, vBot_rightBack, vBot_rightCut, vBot_midFront);
+            // Back face corner
             addQuad(vTop_midBack, vTop_rightBack, vBot_rightBack, vBot_midBack);
+            // Right side face
             addQuad(vTop_rightBack, vTop_rightCut, vBot_rightCut, vBot_rightBack);
-            addQuad(vTop_midFront, vTop_rightCut, vBot_rightCut, vBot_midFront);
+            // 45° chamfer vertical face
+            addQuad(vBot_midFront, vBot_rightCut, vTop_rightCut, vTop_midFront);
         } else {
             const xCutEnd = -hw;
             const xCutStart = -hw + cutX;
@@ -3125,12 +3132,14 @@ function createCornerCutWorktopGeometry(w, h, d, radius = 3, cornerCut = {}) {
             }
 
             for (let i = 0; i < nPts - 1; i++) {
-                addQuad(midIndices[i], midIndices[i + 1], rightIndices[i + 1], rightIndices[i]);
+                addQuad(midIndices[i], rightIndices[i], rightIndices[i + 1], midIndices[i + 1]);
             }
-            addQuad(rightIndices[nPts - 1], midIndices[nPts - 1], midIndices[0], rightIndices[0]);
+            // Back face of main body
+            addQuad(midIndices[nPts - 1], midIndices[0], rightIndices[0], rightIndices[nPts - 1]);
 
+            // Right end cap
             for (let i = 1; i < nPts - 1; i++) {
-                addTri(rightIndices[0], rightIndices[i + 1], rightIndices[i]);
+                addTri(rightIndices[0], rightIndices[i], rightIndices[i + 1]);
             }
 
             const vTop_midBack = midIndices[nPts - 1];
@@ -3138,17 +3147,22 @@ function createCornerCutWorktopGeometry(w, h, d, radius = 3, cornerCut = {}) {
             const vTop_leftBack = addVertex(xCutEnd, hh, zBack);
             const vTop_leftCut = addVertex(xCutEnd, hh, zCutSide);
 
-            addQuad(vTop_midBack, vTop_midFront, vTop_leftCut, vTop_leftBack);
+            // Top face left corner
+            addQuad(vTop_midBack, vTop_leftBack, vTop_leftCut, vTop_midFront);
 
             const vBot_midBack = midIndices[0];
             const vBot_midFront = midIndices[1];
             const vBot_leftBack = addVertex(xCutEnd, -hh, zBack);
             const vBot_leftCut = addVertex(xCutEnd, -hh, zCutSide);
 
-            addQuad(vBot_midBack, vBot_leftBack, vBot_leftCut, vBot_midFront);
+            // Bottom face left corner
+            addQuad(vBot_midBack, vBot_midFront, vBot_leftCut, vBot_leftBack);
+            // Back face left corner
             addQuad(vTop_leftBack, vTop_midBack, vBot_midBack, vBot_leftBack);
+            // Left side face
             addQuad(vTop_leftCut, vTop_leftBack, vBot_leftBack, vBot_leftCut);
-            addQuad(vTop_leftCut, vTop_midFront, vBot_midFront, vBot_leftCut);
+            // 45° chamfer vertical face
+            addQuad(vTop_midFront, vTop_leftCut, vBot_leftCut, vBot_midFront);
         }
 
         const geometry = new THREE.BufferGeometry();
@@ -7134,8 +7148,24 @@ class KitchenCorpusGenerator {
             const wtTh = Number(cfg.worktop.thickness) || 38;
             const overhangF = Number(cfg.worktop.overhangFront !== undefined ? cfg.worktop.overhangFront : 45);
             const overhangB = Number(cfg.worktop.overhangBack !== undefined ? cfg.worktop.overhangBack : 50);
-            const overhangL = Number(cfg.worktop.overhangLeft) || 0;
-            const overhangR = Number(cfg.worktop.overhangRight) || 0;
+            let overhangL = Number(cfg.worktop.overhangLeft !== undefined ? cfg.worktop.overhangLeft : 0);
+            let overhangR = Number(cfg.worktop.overhangRight !== undefined ? cfg.worktop.overhangRight : 0);
+
+            // Végzáró elemnél a nyitott oldalon a munkalap túllógása megegyezik az elülső túllógással (pl. 45mm), így egyenletesen és szépen követi a saroklevágást
+            if (isEndUnit) {
+                if (endSide === 'right') {
+                    overhangR = (cfg.worktop.overhangRight !== undefined && cfg.worktop.overhangRight !== '' && Number(cfg.worktop.overhangRight) > 0)
+                        ? Number(cfg.worktop.overhangRight)
+                        : overhangF;
+                    overhangL = 0;
+                } else {
+                    overhangL = (cfg.worktop.overhangLeft !== undefined && cfg.worktop.overhangLeft !== '' && Number(cfg.worktop.overhangLeft) > 0)
+                        ? Number(cfg.worktop.overhangLeft)
+                        : overhangF;
+                    overhangR = 0;
+                }
+            }
+
             const wtRadius = cfg.worktop?.edgeRadius !== undefined ? Number(cfg.worktop.edgeRadius) : 3;
 
             // A munkalap tényleges mélysége a korpusz mélysége + első és hátsó túllógások

@@ -734,8 +734,24 @@ export class KitchenCorpusGenerator {
             const wtTh = Number(cfg.worktop.thickness) || 38;
             const overhangF = Number(cfg.worktop.overhangFront !== undefined ? cfg.worktop.overhangFront : 45);
             const overhangB = Number(cfg.worktop.overhangBack !== undefined ? cfg.worktop.overhangBack : 50);
-            const overhangL = Number(cfg.worktop.overhangLeft) || 0;
-            const overhangR = Number(cfg.worktop.overhangRight) || 0;
+            let overhangL = Number(cfg.worktop.overhangLeft !== undefined ? cfg.worktop.overhangLeft : 0);
+            let overhangR = Number(cfg.worktop.overhangRight !== undefined ? cfg.worktop.overhangRight : 0);
+
+            // Végzáró elemnél a nyitott oldalon a munkalap túllógása megegyezik az elülső túllógással (pl. 45mm), így egyenletesen és szépen követi a saroklevágást
+            if (isEndUnit) {
+                if (endSide === 'right') {
+                    overhangR = (cfg.worktop.overhangRight !== undefined && cfg.worktop.overhangRight !== '' && Number(cfg.worktop.overhangRight) > 0)
+                        ? Number(cfg.worktop.overhangRight)
+                        : overhangF;
+                    overhangL = 0;
+                } else {
+                    overhangL = (cfg.worktop.overhangLeft !== undefined && cfg.worktop.overhangLeft !== '' && Number(cfg.worktop.overhangLeft) > 0)
+                        ? Number(cfg.worktop.overhangLeft)
+                        : overhangF;
+                    overhangR = 0;
+                }
+            }
+
             const wtRadius = cfg.worktop?.edgeRadius !== undefined ? Number(cfg.worktop.edgeRadius) : 3;
 
             // A munkalap tényleges mélysége a korpusz mélysége + első és hátsó túllógások
