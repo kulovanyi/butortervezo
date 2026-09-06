@@ -1531,6 +1531,15 @@ class FurnitureApp {
             });
         });
 
+        // Alsó elem al-fülek (Sima elem, Végzáró elem, Sarok elem)
+        document.querySelectorAll('.kc-base-subtab-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                const subtab = btn.getAttribute('data-subtab');
+                this.switchBaseCabinetSubtab(subtab);
+            });
+        });
+
         // Gyors méret gombok a konyha varázslóban
         document.querySelectorAll('.btn-kc-w').forEach(btn => {
             btn.addEventListener('click', () => {
@@ -2226,19 +2235,52 @@ class FurnitureApp {
             if (config.shelves.count !== undefined) document.getElementById('kc-shelves-count').value = String(config.shelves.count);
         }
 
-        // Végzáró elem konfiguráció betöltése
-        if (config.endUnit || config.type === 'base_end') {
-            const endCfg = config.endUnit || {};
-            const isEnd = config.type === 'base_end' || !!endCfg.enabled;
-            if (document.getElementById('kc-end-unit-enabled')) document.getElementById('kc-end-unit-enabled').checked = isEnd;
-            if (document.getElementById('kc-end-unit-body')) document.getElementById('kc-end-unit-body').style.display = isEnd ? 'block' : 'none';
-            if (endCfg.side && document.getElementById('kc-end-side')) document.getElementById('kc-end-side').value = endCfg.side;
-            if (endCfg.cornerType && document.getElementById('kc-end-corner-type')) document.getElementById('kc-end-corner-type').value = endCfg.cornerType;
-            if (endCfg.sizeX !== undefined && document.getElementById('kc-end-size-x')) document.getElementById('kc-end-size-x').value = endCfg.sizeX;
-            if (endCfg.sizeZ !== undefined && document.getElementById('kc-end-size-z')) document.getElementById('kc-end-size-z').value = endCfg.sizeZ;
+        // Végzáró elem és Al-fülek konfiguráció betöltése
+        const isEnd = config.type === 'base_end' || !!config.endUnit?.enabled;
+        const tp = config.type || 'base';
+        const subtabsBar = document.getElementById('kc-base-subtabs-bar');
+        const endUnitSec = document.getElementById('wz-sec-endunit');
+        const stretchersSec = document.getElementById('wz-sec-stretchers');
+        const endUnitCheck = document.getElementById('kc-end-unit-enabled');
+        const endUnitBody = document.getElementById('kc-end-unit-body');
+
+        if (tp === 'wall') {
+            if (subtabsBar) subtabsBar.style.display = 'none';
+            document.querySelectorAll('.kc-preset-btn').forEach(b => b.classList.toggle('btn-primary', b.getAttribute('data-type') === 'wall'));
+            if (endUnitSec) endUnitSec.style.display = 'none';
+            if (endUnitCheck) endUnitCheck.checked = false;
+            if (endUnitBody) endUnitBody.style.display = 'none';
+        } else if (tp === 'tall') {
+            if (subtabsBar) subtabsBar.style.display = 'none';
+            document.querySelectorAll('.kc-preset-btn').forEach(b => b.classList.toggle('btn-primary', b.getAttribute('data-type') === 'tall'));
+            if (endUnitSec) endUnitSec.style.display = 'none';
+            if (endUnitCheck) endUnitCheck.checked = false;
+            if (endUnitBody) endUnitBody.style.display = 'none';
         } else {
-            if (document.getElementById('kc-end-unit-enabled')) document.getElementById('kc-end-unit-enabled').checked = false;
-            if (document.getElementById('kc-end-unit-body')) document.getElementById('kc-end-unit-body').style.display = 'none';
+            // Alsó elem
+            if (subtabsBar) subtabsBar.style.display = 'flex';
+            document.querySelectorAll('.kc-preset-btn').forEach(b => b.classList.toggle('btn-primary', b.getAttribute('data-type') === 'base'));
+            document.querySelectorAll('.kc-base-subtab-btn').forEach(b => {
+                const isSub = isEnd ? (b.getAttribute('data-subtab') === 'end_unit') : (b.getAttribute('data-subtab') === 'standard');
+                b.classList.toggle('btn-primary', isSub);
+            });
+
+            if (endUnitCheck) endUnitCheck.checked = isEnd;
+            if (endUnitBody) endUnitBody.style.display = isEnd ? 'block' : 'none';
+            if (endUnitSec) {
+                endUnitSec.style.display = isEnd ? 'block' : 'none';
+                if (isEnd) endUnitSec.classList.add('is-open');
+                else endUnitSec.classList.remove('is-open');
+            }
+            if (stretchersSec) stretchersSec.style.display = isEnd ? 'none' : 'block';
+
+            if (isEnd && config.endUnit) {
+                const endCfg = config.endUnit;
+                if (endCfg.side && document.getElementById('kc-end-side')) document.getElementById('kc-end-side').value = endCfg.side;
+                if (endCfg.cornerType && document.getElementById('kc-end-corner-type')) document.getElementById('kc-end-corner-type').value = endCfg.cornerType;
+                if (endCfg.sizeX !== undefined && document.getElementById('kc-end-size-x')) document.getElementById('kc-end-size-x').value = endCfg.sizeX;
+                if (endCfg.sizeZ !== undefined && document.getElementById('kc-end-size-z')) document.getElementById('kc-end-size-z').value = endCfg.sizeZ;
+            }
         }
 
         // Dinamikus front elemek betöltése
@@ -3616,15 +3658,227 @@ class FurnitureApp {
             }
         });
 
+        const subtabsBar = document.getElementById('kc-base-subtabs-bar');
+        const cornerEmpty = document.getElementById('kc-corner-empty-view');
+        const accordion = document.querySelector('#modal-kitchen-generator .wizard-accordion-container');
+        const endUnitSec = document.getElementById('wz-sec-endunit');
+        const stretchersSec = document.getElementById('wz-sec-stretchers');
+
         if (type === 'base') {
+            if (subtabsBar) subtabsBar.style.display = 'flex';
+            const activeSubtab = document.querySelector('.kc-base-subtab-btn.btn-primary')?.getAttribute('data-subtab') || 'standard';
+            this.switchBaseCabinetSubtab(activeSubtab);
+            return;
+        }
+
+        if (subtabsBar) subtabsBar.style.display = 'none';
+        if (cornerEmpty) cornerEmpty.style.display = 'none';
+        if (accordion) accordion.style.display = 'block';
+        if (endUnitSec) {
+            endUnitSec.style.display = 'none';
+            endUnitSec.classList.remove('is-open');
+        }
+        if (document.getElementById('kc-end-unit-enabled')) document.getElementById('kc-end-unit-enabled').checked = false;
+        if (document.getElementById('kc-end-unit-body')) document.getElementById('kc-end-unit-body').style.display = 'none';
+
+        if (type === 'wall') {
+            if (stretchersSec) stretchersSec.style.display = 'none';
+            document.getElementById('kc-width').value = 600;
+            document.getElementById('kc-height').value = 720;
+            document.getElementById('kc-depth').value = 320;
+            if (document.getElementById('kc-edge-radius')) document.getElementById('kc-edge-radius').value = 1;
+            document.getElementById('kc-top-type').value = 'full_top';
+            if (document.getElementById('kc-stretchers-settings')) document.getElementById('kc-stretchers-settings').style.display = 'none';
+            document.getElementById('kc-back-enabled').checked = true;
+            document.getElementById('kc-back-type').value = 'surface';
+            if (document.getElementById('kc-back-gap')) document.getElementById('kc-back-gap').value = 2.5;
+            if (document.getElementById('kc-back-height')) document.getElementById('kc-back-height').value = 715;
+            if (document.getElementById('kc-back-offset-y')) document.getElementById('kc-back-offset-y').value = 0;
+            const gapContainer = document.getElementById('kc-back-gap-container');
+            const insetContainer = document.getElementById('kc-back-inset-container');
+            const surfaceNotice = document.getElementById('kc-back-surface-notice');
+            if (gapContainer) gapContainer.style.display = 'block';
+            if (insetContainer) insetContainer.style.display = 'none';
+            if (surfaceNotice) surfaceNotice.style.display = 'block';
+            document.getElementById('kc-legs-enabled').checked = false;
+            document.getElementById('kc-plinth-enabled').checked = false;
+            document.getElementById('kc-worktop-enabled').checked = false;
+            document.getElementById('kc-shelves-count').value = '2';
+            document.getElementById('kc-back-inset').value = 15;
+
+            // Felső elem elhelyezése
+            if (!this.editingCorpusId) {
+                const wallCfg = {
+                    width: 600,
+                    height: 720,
+                    depth: 320
+                };
+                const placement = this.getWallCabinetPlacement(wallCfg);
+                this.newCorpusOffsetX = placement.x;
+                this.newCorpusOffsetY = placement.y;
+                this.newCorpusOffsetZ = placement.z;
+                if (this.previewCorpus) {
+                    this.previewCorpus.position.set(placement.x, placement.y, placement.z);
+                    this.previewCorpus.userData.x = placement.x;
+                    this.previewCorpus.userData.y = placement.y;
+                    this.previewCorpus.userData.z = placement.z;
+                }
+            }
+        } else if (type === 'tall') {
+            if (stretchersSec) stretchersSec.style.display = 'none';
+            document.getElementById('kc-width').value = 600;
+            document.getElementById('kc-height').value = 2000;
+            document.getElementById('kc-depth').value = 560;
+            if (document.getElementById('kc-edge-radius')) document.getElementById('kc-edge-radius').value = 1;
+            document.getElementById('kc-top-type').value = 'full_top';
+            if (document.getElementById('kc-stretchers-settings')) document.getElementById('kc-stretchers-settings').style.display = 'none';
+            document.getElementById('kc-back-enabled').checked = true;
+            document.getElementById('kc-back-type').value = 'surface';
+            if (document.getElementById('kc-back-gap')) document.getElementById('kc-back-gap').value = 2.5;
+            if (document.getElementById('kc-back-height')) document.getElementById('kc-back-height').value = 1995;
+            if (document.getElementById('kc-back-offset-y')) document.getElementById('kc-back-offset-y').value = 0;
+            const gapContainer = document.getElementById('kc-back-gap-container');
+            const insetContainer = document.getElementById('kc-back-inset-container');
+            const surfaceNotice = document.getElementById('kc-back-surface-notice');
+            if (gapContainer) gapContainer.style.display = 'block';
+            if (insetContainer) insetContainer.style.display = 'none';
+            if (surfaceNotice) surfaceNotice.style.display = 'block';
+            document.getElementById('kc-legs-enabled').checked = true;
+            document.getElementById('kc-legs-height').value = 100;
+            document.getElementById('kc-plinth-enabled').checked = true;
+            document.getElementById('kc-plinth-inset').value = 20;
+            document.getElementById('kc-worktop-enabled').checked = false;
+            document.getElementById('kc-shelves-count').value = '3';
+
+            if (!this.editingCorpusId) {
+                const currentBounds = this.boardManager.getFurnitureBoundingBox();
+                const initialW = Number(document.getElementById('kc-width').value) || 600;
+                this.newCorpusOffsetX = currentBounds.width > 0 ? (currentBounds.width / 2 + initialW / 2 + 80) : 0;
+                this.newCorpusOffsetY = 0;
+                this.newCorpusOffsetZ = 0;
+                if (this.previewCorpus) {
+                    this.previewCorpus.position.set(this.newCorpusOffsetX, 0, 0);
+                    this.previewCorpus.userData.x = this.newCorpusOffsetX;
+                    this.previewCorpus.userData.y = 0;
+                    this.previewCorpus.userData.z = 0;
+                }
+            }
+        }
+    }
+
+    /**
+     * Alsó Elem Al-Fülek Váltása (Sima elem | Végzáró elem | Sarok elem)
+     */
+    switchBaseCabinetSubtab(subtab) {
+        document.querySelectorAll('.kc-base-subtab-btn').forEach(b => {
+            if (b.getAttribute('data-subtab') === subtab) {
+                b.classList.add('btn-primary');
+            } else {
+                b.classList.remove('btn-primary');
+            }
+        });
+
+        const accordion = document.querySelector('#modal-kitchen-generator .wizard-accordion-container');
+        const cornerEmpty = document.getElementById('kc-corner-empty-view');
+        const endUnitSec = document.getElementById('wz-sec-endunit');
+        const stretchersSec = document.getElementById('wz-sec-stretchers');
+        const endUnitCheck = document.getElementById('kc-end-unit-enabled');
+        const endUnitBody = document.getElementById('kc-end-unit-body');
+        const topTypeSelect = document.getElementById('kc-top-type');
+        const stretchersDiv = document.getElementById('kc-stretchers-settings');
+
+        if (subtab === 'corner') {
+            if (accordion) accordion.style.display = 'none';
+            if (cornerEmpty) cornerEmpty.style.display = 'block';
+            return;
+        }
+
+        if (accordion) accordion.style.display = 'block';
+        if (cornerEmpty) cornerEmpty.style.display = 'none';
+
+        if (subtab === 'end_unit') {
+            document.getElementById('kc-width').value = 350;
+            document.getElementById('kc-height').value = 720;
+            document.getElementById('kc-depth').value = 505;
+            if (document.getElementById('kc-edge-radius')) document.getElementById('kc-edge-radius').value = 1;
+
+            if (endUnitCheck) endUnitCheck.checked = true;
+            if (endUnitBody) endUnitBody.style.display = 'block';
+            if (endUnitSec) {
+                endUnitSec.style.display = 'block';
+                endUnitSec.classList.add('is-open');
+            }
+            if (stretchersSec) stretchersSec.style.display = 'none';
+            if (topTypeSelect) topTypeSelect.value = 'full_top';
+            if (stretchersDiv) stretchersDiv.style.display = 'none';
+
+            if (document.getElementById('kc-end-side') && !document.getElementById('kc-end-side').value) {
+                document.getElementById('kc-end-side').value = 'right';
+            }
+            if (document.getElementById('kc-end-corner-type') && !document.getElementById('kc-end-corner-type').value) {
+                document.getElementById('kc-end-corner-type').value = 'chamfer';
+            }
+            if (document.getElementById('kc-end-size-x')) document.getElementById('kc-end-size-x').value = 80;
+            if (document.getElementById('kc-end-size-z')) document.getElementById('kc-end-size-z').value = 80;
+
+            // Nyitott polcos elem: frontok törlése
+            this.kitchenElements = [];
+            this.renderKitchenElementsUI();
+            if (document.getElementById('kc-shelves-count')) {
+                document.getElementById('kc-shelves-count').value = '2';
+            }
+
+            document.getElementById('kc-back-enabled').checked = true;
+            document.getElementById('kc-back-type').value = 'surface';
+            if (document.getElementById('kc-back-gap')) document.getElementById('kc-back-gap').value = 2.5;
+            if (document.getElementById('kc-back-height')) document.getElementById('kc-back-height').value = 715;
+            if (document.getElementById('kc-back-offset-y')) document.getElementById('kc-back-offset-y').value = 0;
+            const gapContainer = document.getElementById('kc-back-gap-container');
+            const insetContainer = document.getElementById('kc-back-inset-container');
+            const surfaceNotice = document.getElementById('kc-back-surface-notice');
+            if (gapContainer) gapContainer.style.display = 'block';
+            if (insetContainer) insetContainer.style.display = 'none';
+            if (surfaceNotice) surfaceNotice.style.display = 'block';
+            document.getElementById('kc-legs-enabled').checked = true;
+            document.getElementById('kc-legs-height').value = 100;
+            document.getElementById('kc-plinth-enabled').checked = true;
+            document.getElementById('kc-plinth-inset').value = 20;
+            document.getElementById('kc-worktop-enabled').checked = true;
+            document.getElementById('kc-worktop-depth').value = 600;
+            if (document.getElementById('kc-worktop-edge-radius')) document.getElementById('kc-worktop-edge-radius').value = 3;
+            document.getElementById('kc-worktop-overhang-front').value = 45;
+            document.getElementById('kc-worktop-overhang-back').value = 50;
+
+            if (!this.editingCorpusId) {
+                const currentBounds = this.boardManager.getFurnitureBoundingBox();
+                const initialW = Number(document.getElementById('kc-width').value) || 350;
+                this.newCorpusOffsetX = currentBounds.width > 0 ? (currentBounds.width / 2 + initialW / 2 + 80) : 0;
+                this.newCorpusOffsetY = 0;
+                this.newCorpusOffsetZ = 0;
+                if (this.previewCorpus) {
+                    this.previewCorpus.position.set(this.newCorpusOffsetX, 0, 0);
+                    this.previewCorpus.userData.x = this.newCorpusOffsetX;
+                    this.previewCorpus.userData.y = 0;
+                    this.previewCorpus.userData.z = 0;
+                }
+            }
+        } else {
+            // Sima elem
             document.getElementById('kc-width').value = 600;
             document.getElementById('kc-height').value = 720;
             document.getElementById('kc-depth').value = 505;
             if (document.getElementById('kc-edge-radius')) document.getElementById('kc-edge-radius').value = 1;
-            if (document.getElementById('kc-end-unit-enabled')) document.getElementById('kc-end-unit-enabled').checked = false;
-            if (document.getElementById('kc-end-unit-body')) document.getElementById('kc-end-unit-body').style.display = 'none';
-            document.getElementById('kc-top-type').value = 'stretchers';
-            document.getElementById('kc-stretchers-settings').style.display = 'block';
+
+            if (endUnitCheck) endUnitCheck.checked = false;
+            if (endUnitBody) endUnitBody.style.display = 'none';
+            if (endUnitSec) {
+                endUnitSec.style.display = 'none';
+                endUnitSec.classList.remove('is-open');
+            }
+            if (stretchersSec) stretchersSec.style.display = 'block';
+            if (topTypeSelect) topTypeSelect.value = 'stretchers';
+            if (stretchersDiv) stretchersDiv.style.display = 'block';
+
             document.getElementById('kc-fs-enabled').checked = true;
             document.getElementById('kc-fs-inset').value = 0;
             document.getElementById('kc-bs-enabled').checked = true;
@@ -3671,147 +3925,10 @@ class FurnitureApp {
                     this.previewCorpus.userData.z = 0;
                 }
             }
-        } else if (type === 'base_end') {
-            // Alsó Végzáró Elem (Nyitott sarok elem 80x80 levágással/lekerekítéssel)
-            document.getElementById('kc-width').value = 350;
-            document.getElementById('kc-height').value = 720;
-            document.getElementById('kc-depth').value = 505;
-            if (document.getElementById('kc-edge-radius')) document.getElementById('kc-edge-radius').value = 1;
-            
-            if (document.getElementById('kc-end-unit-enabled')) document.getElementById('kc-end-unit-enabled').checked = true;
-            if (document.getElementById('kc-end-unit-body')) document.getElementById('kc-end-unit-body').style.display = 'block';
-            if (document.getElementById('kc-end-side')) document.getElementById('kc-end-side').value = 'right';
-            if (document.getElementById('kc-end-corner-type')) document.getElementById('kc-end-corner-type').value = 'chamfer';
-            if (document.getElementById('kc-end-size-x')) document.getElementById('kc-end-size-x').value = 80;
-            if (document.getElementById('kc-end-size-z')) document.getElementById('kc-end-size-z').value = 80;
-
-            document.getElementById('kc-top-type').value = 'full_top';
-            if (document.getElementById('kc-stretchers-settings')) document.getElementById('kc-stretchers-settings').style.display = 'none';
-            
-            // Nyitott polcos elem: nincsenek front elemek (ajtó/fiók)
-            this.kitchenElements = [];
-            this.renderKitchenElementsUI();
-            document.getElementById('kc-shelves-count').value = '2';
-
-            document.getElementById('kc-back-enabled').checked = true;
-            document.getElementById('kc-back-type').value = 'surface';
-            if (document.getElementById('kc-back-gap')) document.getElementById('kc-back-gap').value = 2.5;
-            if (document.getElementById('kc-back-height')) document.getElementById('kc-back-height').value = 715;
-            if (document.getElementById('kc-back-offset-y')) document.getElementById('kc-back-offset-y').value = 0;
-            const gapContainer = document.getElementById('kc-back-gap-container');
-            const insetContainer = document.getElementById('kc-back-inset-container');
-            const surfaceNotice = document.getElementById('kc-back-surface-notice');
-            if (gapContainer) gapContainer.style.display = 'block';
-            if (insetContainer) insetContainer.style.display = 'none';
-            if (surfaceNotice) surfaceNotice.style.display = 'block';
-            document.getElementById('kc-legs-enabled').checked = true;
-            document.getElementById('kc-legs-height').value = 100;
-            document.getElementById('kc-plinth-enabled').checked = true;
-            document.getElementById('kc-plinth-inset').value = 20;
-            document.getElementById('kc-worktop-enabled').checked = true;
-            document.getElementById('kc-worktop-depth').value = 600;
-            if (document.getElementById('kc-worktop-edge-radius')) document.getElementById('kc-worktop-edge-radius').value = 3;
-            document.getElementById('kc-worktop-overhang-front').value = 45;
-            document.getElementById('kc-worktop-overhang-back').value = 50;
-
-            if (!this.editingCorpusId) {
-                const currentBounds = this.boardManager.getFurnitureBoundingBox();
-                const initialW = Number(document.getElementById('kc-width').value) || 350;
-                this.newCorpusOffsetX = currentBounds.width > 0 ? (currentBounds.width / 2 + initialW / 2 + 80) : 0;
-                this.newCorpusOffsetY = 0;
-                this.newCorpusOffsetZ = 0;
-                if (this.previewCorpus) {
-                    this.previewCorpus.position.set(this.newCorpusOffsetX, 0, 0);
-                    this.previewCorpus.userData.x = this.newCorpusOffsetX;
-                    this.previewCorpus.userData.y = 0;
-                    this.previewCorpus.userData.z = 0;
-                }
-            }
-        } else if (type === 'wall') {
-            document.getElementById('kc-width').value = 600;
-            document.getElementById('kc-height').value = 720;
-            document.getElementById('kc-depth').value = 320;
-            if (document.getElementById('kc-edge-radius')) document.getElementById('kc-edge-radius').value = 1;
-            if (document.getElementById('kc-end-unit-enabled')) document.getElementById('kc-end-unit-enabled').checked = false;
-            if (document.getElementById('kc-end-unit-body')) document.getElementById('kc-end-unit-body').style.display = 'none';
-            document.getElementById('kc-top-type').value = 'full_top';
-            document.getElementById('kc-stretchers-settings').style.display = 'none';
-            document.getElementById('kc-back-enabled').checked = true;
-            document.getElementById('kc-back-type').value = 'surface';
-            if (document.getElementById('kc-back-gap')) document.getElementById('kc-back-gap').value = 2.5;
-            if (document.getElementById('kc-back-height')) document.getElementById('kc-back-height').value = 715;
-            if (document.getElementById('kc-back-offset-y')) document.getElementById('kc-back-offset-y').value = 0;
-            const gapContainer = document.getElementById('kc-back-gap-container');
-            const insetContainer = document.getElementById('kc-back-inset-container');
-            const surfaceNotice = document.getElementById('kc-back-surface-notice');
-            if (gapContainer) gapContainer.style.display = 'block';
-            if (insetContainer) insetContainer.style.display = 'none';
-            if (surfaceNotice) surfaceNotice.style.display = 'block';
-            document.getElementById('kc-legs-enabled').checked = false;
-            document.getElementById('kc-plinth-enabled').checked = false;
-            document.getElementById('kc-worktop-enabled').checked = false;
-            document.getElementById('kc-shelves-count').value = '2';
-            document.getElementById('kc-back-inset').value = 15;
-
-            // Felső elem elhelyezése: mindig egy alsó elem tetejére rakja és a hátuljához igazítsa
-            if (!this.editingCorpusId) {
-                const wallCfg = {
-                    width: 600,
-                    height: 720,
-                    depth: 320
-                };
-                const placement = this.getWallCabinetPlacement(wallCfg);
-                this.newCorpusOffsetX = placement.x;
-                this.newCorpusOffsetY = placement.y;
-                this.newCorpusOffsetZ = placement.z;
-                if (this.previewCorpus) {
-                    this.previewCorpus.position.set(placement.x, placement.y, placement.z);
-                    this.previewCorpus.userData.x = placement.x;
-                    this.previewCorpus.userData.y = placement.y;
-                    this.previewCorpus.userData.z = placement.z;
-                }
-            }
-        } else if (type === 'tall') {
-            document.getElementById('kc-width').value = 600;
-            document.getElementById('kc-height').value = 2000;
-            document.getElementById('kc-depth').value = 560;
-            if (document.getElementById('kc-edge-radius')) document.getElementById('kc-edge-radius').value = 1;
-            if (document.getElementById('kc-end-unit-enabled')) document.getElementById('kc-end-unit-enabled').checked = false;
-            if (document.getElementById('kc-end-unit-body')) document.getElementById('kc-end-unit-body').style.display = 'none';
-            document.getElementById('kc-top-type').value = 'full_top';
-            document.getElementById('kc-stretchers-settings').style.display = 'none';
-            document.getElementById('kc-back-enabled').checked = true;
-            document.getElementById('kc-back-type').value = 'surface';
-            if (document.getElementById('kc-back-gap')) document.getElementById('kc-back-gap').value = 2.5;
-            if (document.getElementById('kc-back-height')) document.getElementById('kc-back-height').value = 1995;
-            if (document.getElementById('kc-back-offset-y')) document.getElementById('kc-back-offset-y').value = 0;
-            const gapContainer = document.getElementById('kc-back-gap-container');
-            const insetContainer = document.getElementById('kc-back-inset-container');
-            const surfaceNotice = document.getElementById('kc-back-surface-notice');
-            if (gapContainer) gapContainer.style.display = 'block';
-            if (insetContainer) insetContainer.style.display = 'none';
-            if (surfaceNotice) surfaceNotice.style.display = 'block';
-            document.getElementById('kc-legs-enabled').checked = true;
-            document.getElementById('kc-legs-height').value = 100;
-            document.getElementById('kc-plinth-enabled').checked = true;
-            document.getElementById('kc-plinth-inset').value = 20;
-            document.getElementById('kc-worktop-enabled').checked = false;
-            document.getElementById('kc-shelves-count').value = '3';
-
-            if (!this.editingCorpusId) {
-                const currentBounds = this.boardManager.getFurnitureBoundingBox();
-                const initialW = Number(document.getElementById('kc-width').value) || 600;
-                this.newCorpusOffsetX = currentBounds.width > 0 ? (currentBounds.width / 2 + initialW / 2 + 80) : 0;
-                this.newCorpusOffsetY = 0;
-                this.newCorpusOffsetZ = 0;
-                if (this.previewCorpus) {
-                    this.previewCorpus.position.set(this.newCorpusOffsetX, 0, 0);
-                    this.previewCorpus.userData.x = this.newCorpusOffsetX;
-                    this.previewCorpus.userData.y = 0;
-                    this.previewCorpus.userData.z = 0;
-                }
-            }
         }
+
+        this.syncKitchenWorktopMath();
+        this.updateKitchenLivePreview();
     }
 
     /**
@@ -3902,8 +4019,8 @@ class FurnitureApp {
         const backHInput = document.getElementById('kc-back-height')?.value;
         const customBackH = (backHInput !== undefined && backHInput !== null && backHInput !== '') ? Number(backHInput) : null;
         const currentType = document.querySelector('.kc-preset-btn.btn-primary')?.getAttribute('data-type') || 'base';
-
-        const endUnitEnabled = document.getElementById('kc-end-unit-enabled') ? document.getElementById('kc-end-unit-enabled').checked : (currentType === 'base_end');
+        const activeSubtab = document.querySelector('.kc-base-subtab-btn.btn-primary')?.getAttribute('data-subtab') || 'standard';
+        const endUnitEnabled = (currentType === 'base' && activeSubtab === 'end_unit') || (document.getElementById('kc-end-unit-enabled') ? document.getElementById('kc-end-unit-enabled').checked : false);
         const endSide = document.getElementById('kc-end-side')?.value || 'right';
         const endCornerType = document.getElementById('kc-end-corner-type')?.value || 'chamfer';
         const endSizeX = Number(document.getElementById('kc-end-size-x')?.value) || 80;

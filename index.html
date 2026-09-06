@@ -1011,20 +1011,39 @@
                 <!-- BAL OSZLOP: PARAMÉTEREK (Görgethető form) -->
                 <div class="kitchen-wizard-left-col">
 
-                    <!-- Gyors Sablonok / Típus választó -->
-                    <div style="display:flex; gap:6px; margin-bottom:16px; background:var(--bg-card); padding:8px; border-radius:var(--radius-sm); border:1px solid var(--border-color);">
-                        <button class="btn btn-sm btn-primary kc-preset-btn" data-type="base" style="flex:1;">
-                            <span>🍳 Alsószekrény</span>
+                    <!-- Gyors Sablonok / Fő Típus választó -->
+                    <div style="display:flex; gap:6px; margin-bottom:10px; background:var(--bg-card); padding:6px; border-radius:var(--radius-sm); border:1px solid var(--border-color);">
+                        <button type="button" class="btn btn-sm btn-primary kc-preset-btn" data-type="base" style="flex:1;">
+                            <span>🍳 Alsó elem</span>
                         </button>
-                        <button class="btn btn-sm kc-preset-btn" data-type="base_end" style="flex:1;">
-                            <span>📐 Alsó Végzáró</span>
+                        <button type="button" class="btn btn-sm kc-preset-btn" data-type="wall" style="flex:1;">
+                            <span>🍽️ Felső elem</span>
                         </button>
-                        <button class="btn btn-sm kc-preset-btn" data-type="wall" style="flex:1;">
-                            <span>🍽️ Felsőszekrény</span>
+                        <button type="button" class="btn btn-sm kc-preset-btn" data-type="tall" style="flex:1;">
+                            <span>🏛️ Magas elem</span>
                         </button>
-                        <button class="btn btn-sm kc-preset-btn" data-type="tall" style="flex:1;">
-                            <span>🏛️ Magas Kamraszekrény</span>
+                    </div>
+
+                    <!-- ALSÓ ELEM AL-FÜLEK (Sima elem | Végzáró elem | Sarok elem) -->
+                    <div id="kc-base-subtabs-bar" style="display:flex; gap:6px; margin-bottom:14px; background:rgba(0,0,0,0.25); padding:4px; border-radius:var(--radius-sm); border:1px solid rgba(255,255,255,0.08);">
+                        <button type="button" class="btn btn-sm btn-primary kc-base-subtab-btn" data-subtab="standard" style="flex:1; font-size:12px; font-weight:600;">
+                            <span>🚪 Sima elem</span>
                         </button>
+                        <button type="button" class="btn btn-sm kc-base-subtab-btn" data-subtab="end_unit" style="flex:1; font-size:12px; font-weight:600;">
+                            <span>📐 Végzáró elem</span>
+                        </button>
+                        <button type="button" class="btn btn-sm kc-base-subtab-btn" data-subtab="corner" style="flex:1; font-size:12px; font-weight:600;">
+                            <span>🔄 Sarok elem</span>
+                        </button>
+                    </div>
+
+                    <!-- SAROK ELEM ÜRES NÉZET (Egyelőre fejlesztés alatt) -->
+                    <div id="kc-corner-empty-view" style="display:none; text-align:center; padding:50px 20px; background:var(--bg-card); border-radius:var(--radius-sm); border:1px dashed var(--border-color); margin-bottom:16px;">
+                        <div style="font-size:36px; margin-bottom:10px;">🔄</div>
+                        <div style="font-weight:700; font-size:16px; color:#fff; margin-bottom:6px;">Sarok Elem Tervező</div>
+                        <div style="font-size:13px; color:var(--text-muted); max-width:320px; margin:0 auto; line-height:1.5;">
+                            A sarokszekrény (L-alakú és diagonális sarokelem) konfiguráció egyelőre fejlesztés alatt áll, hamarosan elérhető lesz!
+                        </div>
                     </div>
 
                     <!-- ÖSSZECSUKHATÓ KATEGÓRIÁK KONTÉNER -->
