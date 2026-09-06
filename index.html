@@ -1008,9 +1008,12 @@
                 <div class="kitchen-wizard-left-col">
 
                     <!-- Gyors Sablonok / Típus választó -->
-                    <div style="display:flex; gap:8px; margin-bottom:16px; background:var(--bg-card); padding:8px; border-radius:var(--radius-sm); border:1px solid var(--border-color);">
+                    <div style="display:flex; gap:6px; margin-bottom:16px; background:var(--bg-card); padding:8px; border-radius:var(--radius-sm); border:1px solid var(--border-color);">
                         <button class="btn btn-sm btn-primary kc-preset-btn" data-type="base" style="flex:1;">
                             <span>🍳 Alsószekrény</span>
+                        </button>
+                        <button class="btn btn-sm kc-preset-btn" data-type="base_end" style="flex:1;">
+                            <span>📐 Alsó Végzáró</span>
                         </button>
                         <button class="btn btn-sm kc-preset-btn" data-type="wall" style="flex:1;">
                             <span>🍽️ Felsőszekrény</span>
@@ -1042,6 +1045,7 @@
                                         <!-- Gyors szélességek -->
                                         <div style="display:flex; flex-wrap:wrap; gap:3px; margin-top:4px;">
                                             <button class="quick-dim-btn btn-kc-w" data-val="300">300</button>
+                                            <button class="quick-dim-btn btn-kc-w" data-val="350">350</button>
                                             <button class="quick-dim-btn btn-kc-w" data-val="450">450</button>
                                             <button class="quick-dim-btn btn-kc-w" data-val="600">600</button>
                                             <button class="quick-dim-btn btn-kc-w" data-val="800">800</button>
@@ -1107,6 +1111,64 @@
                                             <span class="input-unit">mm</span>
                                         </div>
                                     </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 2. VÉGZÁRÓ ELEM BEÁLLÍTÁSOK (NYITOTT SAROK, CSAPÁS & LEKEREKÍTÉS) -->
+                        <div class="wizard-accordion-item" id="wz-sec-endunit">
+                            <div class="wizard-accordion-header">
+                                <div class="wizard-accordion-title-wrap">
+                                    <span>📐 2. Végzáró Elem (Nyitott Sarok & Levágás)</span>
+                                </div>
+                                <div style="display:flex; align-items:center; gap:8px;">
+                                    <label style="font-size:12px; display:flex; align-items:center; gap:6px; cursor:pointer;" onclick="event.stopPropagation()">
+                                        <input type="checkbox" id="kc-end-unit-enabled"> Végzáró mód
+                                    </label>
+                                    <span class="wizard-accordion-arrow">▶</span>
+                                </div>
+                            </div>
+                            <div class="wizard-accordion-body" id="kc-end-unit-body" style="display:none;">
+                                <div class="grid-2-col">
+                                    <div>
+                                        <label class="form-label">Végzáró Állása</label>
+                                        <select id="kc-end-side" class="form-control">
+                                            <option value="right" selected>Jobbos (jobb oldala nyitott, bal oldalfal van)</option>
+                                            <option value="left">Balos (bal oldala nyitott, jobb oldalfal van)</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="form-label">Sarok Kialakítás Típusa</label>
+                                        <select id="kc-end-corner-type" class="form-control">
+                                            <option value="chamfer" selected>Egyenes levágás (Csapás)</option>
+                                            <option value="round">Íves lekerekítés (Radius)</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div class="grid-2-col" style="margin-top:10px;">
+                                    <div>
+                                        <label class="form-label" style="color:#f59e0b; font-weight:700;">
+                                            ⚡ Sarok levágás X mérete (vagy sugár):
+                                        </label>
+                                        <div class="input-with-unit">
+                                            <input type="number" id="kc-end-size-x" class="form-control" value="80" step="5" min="10" title="A sarok levágásának / lekerekítésének mérete a szélesség mentén (alapértelmezett: 80 mm)">
+                                            <span class="input-unit">mm</span>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label class="form-label" style="color:#f59e0b; font-weight:700;">
+                                            ⚡ Sarok levágás Z mérete:
+                                        </label>
+                                        <div class="input-with-unit">
+                                            <input type="number" id="kc-end-size-z" class="form-control" value="80" step="5" min="10" title="A sarok levágásának mérete a mélység mentén (alapértelmezett: 80 mm)">
+                                            <span class="input-unit">mm</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div style="margin-top:8px; font-size:11px; color:var(--text-muted); background:rgba(0,0,0,0.2); padding:8px; border-radius:var(--radius-sm); border:1px solid var(--border-color);">
+                                    💡 <strong>Végzáró működése:</strong> A nyitott oldalon nincs oldalfal. Felül automatikusan teljes tetőlap készül (nem összekötő). Az alsó fenéklap, a belső polcok és a felső tetőlap elülső nyitott sarka a beállított méretben (alapértelmezetten 80×80 mm) és formában (egyenes levágás vagy íves lekerekítés) kerül legyártásra.
                                 </div>
                             </div>
                         </div>

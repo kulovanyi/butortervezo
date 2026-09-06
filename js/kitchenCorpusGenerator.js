@@ -115,8 +115,18 @@ export class KitchenCorpusGenerator {
                 insetFront: 15
             },
 
-            // 9. Dinamikusan hozzáadott Front Elemek & Készülékek (Ajtók, Fiókok, Beépíthető Sütő / Főzőlap)
-            elements: []
+            // 9. Dinamikusan hozzáadott Front Elemek & Készülékek
+            elements: [],
+
+            // 10. Végzáró elem beállítások (Nyitott sarok elem)
+            endUnit: {
+                enabled: false,
+                side: 'right',        // 'right' (Jobbos - jobb elöl nyitott, bal oldalfal van) | 'left' (Balos - bal elöl nyitott, jobb oldalfal van)
+                cornerType: 'chamfer', // 'chamfer' (egyenes levágás) | 'round' (íves lekerekítés)
+                sizeX: 80,            // mm
+                sizeZ: 80,            // mm
+                radius: 80            // mm
+            }
         };
     }
 
@@ -134,69 +144,108 @@ export class KitchenCorpusGenerator {
         const tex = cfg.textureKey || 'white_matte';
         const defaultRadius = cfg.edgeRadius !== undefined ? Number(cfg.edgeRadius) : 1;
 
+        // Végzáró elem (End Unit) logika
+        const isEndUnit = !!((cfg.endUnit && cfg.endUnit.enabled) || cfg.type === 'base_end');
+        const endSide = cfg.endUnit?.side || 'right'; // 'right' | 'left'
+        const cornerCutObj = isEndUnit ? {
+            enabled: true,
+            side: endSide,
+            type: cfg.endUnit?.cornerType || 'chamfer',
+            sizeX: Number(cfg.endUnit?.sizeX) || 80,
+            sizeZ: Number(cfg.endUnit?.sizeZ) || 80,
+            radius: Number(cfg.endUnit?.radius) || Number(cfg.endUnit?.sizeX) || 80
+        } : null;
+
         // Alap Y magasság (ha van láb, a korpusz a láb magasságától indul)
         const legH = (cfg.legs && cfg.legs.enabled) ? Number(cfg.legs.height) : 0;
         const corpusBaseY = legH;
 
         // ----------------------------------------------------
-        // 1. OLDALFALAK (Bal és Jobb) - Fő mélységet adják (-D/2 .. +D/2)
+        // 1. OLDALFALAK (Bal és Jobb)
+        // Végzáró elemnél csak az egyik oldalon van oldalfal (Jobbos: Bal oldalfal van, Balos: Jobb oldalfal van)
         // ----------------------------------------------------
         if (cfg.sides && cfg.sides.enabled) {
             const sideH = (cfg.bottom.placement === 'under') ? (H - Th) : H;
             const sideY = (cfg.bottom.placement === 'under') ? (corpusBaseY + Th + sideH / 2) : (corpusBaseY + sideH / 2);
 
-            // Bal oldalfal
-            boards.push({
-                name: 'Bal Korpusz Oldalfal',
-                width: Th,
-                height: sideH,
-                depth: D,
-                thickness: Th,
-                type: 'vertical_side',
-                textureKey: cfg.sides.textureKey || tex,
-                x: -W / 2 + Th / 2,
-                y: sideY,
-                z: 0,
-                edgeBanding: '0.4mm ABS'
-            });
+            // Bal oldalfal (ha nem végzáró, vagy ha Jobbos végzáró)
+            if (!isEndUnit || endSide === 'right') {
+                boards.push({
+                    name: 'Bal Korpusz Oldalfal',
+                    width: Th,
+                    height: sideH,
+                    depth: D,
+                    thickness: Th,
+                    type: 'vertical_side',
+                    textureKey: cfg.sides.textureKey || tex,
+                    x: -W / 2 + Th / 2,
+                    y: sideY,
+                    z: 0,
+                    edgeBanding: '0.4mm ABS'
+                });
+            }
 
-            // Jobb oldalfal
-            boards.push({
-                name: 'Jobb Korpusz Oldalfal',
-                width: Th,
-                height: sideH,
-                depth: D,
-                thickness: Th,
-                type: 'vertical_side',
-                textureKey: cfg.sides.textureKey || tex,
-                x: W / 2 - Th / 2,
-                y: sideY,
-                z: 0,
-                edgeBanding: '0.4mm ABS'
-            });
+            // Jobb oldalfal (ha nem végzáró, vagy ha Balos végzáró)
+            if (!isEndUnit || endSide === 'left') {
+                boards.push({
+                    name: 'Jobb Korpusz Oldalfal',
+                    width: Th,
+                    height: sideH,
+                    depth: D,
+                    thickness: Th,
+                    type: 'vertical_side',
+                    textureKey: cfg.sides.textureKey || tex,
+                    x: W / 2 - Th / 2,
+                    y: sideY,
+                    z: 0,
+                    edgeBanding: '0.4mm ABS'
+                });
+            }
         }
 
         // ----------------------------------------------------
         // 2. ALSÓ LAP (Fenéklap)
         // ----------------------------------------------------
         if (cfg.bottom && cfg.bottom.enabled) {
-            const isBetween = cfg.bottom.placement === 'between';
-            const bottomW = isBetween ? (W - 2 * Th) : W;
-            const bottomY = corpusBaseY + Th / 2;
+            if (isEndUnit) {
+                // Végzárónál az egyik oldalon van oldallap, a másik oldal a korpusz széléig tart
+                const bottomW = W - Th;
+                const bottomX = (endSide === 'right') ? (Th / 2) : (-Th / 2);
+                const bottomY = corpusBaseY + Th / 2;
 
-            boards.push({
-                name: 'Fenéklap',
-                width: bottomW,
-                height: Th,
-                depth: D,
-                thickness: Th,
-                type: 'horizontal',
-                textureKey: tex,
-                x: 0,
-                y: bottomY,
-                z: 0,
-                edgeBanding: '0.4mm ABS'
-            });
+                boards.push({
+                    name: 'Fenéklap (Végzáró)',
+                    width: bottomW,
+                    height: Th,
+                    depth: D,
+                    thickness: Th,
+                    type: 'horizontal',
+                    textureKey: tex,
+                    x: bottomX,
+                    y: bottomY,
+                    z: 0,
+                    cornerCut: cornerCutObj,
+                    edgeBanding: '0.4mm ABS'
+                });
+            } else {
+                const isBetween = cfg.bottom.placement === 'between';
+                const bottomW = isBetween ? (W - 2 * Th) : W;
+                const bottomY = corpusBaseY + Th / 2;
+
+                boards.push({
+                    name: 'Fenéklap',
+                    width: bottomW,
+                    height: Th,
+                    depth: D,
+                    thickness: Th,
+                    type: 'horizontal',
+                    textureKey: tex,
+                    x: 0,
+                    y: bottomY,
+                    z: 0,
+                    edgeBanding: '0.4mm ABS'
+                });
+            }
         }
 
         // ----------------------------------------------------
@@ -206,7 +255,27 @@ export class KitchenCorpusGenerator {
         const topY_between = corpusBaseY + H - Th / 2;
         const topY_onTop = corpusBaseY + H + Th / 2;
 
-        if (cfg.topType === 'full_top') {
+        if (isEndUnit) {
+            // Végzárónál felül nem összekötő van, hanem teljes tetőlap saroklevágással
+            const topW = W - Th;
+            const topX = (endSide === 'right') ? (Th / 2) : (-Th / 2);
+            const topY = topY_between;
+
+            boards.push({
+                name: 'Tetőlap (Végzáró)',
+                width: topW,
+                height: Th,
+                depth: D,
+                thickness: Th,
+                type: 'horizontal',
+                textureKey: tex,
+                x: topX,
+                y: topY,
+                z: 0,
+                cornerCut: cornerCutObj,
+                edgeBanding: '0.4mm ABS'
+            });
+        } else if (cfg.topType === 'full_top') {
             const isBetween = cfg.fullTop?.placement === 'between';
             const topW = isBetween ? innerW : W;
             const topY = isBetween ? topY_between : topY_onTop;
@@ -226,8 +295,6 @@ export class KitchenCorpusGenerator {
             });
         } else {
             // ÖSSZEKÖTŐ LÉCEK (Alsószekrény)
-
-            // Első összekötő léc
             if (cfg.frontStretcher && cfg.frontStretcher.enabled) {
                 const fsW = Number(cfg.frontStretcher.width) || 80;
                 const isFlat = cfg.frontStretcher.orientation !== 'vertical';
@@ -253,7 +320,6 @@ export class KitchenCorpusGenerator {
                 });
             }
 
-            // Hátsó összekötő léc
             if (cfg.backStretcher && cfg.backStretcher.enabled) {
                 const bsW = Number(cfg.backStretcher.width) || 80;
                 const isFlat = cfg.backStretcher.orientation !== 'vertical';
@@ -281,7 +347,7 @@ export class KitchenCorpusGenerator {
         }
 
         // ----------------------------------------------------
-        // 4. HÁTFAL (HDF / Bútorlap) - Mindig rajta van alapértelmezetten
+        // 4. HÁTFAL (HDF / Bútorlap)
         // ----------------------------------------------------
         const backCfg = cfg.backPanel || cfg.back || { enabled: true };
         const backEnabled = backCfg.enabled !== false;
@@ -293,23 +359,21 @@ export class KitchenCorpusGenerator {
             const customH = (backCfg.height !== undefined && backCfg.height !== null && backCfg.height !== '') ? Number(backCfg.height) : null;
             const offsetY = Number(backCfg.offsetY) || 0;
 
-            let backW = innerW;
+            let backW = isEndUnit ? (W - Th - (2 * gap)) : innerW;
             let backH = (customH && customH > 0) ? customH : H;
+            let backX = isEndUnit ? ((endSide === 'right') ? (Th / 2) : (-Th / 2)) : 0;
             let backZ = 0;
 
             if (backType === 'surface') {
-                // RÁSZÖGELT / RÁSZÉGELT: A korpusz hátfalára fekszik fel 2.5mm peremhézaggal
-                backW = W - (2 * gap);
+                backW = isEndUnit ? (W - Th - (2 * gap)) : (W - (2 * gap));
                 backH = (customH && customH > 0) ? customH : (H - (2 * gap));
                 backZ = (-D / 2) - (backTh / 2);
             } else if (backType === 'groove') {
-                // NÚTBA ÜLTETETT: A korpusz belsejében fut, insetBack mm-re a hátuljától
-                backW = innerW + 16; // 8mm nút mindkét oldalon
+                backW = isEndUnit ? (W - Th + 8) : (innerW + 16);
                 backH = (customH && customH > 0) ? customH : (H - (2 * Th) + 16);
                 backZ = (-D / 2) + insetBack + (backTh / 2);
             } else if (backType === 'rabbet') {
-                // FALCOLT: Szintben a hátfal élével
-                backW = innerW + 16;
+                backW = isEndUnit ? (W - Th + 8) : (innerW + 16);
                 backH = (customH && customH > 0) ? customH : (H - (2 * Th) + 16);
                 backZ = (-D / 2) + (backTh / 2);
             }
@@ -324,7 +388,7 @@ export class KitchenCorpusGenerator {
                 thickness: backTh,
                 type: 'back',
                 textureKey: backCfg.textureKey || 'white_matte',
-                x: 0,
+                x: Math.round(backX),
                 y: Math.round(backY),
                 z: backZ,
                 edgeBanding: 'Nincs élzárás'
@@ -339,7 +403,6 @@ export class KitchenCorpusGenerator {
             const shelfTh = Number(cfg.shelves.thickness) || Th;
             const insetF = Number(cfg.shelves.insetFront) || 15;
             
-            // Hátfal helye a polc mélységéhez
             let backInset = 0;
             if (cfg.backPanel && cfg.backPanel.enabled) {
                 if (cfg.backPanel.type === 'groove') {
@@ -347,7 +410,8 @@ export class KitchenCorpusGenerator {
                 }
             }
 
-            const shelfW = innerW - 2; // 2mm szerelési hézag
+            const shelfW = isEndUnit ? (W - Th - 2) : (innerW - 2);
+            const shelfX = isEndUnit ? ((endSide === 'right') ? (Th / 2) : (-Th / 2)) : 0;
             const shelfD = D - insetF - backInset;
             const shelfZ = (D / 2) - insetF - (shelfD / 2);
 
@@ -364,9 +428,10 @@ export class KitchenCorpusGenerator {
                     thickness: shelfTh,
                     type: 'shelf',
                     textureKey: cfg.shelves.textureKey || tex,
-                    x: 0,
+                    x: Math.round(shelfX),
                     y: Math.round(shelfY),
                     z: Math.round(shelfZ),
+                    cornerCut: isEndUnit ? cornerCutObj : null,
                     edgeBanding: '0.4mm ABS'
                 });
             }
@@ -381,12 +446,32 @@ export class KitchenCorpusGenerator {
             const legSize = Number(cfg.legs.diameter) || 45;
             const legModel = cfg.legs.model || 'lab_01';
 
-            const insetFrontZ = insetZ + 10; // Első lábak 1cm-el hátrébb
+            const insetFrontZ = insetZ + 10;
             const insetBackZ = insetZ;
 
             let legPositions = [];
-            if (W <= 300) {
-                // 30cm vagy kisebb elemnél 2 láb középen (elöl és hátul)
+            if (isEndUnit) {
+                const cutShiftX = Math.max(insetX, (cornerCutObj ? cornerCutObj.sizeX : 80) + 15);
+                const cutShiftZ = Math.max(insetFrontZ, (cornerCutObj ? cornerCutObj.sizeZ : 80) + 15);
+
+                if (endSide === 'right') {
+                    // Jobbos végzáró: Jobb első láb beljebb van a sarokcsapás mögött
+                    legPositions = [
+                        { name: 'Bal Első Láb', x: -W / 2 + insetX, z: D / 2 - insetFrontZ },
+                        { name: 'Jobb Első Láb (Beljebb tolva)', x: W / 2 - cutShiftX, z: D / 2 - cutShiftZ },
+                        { name: 'Bal Hátsó Láb', x: -W / 2 + insetX, z: -D / 2 + insetBackZ },
+                        { name: 'Jobb Hátsó Láb', x: W / 2 - insetX, z: -D / 2 + insetBackZ }
+                    ];
+                } else {
+                    // Balos végzáró: Bal első láb beljebb van a sarokcsapás mögött
+                    legPositions = [
+                        { name: 'Bal Első Láb (Beljebb tolva)', x: -W / 2 + cutShiftX, z: D / 2 - cutShiftZ },
+                        { name: 'Jobb Első Láb', x: W / 2 - insetX, z: D / 2 - insetFrontZ },
+                        { name: 'Bal Hátsó Láb', x: -W / 2 + insetX, z: -D / 2 + insetBackZ },
+                        { name: 'Jobb Hátsó Láb', x: W / 2 - insetX, z: -D / 2 + insetBackZ }
+                    ];
+                }
+            } else if (W <= 300) {
                 legPositions = [
                     { name: 'Középső Első Láb', x: 0, z: D / 2 - insetFrontZ },
                     { name: 'Középső Hátsó Láb', x: 0, z: -D / 2 + insetBackZ }

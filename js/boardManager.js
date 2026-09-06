@@ -188,6 +188,82 @@ export function createPlinthGeometry(w, h, d) {
 }
 
 /**
+ * Saroklevágott / Lekerekített Végzáró Bútorlap Geometria Generátor
+ * (Fenéklap, Polcok és Tetőlap sarokcsapással vagy íves lekerekítéssel a nyitott saroknál)
+ */
+export function createCornerCutBoardGeometry(w, h, d, cornerCut) {
+    const side = cornerCut.side || 'right'; // 'right' (Jobbos - jobb elöl nyitott) | 'left' (Balos - bal elöl nyitott)
+    const cornerType = cornerCut.type || 'chamfer'; // 'chamfer' | 'round'
+    const cutX = Math.min(Math.max(1, Number(cornerCut.sizeX) || 80), Math.max(1, w - 10));
+    const cutZ = Math.min(Math.max(1, Number(cornerCut.sizeZ) || 80), Math.max(1, d - 10));
+    const radius = Math.min(Math.max(1, Number(cornerCut.radius) || Number(cornerCut.sizeX) || 80), Math.max(1, Math.min(w - 10, d - 10)));
+
+    try {
+        const shape = new THREE.Shape();
+        const hw = w / 2;
+        const hd = d / 2;
+
+        if (side === 'right') {
+            // Jobbos végzáró: A nyitott sarok a jobb elülső (+hw, +hd)
+            if (cornerType === 'chamfer') {
+                shape.moveTo(-hw, -hd);              // Bal hátsó sarok
+                shape.lineTo(+hw, -hd);              // Jobb hátsó sarok
+                shape.lineTo(+hw, +hd - cutZ);       // Jobb oldal a levágásig
+                shape.lineTo(+hw - cutX, +hd);       // Levágás az elülső oldalra
+                shape.lineTo(-hw, +hd);              // Bal első sarok
+                shape.lineTo(-hw, -hd);              // Zárás
+            } else {
+                // Lekerekített íves sarok (+hw, +hd)
+                shape.moveTo(-hw, -hd);
+                shape.lineTo(+hw, -hd);
+                shape.lineTo(+hw, +hd - radius);
+                shape.absarc(+hw - radius, +hd - radius, radius, 0, Math.PI / 2, false);
+                shape.lineTo(-hw, +hd);
+                shape.lineTo(-hw, -hd);
+            }
+        } else {
+            // Balos végzáró: A nyitott sarok a bal elülső (-hw, +hd)
+            if (cornerType === 'chamfer') {
+                shape.moveTo(+hw, -hd);              // Jobb hátsó sarok
+                shape.lineTo(+hw, +hd);              // Jobb első sarok
+                shape.lineTo(-hw + cutX, +hd);       // Elülső él a levágásig
+                shape.lineTo(-hw, +hd - cutZ);       // Levágás a bal oldalra
+                shape.lineTo(-hw, -hd);              // Bal hátsó sarok
+                shape.lineTo(+hw, -hd);              // Zárás
+            } else {
+                // Lekerekített íves sarok (-hw, +hd)
+                shape.moveTo(+hw, -hd);
+                shape.lineTo(+hw, +hd);
+                shape.lineTo(-hw + radius, +hd);
+                shape.absarc(-hw + radius, +hd - radius, radius, Math.PI / 2, Math.PI, false);
+                shape.lineTo(-hw, -hd);
+                shape.lineTo(+hw, -hd);
+            }
+        }
+
+        const extrudeSettings = {
+            depth: h,
+            bevelEnabled: false,
+            steps: 1
+        };
+
+        const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+        geometry.rotateX(-Math.PI / 2);
+        geometry.center();
+        geometry.computeVertexNormals();
+        applyBoxUVs(geometry, w, h, d, 800);
+        geometry.parameters = { width: w, height: h, depth: d, cornerCut };
+        return geometry;
+    } catch (e) {
+        console.warn('Fallback to BoxGeometry for corner cut:', e);
+        const fallback = new THREE.BoxGeometry(w, h, d);
+        applyBoxUVs(fallback, w, h, d, 800);
+        fallback.parameters = { width: w, height: h, depth: d };
+        return fallback;
+    }
+}
+
+/**
  * Megfelelő geometriát választ a bútorlap típusa alapján
  */
 export function createBoardGeometry(boardData) {
@@ -198,6 +274,9 @@ export function createBoardGeometry(boardData) {
     const isWorktop = !isSplashback && (boardData.isWorktop || boardData.type === 'worktop' || (boardData.name && boardData.name.includes('Munkalap')));
     const isPlinth = boardData.isPlinth || boardData.type === 'plinth' || (boardData.name && boardData.name.includes('Szokli'));
 
+    if (boardData.cornerCut && boardData.cornerCut.enabled) {
+        return createCornerCutBoardGeometry(width, height, depth, boardData.cornerCut);
+    }
     if (boardData.isHardware || boardData.type === 'hardware') {
         const geo = new THREE.BoxGeometry(width, height, depth);
         applyBoxUVs(geo, width, height, depth, 400);
