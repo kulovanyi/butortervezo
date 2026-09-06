@@ -1836,18 +1836,22 @@ class FurnitureApp {
             this.selectedCorpus = null;
             this.selectedCustomGroup = null;
 
-            if (contextTabsBar) contextTabsBar.style.display = 'none';
-            if (contextTabContainer) contextTabContainer.style.display = 'none';
+            if (contextTabsBar) contextTabsBar.style.display = 'flex';
+            if (contextTabContainer) contextTabContainer.style.display = 'flex';
+
+            if (btnTabDims) btnTabDims.style.display = 'flex';
+            if (btnTabSnap) btnTabSnap.style.display = 'none';
+            if (btnTabGroup) btnTabGroup.style.display = 'none';
 
             if (corpusPanel) corpusPanel.style.display = 'none';
-            if (boardPanel) boardPanel.style.display = 'none';
+            if (boardPanel) boardPanel.style.display = 'block';
             if (groupPanel) groupPanel.style.display = 'none';
             if (multiPanel) multiPanel.style.display = 'none';
             if (singleBoardGroupPanel) singleBoardGroupPanel.style.display = 'none';
-            if (noBoardMsg) noBoardMsg.style.display = 'none';
+            if (noBoardMsg) noBoardMsg.style.display = 'block';
             if (boardForm) boardForm.style.display = 'none';
             if (snappingPanel) snappingPanel.style.display = 'none';
-            if (texturesPanel) texturesPanel.style.display = 'none';
+            if (texturesPanel) texturesPanel.style.display = 'block';
             this.highlightHierarchyItem(null);
             return;
         }
@@ -3211,12 +3215,23 @@ class FurnitureApp {
 
     openModal(modalId) {
         const modal = document.getElementById(modalId);
-        if (modal) modal.classList.add('open');
+        if (modal) {
+            modal.style.display = 'flex';
+            void modal.offsetHeight; // Force reflow
+            modal.classList.add('open');
+        }
     }
 
     closeModal(modalId) {
         const modal = document.getElementById(modalId);
-        if (modal) modal.classList.remove('open');
+        if (modal) {
+            modal.classList.remove('open');
+            setTimeout(() => {
+                if (!modal.classList.contains('open')) {
+                    modal.style.display = 'none';
+                }
+            }, 200);
+        }
     }
 
     openSaveFurnitureModal() {
