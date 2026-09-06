@@ -2369,14 +2369,19 @@ class FurnitureApp {
                         </div>
                     </div>
                 </div>
-                <button class="texture-btn-edit" title="PBR Anyag Módosítása (Szín, Érdesség, Fémesség, Normal map, Tiling, Forgatás)">
-                    <span>⚙️ Módosítás</span>
-                </button>
+                <div class="texture-item-actions">
+                    <button class="texture-btn-icon texture-btn-edit" title="PBR Anyag Módosítása / Beállítások (⚙️)">
+                        ⚙️
+                    </button>
+                    <button class="texture-btn-icon texture-btn-delete" title="Anyag törlése (✕)">
+                        ✕
+                    </button>
+                </div>
             `;
 
             // Sorra kattintás = Anyag azonnali alkalmazása
             item.addEventListener('click', (e) => {
-                if (e.target.closest('.texture-btn-edit')) return;
+                if (e.target.closest('.texture-item-actions') || e.target.closest('.texture-btn-icon')) return;
                 document.querySelectorAll('.texture-item-row').forEach(i => i.classList.remove('active'));
                 item.classList.add('active');
                 this.applyTexture(key);
@@ -2388,6 +2393,18 @@ class FurnitureApp {
                 btnEdit.addEventListener('click', (e) => {
                     e.stopPropagation();
                     this.openPBRMaterialEditor(key);
+                });
+            }
+
+            // Törlés gombra kattintás = Anyag törlése megerősítéssel
+            const btnDelete = item.querySelector('.texture-btn-delete');
+            if (btnDelete) {
+                btnDelete.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (confirm(`Biztosan törölni szeretnéd a(z) "${tex.name}" anyagot?`)) {
+                        MaterialManager.deletePBRMaterial(key);
+                        this.renderTextureGrid();
+                    }
                 });
             }
 

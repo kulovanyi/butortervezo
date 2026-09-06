@@ -1425,28 +1425,29 @@ header.app-header {
 .texture-item-left {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
     flex: 1;
     min-width: 0;
 }
 
 .texture-item-thumb {
-    width: 32px;
-    height: 32px;
-    border-radius: 4px;
+    width: 48px;
+    height: 48px;
+    border-radius: 6px;
     object-fit: cover;
     background: #0f172a;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.15);
     flex-shrink: 0;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
 }
 
 .texture-item-color-box {
-    width: 32px;
-    height: 32px;
-    border-radius: 4px;
-    border: 1px solid rgba(255, 255, 255, 0.15);
+    width: 48px;
+    height: 48px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
     flex-shrink: 0;
-    box-shadow: inset 0 0 4px rgba(0, 0, 0, 0.3);
+    box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.3);
 }
 
 .texture-item-info {
@@ -1469,7 +1470,7 @@ header.app-header {
     gap: 6px;
     font-size: 10px;
     color: var(--text-muted);
-    margin-top: 1px;
+    margin-top: 3px;
 }
 
 .texture-item-badge {
@@ -1494,26 +1495,47 @@ header.app-header {
     color: #c084fc;
 }
 
-.texture-btn-edit {
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    color: var(--text-secondary);
-    padding: 4px 8px;
-    border-radius: 4px;
-    font-size: 11px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.15s ease;
+.texture-item-actions {
     display: flex;
     align-items: center;
     gap: 4px;
     flex-shrink: 0;
 }
 
-.texture-btn-edit:hover {
+.texture-btn-icon {
+    width: 28px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 6px;
+    color: var(--text-secondary);
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    padding: 0;
+}
+
+.texture-btn-icon:hover {
     background: rgba(56, 189, 248, 0.2);
     color: #38bdf8;
     border-color: rgba(56, 189, 248, 0.4);
+    transform: scale(1.08);
+}
+
+.texture-btn-icon.texture-btn-delete {
+    font-size: 12px;
+    font-weight: 700;
+    color: #94a3b8;
+}
+
+.texture-btn-icon.texture-btn-delete:hover {
+    background: rgba(239, 68, 68, 0.2);
+    color: #ef4444;
+    border-color: rgba(239, 68, 68, 0.4);
+    transform: scale(1.08);
 }
 
 /* PBR Anyagszerkesztő Modal elemek */
