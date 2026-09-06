@@ -1156,9 +1156,7 @@ function attachHardwareHighlights(group) {
  * Three.js jelenet, kamera, OrbitControls, TransformControls, fények, raszter, árnyékok
  * Támogatja az egyedi bútorlapokat és az Egybefüggő Konyha Korpusz egységeket lebegő 3D buborékkal.
  */
-const DEFAULT_HDRI_LIST = [
-    { id: 'hdri_200', name: '200 Studio Hall (2K EXR)', url: 'textures/hdri/200_hdrmaps_com_free_2K.exr', type: 'exr' }
-];
+const DEFAULT_HDRI_LIST = [];
 class Scene3D {
     constructor(containerElement, onBoardSelected, onBoardTransformChanged, onFloatingBubbleUpdate) {
         this.container = containerElement;
@@ -1178,7 +1176,7 @@ class Scene3D {
         this.isStudioMode = true;
         this.studioEnvMap = null;
         this.hdriList = [...DEFAULT_HDRI_LIST];
-        this.currentHdriId = 'hdri_200';
+        this.currentHdriId = null;
         this.hdriCache = {}; // id -> { texture, envMap }
         this.currentHdrTexture = null;
         this.currentHdrEnvMap = null;
