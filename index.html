@@ -658,11 +658,12 @@
                             </button>
                         </div>
 
-                        <!-- Kategória szűrő fülek (Frontok vs Munkalapok) -->
-                        <div id="tex-category-filter-bar" style="display:flex; gap:4px; margin-bottom:10px; background:rgba(0,0,0,0.25); padding:3px; border-radius:var(--radius-sm); border:1px solid var(--border-color);">
-                            <button class="btn btn-sm btn-tex-cat active" data-cat="front" style="flex:1; padding:3px 6px; font-size:11px;">🚪 Frontok</button>
-                            <button class="btn btn-sm btn-tex-cat" data-cat="worktop" style="flex:1; padding:3px 6px; font-size:11px;">🪵 Munkalapok</button>
-                            <button class="btn btn-sm btn-tex-cat" data-cat="all" style="padding:3px 6px; font-size:11px;">✨ Mind</button>
+                        <!-- Kategória szűrő fülek (Frontok vs Korpusz vs Munkalapok) -->
+                        <div id="tex-category-filter-bar" style="display:flex; gap:3px; margin-bottom:10px; background:rgba(0,0,0,0.25); padding:3px; border-radius:var(--radius-sm); border:1px solid var(--border-color);">
+                            <button class="btn btn-sm btn-tex-cat active" data-cat="front" style="flex:1; padding:3px 4px; font-size:10px;">🚪 Front szín</button>
+                            <button class="btn btn-sm btn-tex-cat" data-cat="corpus" style="flex:1; padding:3px 4px; font-size:10px;">📦 Korpusz szín</button>
+                            <button class="btn btn-sm btn-tex-cat" data-cat="worktop" style="flex:1; padding:3px 4px; font-size:10px;">🪵 Munkalap</button>
+                            <button class="btn btn-sm btn-tex-cat" data-cat="all" style="padding:3px 4px; font-size:10px;">✨ Mind</button>
                         </div>
 
                         <!-- Textúra választó rács -->
@@ -1166,6 +1167,20 @@
 
                 <!-- BAL OSZLOP: PARAMÉTEREK (Görgethető form) -->
                 <div class="kitchen-wizard-left-col">
+
+                    <!-- Elem Azonosító & Név (Legfelül) -->
+                    <div style="background:var(--bg-card); padding:8px 10px; border-radius:var(--radius-sm); border:1px solid var(--border-color); margin-bottom:10px;">
+                        <div class="grid-2-col" style="display:grid; grid-template-columns: 1fr 2fr; gap:8px;">
+                            <div>
+                                <label class="form-label" style="font-size:11px; font-weight:700; color:#38bdf8;">🏷️ Termékkód</label>
+                                <input type="text" id="kc-product-code" class="form-control" placeholder="pl. K-01" style="font-size:12px; font-weight:600;">
+                            </div>
+                            <div>
+                                <label class="form-label" style="font-size:11px; font-weight:700; color:#f59e0b;">📝 Elem Neve</label>
+                                <input type="text" id="kc-element-name" class="form-control" placeholder="pl. Konyhai Alsószekrény 60cm" style="font-size:12px; font-weight:600;">
+                            </div>
+                        </div>
+                    </div>
 
                     <!-- Gyors Sablonok / Fő Típus választó -->
                     <div style="display:flex; gap:6px; margin-bottom:10px; background:var(--bg-card); padding:6px; border-radius:var(--radius-sm); border:1px solid var(--border-color);">

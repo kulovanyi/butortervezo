@@ -496,11 +496,19 @@ export class BoardManager {
         const corpusGroup = new THREE.Group();
         corpusGroup.position.set(x, y, z);
 
-        const corpusName = `Konyha Elem ${this.corpusCounter++} (${config.width}×${config.height})`;
+        let corpusName = config.name;
+        if (!corpusName) {
+            corpusName = config.productCode
+                ? `[${config.productCode}] Konyha Elem ${this.corpusCounter++} (${config.width}×${config.height})`
+                : `Konyha Elem ${this.corpusCounter++} (${config.width}×${config.height})`;
+        } else if (config.productCode && !corpusName.includes(config.productCode)) {
+            corpusName = `[${config.productCode}] ${corpusName}`;
+        }
 
         corpusGroup.userData = {
             id: corpusId,
             name: corpusName,
+            productCode: config.productCode || '',
             isCorpus: true,
             config: JSON.parse(JSON.stringify(config)),
             width: config.width,
@@ -640,7 +648,18 @@ export class BoardManager {
         corpusGroup.userData.width = newConfig.width;
         corpusGroup.userData.height = newConfig.height;
         corpusGroup.userData.depth = newConfig.depth;
-        corpusGroup.userData.name = `Konyha Elem (${newConfig.width}×${newConfig.height})`;
+        if (newConfig.productCode !== undefined) {
+            corpusGroup.userData.productCode = newConfig.productCode;
+        }
+        if (newConfig.name) {
+            let uName = newConfig.name;
+            if (newConfig.productCode && !uName.includes(newConfig.productCode)) {
+                uName = `[${newConfig.productCode}] ${uName}`;
+            }
+            corpusGroup.userData.name = uName;
+        } else if (!corpusGroup.userData.name) {
+            corpusGroup.userData.name = `Konyha Elem (${newConfig.width}×${newConfig.height})`;
+        }
 
         // 3. Új alkatrészlapok legenerálása
         const generatedBoards = KitchenCorpusGenerator.generateBoards(newConfig);
@@ -720,59 +739,98 @@ export class BoardManager {
     }
 
     /**
-     * Textúra alkalmazása teljes Konyha Korpuszra (Front vagy Munkalap/Hátfal kategória alapján)
+     * Textúra alkalmazása kizárólag a Konyha Korpusz VÁZÁRA (oldalfalak, fenéklap, tető/összekötők, polcok, szokli)
      */
-    applyTextureToCorpus(corpusGroupOrId, textureKey) {
+    applyCarcassTextureToCorpus(corpusGroupOrId, textureKey) {
         const corpusGroup = typeof corpusGroupOrId === 'string'
             ? this.corpora.find(c => c.userData.id === corpusGroupOrId)
             : corpusGroupOrId;
         if (!corpusGroup || !corpusGroup.userData || !corpusGroup.userData.config) return;
 
         const config = corpusGroup.userData.config;
-        const texInfo = MaterialManager.textures[textureKey] || MaterialManager.textures['front_k001'];
-        if (!texInfo) return;
+        config.textureKey = textureKey;
+        if (config.sides) config.sides.textureKey = textureKey;
+        if (config.bottom) config.bottom.textureKey = textureKey;
+        if (config.shelves) config.shelves.textureKey = textureKey;
+        if (config.plinth) config.plinth.textureKey = textureKey;
+        if (config.frontStretcher) config.frontStretcher.textureKey = textureKey;
+        if (config.backStretcher) config.backStretcher.textureKey = textureKey;
 
-        const isWorktopTex = texInfo.category === 'worktop';
+        const corpusBoards = this.boards.filter(b => b.corpusId === corpusGroup.userData.id);
+        corpusBoards.forEach(b => {
+            const isFront = b.isFront || b.isDoor || b.isDrawer || b.type === 'door' || b.type === 'drawer';
+            const isWorktop = b.isWorktop || b.type === 'worktop' || b.isSplashback;
+            const isBackPanel = !b.isSplashback && (b.type === 'back' || (b.name && b.name.includes('Hátfal')));
+            const isAppliance = b.isAppliance || b.type === 'appliance';
+            const isHardware = b.isHardware || b.type === 'hardware' || b.isHinge || b.isHandle;
 
-        if (isWorktopTex) {
-            // Munkalap textúra -> Munkalap és Munkalap hátfalpanel (splashback) frissítése
-            if (!config.worktop) config.worktop = {};
-            config.worktop.textureKey = textureKey;
-            if (config.worktop.splashback) {
-                config.worktop.splashback.textureKey = textureKey;
+            if (isFront || isWorktop || isBackPanel || isAppliance || isHardware) {
+                return; // Csak a váz lapjait színezzük
             }
 
-            const corpusBoards = this.boards.filter(b => b.corpusId === corpusGroup.userData.id);
-            corpusBoards.forEach(b => {
-                if (b.isWorktop || b.type === 'worktop' || b.isSplashback) {
-                    b.textureKey = textureKey;
-                    if (b.mesh) {
-                        const oldMat = b.mesh.material;
-                        b.mesh.material = MaterialManager.createMaterial(textureKey);
-                        if (oldMat && oldMat.map) oldMat.map.dispose();
-                        if (oldMat) oldMat.dispose();
-                        b.mesh.userData.textureKey = textureKey;
-                    }
-                }
+            b.textureKey = textureKey;
+            if (b.mesh) {
+                const oldMat = b.mesh.material;
+                b.mesh.material = MaterialManager.createMaterial(textureKey);
+                if (oldMat && oldMat.map) oldMat.map.dispose();
+                if (oldMat) oldMat.dispose();
+                b.mesh.userData.textureKey = textureKey;
+            }
+        });
+    }
+
+    /**
+     * Textúra alkalmazása kizárólag a Konyha Korpusz FRONTJÁRA (Ajtók, fiókelők)
+     */
+    applyFrontTextureToCorpus(corpusGroupOrId, textureKey) {
+        const corpusGroup = typeof corpusGroupOrId === 'string'
+            ? this.corpora.find(c => c.userData.id === corpusGroupOrId)
+            : corpusGroupOrId;
+        if (!corpusGroup || !corpusGroup.userData || !corpusGroup.userData.config) return;
+
+        const config = corpusGroup.userData.config;
+        config.frontTextureKey = textureKey;
+        if (config.elements && Array.isArray(config.elements)) {
+            config.elements.forEach(e => {
+                e.textureKey = textureKey;
             });
-            this.updateKitchenContinuity();
-        } else {
-            // Front / Bútorlap textúra -> Minden korpusz lap frissítése KIVÉVE a hátfalat (mindig fehér) és munkalapot/splashbacket/gépeket
-            config.textureKey = textureKey;
-            if (config.sides) config.sides.textureKey = textureKey;
-            if (config.plinth) config.plinth.textureKey = textureKey;
+        }
 
-            const corpusBoards = this.boards.filter(b => b.corpusId === corpusGroup.userData.id);
-            corpusBoards.forEach(b => {
-                const isWorktop = b.isWorktop || b.type === 'worktop' || b.isSplashback;
-                const isBackPanel = !b.isSplashback && (b.type === 'back' || (b.name && b.name.includes('Hátfal')));
-                const isAppliance = b.isAppliance || b.type === 'appliance';
-                const isHardware = b.isHardware || b.type === 'hardware' || b.isHinge || b.isHandle;
+        const corpusBoards = this.boards.filter(b => b.corpusId === corpusGroup.userData.id);
+        corpusBoards.forEach(b => {
+            const isFront = b.isFront || b.isDoor || b.isDrawer || b.type === 'door' || b.type === 'drawer';
+            if (!isFront) return;
 
-                if (isWorktop || isBackPanel || isAppliance || isHardware) {
-                    return; // Munkalapot, korpusz fehér hátfalat, gépeket és pántokat/fogantyúkat ne írjuk felül
-                }
+            b.textureKey = textureKey;
+            if (b.mesh) {
+                const oldMat = b.mesh.material;
+                b.mesh.material = MaterialManager.createMaterial(textureKey);
+                if (oldMat && oldMat.map) oldMat.map.dispose();
+                if (oldMat) oldMat.dispose();
+                b.mesh.userData.textureKey = textureKey;
+            }
+        });
+    }
 
+    /**
+     * Textúra alkalmazása kizárólag a Munkalapra és Hátfalpanelre (Splashback)
+     */
+    applyWorktopTextureToCorpus(corpusGroupOrId, textureKey) {
+        const corpusGroup = typeof corpusGroupOrId === 'string'
+            ? this.corpora.find(c => c.userData.id === corpusGroupOrId)
+            : corpusGroupOrId;
+        if (!corpusGroup || !corpusGroup.userData || !corpusGroup.userData.config) return;
+
+        const config = corpusGroup.userData.config;
+        if (!config.worktop) config.worktop = {};
+        config.worktop.textureKey = textureKey;
+        if (config.worktop.splashback) {
+            config.worktop.splashback.textureKey = textureKey;
+        }
+
+        const corpusBoards = this.boards.filter(b => b.corpusId === corpusGroup.userData.id);
+        corpusBoards.forEach(b => {
+            if (b.isWorktop || b.type === 'worktop' || b.isSplashback) {
                 b.textureKey = textureKey;
                 if (b.mesh) {
                     const oldMat = b.mesh.material;
@@ -781,7 +839,23 @@ export class BoardManager {
                     if (oldMat) oldMat.dispose();
                     b.mesh.userData.textureKey = textureKey;
                 }
-            });
+            }
+        });
+        this.updateKitchenContinuity();
+    }
+
+    /**
+     * Textúra alkalmazása teljes Konyha Korpuszra (Front vagy Munkalap/Hátfal kategória alapján)
+     */
+    applyTextureToCorpus(corpusGroupOrId, textureKey) {
+        const texInfo = MaterialManager.textures[textureKey] || MaterialManager.textures['front_k001'];
+        if (!texInfo) return;
+
+        if (texInfo.category === 'worktop') {
+            this.applyWorktopTextureToCorpus(corpusGroupOrId, textureKey);
+        } else {
+            this.applyCarcassTextureToCorpus(corpusGroupOrId, textureKey);
+            this.applyFrontTextureToCorpus(corpusGroupOrId, textureKey);
         }
     }
 

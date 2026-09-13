@@ -1439,7 +1439,17 @@ class FurnitureApp {
             this.editingCorpusId = null;
             this.kitchenBackupConfig = null;
             this.kitchenElements = []; // Alapértelmezésben üres, front nélküli tiszta korpusz
+            this.previewCorpus = null;
             this.renderKitchenElementsUI();
+
+            // Termékkód és Elem Név inicializálása új elem készítéséhez
+            const nextIdx = (this.boardManager.corpora ? this.boardManager.corpora.length : 0) + 1;
+            const defaultCode = `K-${String(nextIdx).padStart(3, '0')}`;
+            const defaultName = 'Konyhai Alsószekrény 600mm';
+            const codeInput = document.getElementById('kc-product-code');
+            if (codeInput) codeInput.value = defaultCode;
+            const nameInput = document.getElementById('kc-element-name');
+            if (nameInput) nameInput.value = defaultName;
 
             // Számítsuk ki a helyét a meglévő bútorok mellett X eltolással
             const currentBounds = this.boardManager.getFurnitureBoundingBox();
@@ -1459,18 +1469,7 @@ class FurnitureApp {
             this.applyKitchenTypePreset(document.getElementById('kc-cabinet-type')?.value || 'base');
             this.syncKitchenWorktopMath();
 
-            // Új előnézeti korpusz azonnali létrehozása a jelenetben
             const config = this.getKitchenConfigFromUI();
-            if (config.type === 'wall') {
-                const placement = this.getWallCabinetPlacement(config);
-                this.newCorpusOffsetX = placement.x;
-                this.newCorpusOffsetY = placement.y;
-                this.newCorpusOffsetZ = placement.z;
-            }
-            this.previewCorpus = this.boardManager.createCorpus(config, this.newCorpusOffsetX, this.newCorpusOffsetY || 0, this.newCorpusOffsetZ || 0);
-            this.scene3D.selectBoard(this.previewCorpus);
-            this.updateDimensionsBadge();
-            this.renderHierarchyTree();
 
             setTimeout(() => {
                 if (this.kitchenPreview) {
@@ -2154,6 +2153,13 @@ class FurnitureApp {
     populateKitchenWizardForm(config) {
         if (!config) return;
 
+        if (document.getElementById('kc-product-code')) {
+            document.getElementById('kc-product-code').value = config.productCode || '';
+        }
+        if (document.getElementById('kc-element-name')) {
+            document.getElementById('kc-element-name').value = config.name || '';
+        }
+
         if (config.width !== undefined) document.getElementById('kc-width').value = config.width;
         if (config.height !== undefined) document.getElementById('kc-height').value = config.height;
         if (config.depth !== undefined) document.getElementById('kc-depth').value = config.depth;
@@ -2431,13 +2437,34 @@ class FurnitureApp {
                 return;
             }
 
-            if (cat !== 'all' && tex.category && tex.category !== cat) {
-                return;
+            if (cat === 'corpus') {
+                if (tex.category === 'worktop') return;
+            } else if (cat === 'front') {
+                if (tex.category === 'worktop') return;
+                if (tex.category && tex.category !== 'front' && tex.category !== 'wood' && tex.category !== 'solid') {
+                    // allow custom textures as well
+                }
+            } else if (cat === 'worktop') {
+                if (tex.category !== 'worktop') return;
+            } else if (cat !== 'all') {
+                if (tex.category && tex.category !== cat) return;
             }
 
-            const isCurrentActive = (this.selectedBoard && this.selectedBoard.textureKey === key) ||
-                (this.selectedCorpus && this.selectedCorpus.userData?.config?.textureKey === key) ||
-                (this.selectedCorpus && this.selectedCorpus.userData?.config?.worktop?.textureKey === key);
+            let isCurrentActive = false;
+            if (this.selectedCorpus && this.selectedCorpus.userData?.config) {
+                const cfg = this.selectedCorpus.userData.config;
+                if (cat === 'corpus') {
+                    isCurrentActive = (cfg.textureKey === key);
+                } else if (cat === 'front') {
+                    isCurrentActive = (cfg.frontTextureKey === key || (cfg.elements && cfg.elements[0] && cfg.elements[0].textureKey === key));
+                } else if (cat === 'worktop') {
+                    isCurrentActive = (cfg.worktop && cfg.worktop.textureKey === key);
+                } else {
+                    isCurrentActive = (cfg.textureKey === key || cfg.frontTextureKey === key || (cfg.worktop && cfg.worktop.textureKey === key));
+                }
+            } else if (this.selectedBoard) {
+                isCurrentActive = (this.selectedBoard.textureKey === key);
+            }
 
             const item = document.createElement('div');
             item.className = `texture-item-row ${isCurrentActive ? 'active' : ''}`;
@@ -2905,10 +2932,12 @@ class FurnitureApp {
     applyTexture(textureKey) {
         const texInfo = MaterialManager.textures[textureKey] || MaterialManager.textures['front_k001'];
         const isWorktopTex = texInfo && texInfo.category === 'worktop';
+        const cat = this.activeTextureCategory || 'front';
 
         if (this.applyTextureTarget === 'all') {
             this.boardManager.applyTextureToAll(textureKey);
             this.updateDimensionsBadge();
+            this.renderTextureGrid(cat);
             return;
         }
 
@@ -2916,7 +2945,19 @@ class FurnitureApp {
         if (this.scene3D.selectedTargets && this.scene3D.selectedTargets.length > 1) {
             this.scene3D.selectedTargets.forEach(t => {
                 if (t.userData && t.userData.isCorpus) {
-                    this.boardManager.applyTextureToCorpus(t, textureKey);
+                    if (cat === 'corpus') {
+                        this.boardManager.applyCarcassTextureToCorpus(t, textureKey);
+                    } else if (cat === 'front') {
+                        this.boardManager.applyFrontTextureToCorpus(t, textureKey);
+                    } else if (cat === 'worktop') {
+                        this.boardManager.applyWorktopTextureToCorpus(t, textureKey);
+                    } else {
+                        if (isWorktopTex) {
+                            this.boardManager.applyWorktopTextureToCorpus(t, textureKey);
+                        } else {
+                            this.boardManager.applyTextureToCorpus(t, textureKey);
+                        }
+                    }
                 } else if (t.userData && t.userData.isCustomGroup) {
                     if (!isWorktopTex) this.boardManager.updateGroup(t.userData.id, { textureKey: textureKey });
                 } else {
@@ -2935,13 +2976,27 @@ class FurnitureApp {
             });
             this.boardManager.updateKitchenContinuity();
             this.updateDimensionsBadge();
+            this.renderTextureGrid(cat);
             return;
         }
 
         // 2. EGYEDI KORPUSZ KIJELÖLÉS
         if (this.selectedCorpus) {
-            this.boardManager.applyTextureToCorpus(this.selectedCorpus, textureKey);
+            if (cat === 'corpus') {
+                this.boardManager.applyCarcassTextureToCorpus(this.selectedCorpus, textureKey);
+            } else if (cat === 'front') {
+                this.boardManager.applyFrontTextureToCorpus(this.selectedCorpus, textureKey);
+            } else if (cat === 'worktop') {
+                this.boardManager.applyWorktopTextureToCorpus(this.selectedCorpus, textureKey);
+            } else {
+                if (isWorktopTex) {
+                    this.boardManager.applyWorktopTextureToCorpus(this.selectedCorpus, textureKey);
+                } else {
+                    this.boardManager.applyTextureToCorpus(this.selectedCorpus, textureKey);
+                }
+            }
             this.updateDimensionsBadge();
+            this.renderTextureGrid(cat);
             return;
         }
 
@@ -2949,6 +3004,7 @@ class FurnitureApp {
         if (this.selectedCustomGroup) {
             if (!isWorktopTex) {
                 this.boardManager.updateGroup(this.selectedCustomGroup.userData.id, { textureKey: textureKey });
+                this.renderTextureGrid(cat);
             } else {
                 alert('A munkalap textúrák csak konyhai munkalapokra alkalmazhatók!');
             }
@@ -2971,15 +3027,17 @@ class FurnitureApp {
             }
 
             if (!isWorktop && isWorktopTex) {
-                alert('A munkalap textúrák csak konyhai munkalapokra alkalmazhatók! Bútorlapokhoz és frontokhoz válassz a Front textúrák közül.');
+                alert('A munkalap textúrák csak konyhai munkalapokra alkalmazhatók! Bútorlapokhoz és frontokhoz válassz a Front vagy Korpusz textúrák közül.');
                 return;
             }
 
             this.boardManager.updateBoard(this.selectedBoard.id, { textureKey: textureKey });
+            this.renderTextureGrid(cat);
         } else {
             if (!isWorktopTex) {
                 this.boardManager.activeTextureKey = textureKey;
             }
+            this.renderTextureGrid(cat);
         }
     }
 
@@ -3731,7 +3789,10 @@ class FurnitureApp {
                 if (isCorpus) {
                     this.savingTarget = { type: 'corpus', id: targetId, target: target, name: target.userData.name };
                     defaultName = target.userData.name || 'Konyha Korpusz';
-                    targetInfoText = `🍳 Kijelölt korpusz: ${target.userData.name} (${target.userData.width}×${target.userData.height}×${target.userData.depth} mm)`;
+                    if (target.userData.productCode && !defaultName.includes(target.userData.productCode)) {
+                        defaultName = `${target.userData.productCode} - ${defaultName}`;
+                    }
+                    targetInfoText = `🍳 Kijelölt korpusz: ${defaultName} (${target.userData.width}×${target.userData.height}×${target.userData.depth} mm)`;
                     defaultCat = 'cat_kitchen';
                     snapshotTarget = target;
                 } else if (isCustomGroup) {
@@ -4060,6 +4121,11 @@ class FurnitureApp {
             document.getElementById('kc-back-inset').value = 15;
 
             // Felső elem elhelyezése
+            const elNameWall = document.getElementById('kc-element-name');
+            if (elNameWall && (!elNameWall.value || elNameWall.value.startsWith('Konyhai '))) {
+                elNameWall.value = 'Konyhai Felsőszekrény 600mm';
+            }
+
             if (!this.editingCorpusId) {
                 const wallCfg = {
                     width: 600,
@@ -4070,14 +4136,13 @@ class FurnitureApp {
                 this.newCorpusOffsetX = placement.x;
                 this.newCorpusOffsetY = placement.y;
                 this.newCorpusOffsetZ = placement.z;
-                if (this.previewCorpus) {
-                    this.previewCorpus.position.set(placement.x, placement.y, placement.z);
-                    this.previewCorpus.userData.x = placement.x;
-                    this.previewCorpus.userData.y = placement.y;
-                    this.previewCorpus.userData.z = placement.z;
-                }
             }
         } else if (type === 'tall') {
+            const elNameTall = document.getElementById('kc-element-name');
+            if (elNameTall && (!elNameTall.value || elNameTall.value.startsWith('Konyhai '))) {
+                elNameTall.value = 'Konyhai Kamraszekrény 600mm';
+            }
+
             if (stretchersSec) stretchersSec.style.display = 'none';
             document.getElementById('kc-width').value = 600;
             document.getElementById('kc-height').value = 2000;
@@ -4109,12 +4174,6 @@ class FurnitureApp {
                 this.newCorpusOffsetX = currentBounds.width > 0 ? (currentBounds.width / 2 + initialW / 2 + 80) : 0;
                 this.newCorpusOffsetY = 0;
                 this.newCorpusOffsetZ = 0;
-                if (this.previewCorpus) {
-                    this.previewCorpus.position.set(this.newCorpusOffsetX, 0, 0);
-                    this.previewCorpus.userData.x = this.newCorpusOffsetX;
-                    this.previewCorpus.userData.y = 0;
-                    this.previewCorpus.userData.z = 0;
-                }
             }
         }
     }
@@ -4150,6 +4209,11 @@ class FurnitureApp {
         if (cornerEmpty) cornerEmpty.style.display = 'none';
 
         if (subtab === 'end_unit') {
+            const elNameEnd = document.getElementById('kc-element-name');
+            if (elNameEnd && (!elNameEnd.value || elNameEnd.value.startsWith('Konyhai '))) {
+                elNameEnd.value = 'Konyhai Végzáró Elem 350mm';
+            }
+
             document.getElementById('kc-width').value = 350;
             document.getElementById('kc-height').value = 720;
             document.getElementById('kc-depth').value = 505;
@@ -4208,15 +4272,14 @@ class FurnitureApp {
                 this.newCorpusOffsetX = currentBounds.width > 0 ? (currentBounds.width / 2 + initialW / 2 + 80) : 0;
                 this.newCorpusOffsetY = 0;
                 this.newCorpusOffsetZ = 0;
-                if (this.previewCorpus) {
-                    this.previewCorpus.position.set(this.newCorpusOffsetX, 0, 0);
-                    this.previewCorpus.userData.x = this.newCorpusOffsetX;
-                    this.previewCorpus.userData.y = 0;
-                    this.previewCorpus.userData.z = 0;
-                }
             }
         } else {
             // Sima elem
+            const elNameBase = document.getElementById('kc-element-name');
+            if (elNameBase && (!elNameBase.value || elNameBase.value.startsWith('Konyhai '))) {
+                elNameBase.value = 'Konyhai Alsószekrény 600mm';
+            }
+
             document.getElementById('kc-width').value = 600;
             document.getElementById('kc-height').value = 720;
             document.getElementById('kc-depth').value = 505;
@@ -4271,12 +4334,6 @@ class FurnitureApp {
                 this.newCorpusOffsetX = currentBounds.width > 0 ? (currentBounds.width / 2 + initialW / 2 + 80) : 0;
                 this.newCorpusOffsetY = 0;
                 this.newCorpusOffsetZ = 0;
-                if (this.previewCorpus) {
-                    this.previewCorpus.position.set(this.newCorpusOffsetX, 0, 0);
-                    this.previewCorpus.userData.x = this.newCorpusOffsetX;
-                    this.previewCorpus.userData.y = 0;
-                    this.previewCorpus.userData.z = 0;
-                }
             }
         }
 
@@ -4371,6 +4428,8 @@ class FurnitureApp {
     }
 
     getKitchenConfigFromUI() {
+        const productCode = document.getElementById('kc-product-code')?.value?.trim() || '';
+        const elementName = document.getElementById('kc-element-name')?.value?.trim() || '';
         const texKey = document.getElementById('kc-texture').value || 'white_matte';
         const backHInput = document.getElementById('kc-back-height')?.value;
         const customBackH = (backHInput !== undefined && backHInput !== null && backHInput !== '') ? Number(backHInput) : null;
@@ -4384,6 +4443,8 @@ class FurnitureApp {
         const endRadius = Number(document.getElementById('kc-end-size-x')?.value) || 80;
 
         return {
+            productCode: productCode,
+            name: elementName,
             type: currentType,
             width: Number(document.getElementById('kc-width').value) || 600,
             height: Number(document.getElementById('kc-height').value) || 720,
@@ -4916,32 +4977,10 @@ class FurnitureApp {
             this.kitchenPreview.update(config);
         }
 
-        // 2. Frissítsük a jelenetet valós időben
+        // 2. Frissítsük a meglévő korpuszt, ha szerkesztés módban vagyunk
         if (this.editingCorpusId) {
             this.boardManager.updateCorpus(this.editingCorpusId, config);
             this.updateDimensionsBadge();
-        } else {
-            if (config.type === 'wall') {
-                const placement = this.getWallCabinetPlacement(config);
-                this.newCorpusOffsetX = placement.x;
-                this.newCorpusOffsetY = placement.y;
-                this.newCorpusOffsetZ = placement.z;
-                if (this.previewCorpus) {
-                    this.previewCorpus.position.set(placement.x, placement.y, placement.z);
-                    this.previewCorpus.userData.x = placement.x;
-                    this.previewCorpus.userData.y = placement.y;
-                    this.previewCorpus.userData.z = placement.z;
-                }
-            }
-            if (this.previewCorpus) {
-                this.boardManager.updateCorpus(this.previewCorpus.userData.id, config);
-                this.updateDimensionsBadge();
-            } else {
-                this.previewCorpus = this.boardManager.createCorpus(config, this.newCorpusOffsetX || 0, this.newCorpusOffsetY || 0, this.newCorpusOffsetZ || 0);
-                this.scene3D.selectBoard(this.previewCorpus);
-                this.updateDimensionsBadge();
-                this.renderHierarchyTree();
-            }
         }
     }
 
@@ -4963,25 +5002,29 @@ class FurnitureApp {
         }
 
         // Új korpusz hozzáadása a jelenethez
-        if (this.previewCorpus) {
-            this.boardManager.updateCorpus(this.previewCorpus.userData.id, config);
-            const finalCorpus = this.previewCorpus;
-            this.previewCorpus = null;
-            this.closeModal('modal-kitchen-generator');
-            this.updateDimensionsBadge();
-            this.renderHierarchyTree();
-            this.updateSnapTargetDropdown();
-            if (finalCorpus) {
-                this.scene3D.selectBoard(finalCorpus);
-            }
+        let posX = 0;
+        let posY = 0;
+        let posZ = 0;
+
+        if (config.type === 'wall') {
+            const placement = this.getWallCabinetPlacement(config);
+            posX = placement.x;
+            posY = placement.y;
+            posZ = placement.z;
         } else {
             const currentBounds = this.boardManager.getFurnitureBoundingBox();
-            const offsetX = currentBounds.width > 0 ? (currentBounds.width / 2 + config.width / 2 + 80) : 0;
-            const newCorpus = this.boardManager.createCorpus(config, this.newCorpusOffsetX ?? offsetX, this.newCorpusOffsetY ?? 0, this.newCorpusOffsetZ ?? 0);
-            this.closeModal('modal-kitchen-generator');
-            this.updateDimensionsBadge();
-            this.renderHierarchyTree();
-            this.updateSnapTargetDropdown();
+            posX = currentBounds.width > 0 ? (currentBounds.width / 2 + config.width / 2 + 80) : 0;
+            posY = 0;
+            posZ = 0;
+        }
+
+        const newCorpus = this.boardManager.createCorpus(config, posX, posY, posZ);
+        this.previewCorpus = null;
+        this.closeModal('modal-kitchen-generator');
+        this.updateDimensionsBadge();
+        this.renderHierarchyTree();
+        this.updateSnapTargetDropdown();
+        if (newCorpus) {
             this.scene3D.selectBoard(newCorpus);
         }
     }
