@@ -1156,7 +1156,9 @@ function attachHardwareHighlights(group) {
  * Three.js jelenet, kamera, OrbitControls, TransformControls, fények, raszter, árnyékok
  * Támogatja az egyedi bútorlapokat és az Egybefüggő Konyha Korpusz egységeket lebegő 3D buborékkal.
  */
+
 const DEFAULT_HDRI_LIST = [];
+
 class Scene3D {
     constructor(containerElement, onBoardSelected, onBoardTransformChanged, onFloatingBubbleUpdate) {
         this.container = containerElement;
@@ -1288,7 +1290,10 @@ class Scene3D {
             this.loadHdri(this.hdriList[0]);
         }
 
-        // 11. Render loop
+        // 11. Kezdeti árnyékkövetés frissítése
+        this.updateShadowBounds();
+
+        // 12. Render loop
         this.animate = this.animate.bind(this);
         requestAnimationFrame(this.animate);
     }
@@ -1301,35 +1306,37 @@ class Scene3D {
 
         // 2. Fő Fényforrás (Key Light) - Tiszta, sima, csíkozódásmentes PCFSoft árnyékokkal
         this.dirLight = new THREE.DirectionalLight('#ffffff', 1.05);
-        this.dirLight.position.set(1600, 2500, 1800);
+        this.dirLight.position.set(3500, 5000, 4000);
         this.dirLight.castShadow = true;
+        // 2048x2048: Optimális egyensúly a tökéletes élesség és a 60 FPS sebesség között minden gépen (gyenge laptopokon és integrált GPU-n is)
         this.dirLight.shadow.mapSize.width = 2048;
         this.dirLight.shadow.mapSize.height = 2048;
-        this.dirLight.shadow.camera.near = 500;
-        this.dirLight.shadow.camera.far = 7500;
-        const d = 1600;
+        this.dirLight.shadow.camera.near = 100;
+        this.dirLight.shadow.camera.far = 20000;
+        const d = 3000;
         this.dirLight.shadow.camera.left = -d;
         this.dirLight.shadow.camera.right = d;
         this.dirLight.shadow.camera.top = d;
         this.dirLight.shadow.camera.bottom = -d;
-        this.dirLight.shadow.bias = -0.0005;
-        this.dirLight.shadow.normalBias = 0.0; // 0 normalBias megszünteti a sávos csíkozódást (shadow acne)
+        this.dirLight.shadow.bias = -0.0003;
+        this.dirLight.shadow.normalBias = 0.02; // Finom normalBias a tökéletes felületi árnyékokhoz
         this.scene.add(this.dirLight);
+        this.scene.add(this.dirLight.target);
 
         // 3. Elölről érkező derítő fény (Fill Light)
         this.fillLight = new THREE.DirectionalLight('#cbd5e1', 0.20);
-        this.fillLight.position.set(-1500, 1500, 1200);
+        this.fillLight.position.set(-2500, 2500, 2000);
         this.scene.add(this.fillLight);
 
         // 4. Enyhe peremfény (Rim Light)
         this.backLight = new THREE.DirectionalLight('#ffffff', 0.12);
-        this.backLight.position.set(0, 1000, -2000);
+        this.backLight.position.set(0, 1500, -3000);
         this.scene.add(this.backLight);
     }
 
     setupGround() {
-        const size = 6000;
-        const divisions = 60;
+        const size = 16000; // 16 méteres rács és árnyéksík (tetszőleges távolságban se fogyjon el az árnyék)
+        const divisions = 160;
         this.gridHelper = new THREE.GridHelper(size, divisions, '#4a5568', '#2d3748');
         this.gridHelper.position.y = 0;
         this.scene.add(this.gridHelper);
@@ -1378,6 +1385,7 @@ class Scene3D {
                 if (this.boardManager && this.boardManager.updateKitchenContinuity) {
                     this.boardManager.updateKitchenContinuity();
                 }
+                this.updateShadowBounds();
             }
         });
 
@@ -2259,6 +2267,66 @@ class Scene3D {
         const boxColor = isCorpusOrGroup ? '#f59e0b' : '#38bdf8';
         const boxHelper = new THREE.Box3Helper(box, new THREE.Color(boxColor));
         this.dimensionGroup.add(boxHelper);
+
+        this.updateShadowBounds();
+    }
+
+    /**
+     * Dinamikus árnyékvető követés és kamera igazítás.
+     * Követi a bútorok középpontját és kiterjedését, így ha a felhasználó
+     * 2-5 méterrel odébb tol egy elemet, az árnyék nem tűnik el és éles marad,
+     * miközben 2048x2048-as felbontással a leggyengébb gépen is stabil 60 FPS-sel fut.
+     */
+    updateShadowBounds() {
+        if (!this.dirLight) return;
+
+        const box = new THREE.Box3();
+        let count = 0;
+        if (this.boardMeshes && this.boardMeshes.length > 0) {
+            for (let i = 0; i < this.boardMeshes.length; i++) {
+                const m = this.boardMeshes[i];
+                if (m && m.visible !== false) {
+                    box.expandByObject(m);
+                    count++;
+                }
+            }
+        }
+
+        let centerX = 0;
+        let centerZ = 0;
+        let span = 3000;
+
+        if (count > 0 && !box.isEmpty()) {
+            const center = new THREE.Vector3();
+            box.getCenter(center);
+            const size = new THREE.Vector3();
+            box.getSize(size);
+
+            centerX = center.x;
+            centerZ = center.z;
+            const maxDim = Math.max(size.x, size.z, size.y);
+            // Dinamikus fél-szélesség bőséges ráhagyással (min. 2500 mm)
+            span = Math.max(2500, (maxDim / 2) + 1200);
+        }
+
+        // A fény célpontját a bútorok középpontjához igazítjuk
+        if (this.dirLight.target) {
+            this.dirLight.target.position.set(centerX, 0, centerZ);
+            this.dirLight.target.updateMatrixWorld();
+        }
+
+        // A fényforrást fix relatív szögben és magasságban tartjuk a középponthoz képest
+        this.dirLight.position.set(centerX + 3500, 5000, centerZ + 4000);
+
+        // Vetítési méret frissítése, ha legalább 80mm-t változott a szükséges terület
+        const cam = this.dirLight.shadow.camera;
+        if (Math.abs(cam.right - span) > 80) {
+            cam.left = -span;
+            cam.right = span;
+            cam.top = span;
+            cam.bottom = -span;
+            cam.updateProjectionMatrix();
+        }
     }
 
     /**
