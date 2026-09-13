@@ -5022,6 +5022,388 @@ class SnapEngine {
 }
 
 
+// --- MODULE: js/authManager.js ---
+/**
+ * Felhasználókezelő és Hitelesítési Rendszer (authManager.js)
+ * Támogatja:
+ * - Helyi Python szerver API-t (/api/auth)
+ * - Firebase Authentication-t (ha be van kapcsolva a felhő)
+ * - E-mail visszaigazolást token alapon
+ * - Adminisztrátori és normál felhasználói szerepköröket
+ * - Katalógus jogosultságkezelést
+ */
+
+class AuthManager {
+    constructor(onAuthChangeCallback) {
+        this.onAuthChange = onAuthChangeCallback;
+        this.currentUser = null;
+        this.storageKey = 'butortervezo_auth_user_v1';
+        this.tokenKey = 'butortervezo_auth_token_v1';
+
+        this.init();
+    }
+
+    /**
+     * Inicializálás és elmentett bejelentkezés betöltése
+     */
+    init() {
+        // 1. Mentett session betöltése LocalStorage-ből
+        try {
+            const savedUser = localStorage.getItem(this.storageKey);
+            if (savedUser) {
+                this.currentUser = JSON.parse(savedUser);
+                // Biztosítjuk az isAdmin mezőt
+                if (this.currentUser) {
+                    this.currentUser.isAdmin = (this.currentUser.role === 'admin' || (this.currentUser.email && this.currentUser.email.startsWith('admin@')));
+                }
+            }
+        } catch (e) {
+            console.error('[AUTH] Hiba a mentett session betöltésekor:', e);
+            this.currentUser = null;
+        }
+
+        // 2. Firebase Auth figyelő (ha elérhető a Firebase Auth SDK)
+        if (typeof firebase !== 'undefined' && firebase.auth) {
+            try {
+                firebase.auth().onAuthStateChanged((fbUser) => {
+                    if (fbUser) {
+                        const isAdmin = fbUser.email && (fbUser.email.startsWith('admin@') || fbUser.email === 'admin@butortervezo.hu');
+                        const userData = {
+                            id: fbUser.uid,
+                            email: fbUser.email,
+                            name: fbUser.displayName || fbUser.email.split('@')[0],
+                            role: isAdmin ? 'admin' : 'user',
+                            isAdmin: isAdmin,
+                            emailVerified: fbUser.emailVerified
+                        };
+                        this.currentUser = userData;
+                        this.saveUserToStorage(userData);
+                        this.updateUI();
+                        this.notifyAuthChange();
+                    }
+                });
+            } catch (e) {
+                console.warn('[AUTH] Firebase Auth inicializálási figyelmeztetés:', e);
+            }
+        }
+
+        this.updateUI();
+        this.notifyAuthChange();
+    }
+
+    notifyAuthChange() {
+        if (this.onAuthChange && typeof this.onAuthChange === 'function') {
+            this.onAuthChange(this.currentUser);
+        }
+    }
+
+    saveUserToStorage(user) {
+        try {
+            if (user) {
+                localStorage.setItem(this.storageKey, JSON.stringify(user));
+            } else {
+                localStorage.removeItem(this.storageKey);
+                localStorage.removeItem(this.tokenKey);
+            }
+        } catch (e) {
+            console.error('[AUTH] Hiba a felhasználó tárolásakor:', e);
+        }
+    }
+
+    isLoggedIn() {
+        return !!this.currentUser;
+    }
+
+    isAdmin() {
+        return !!(this.currentUser && this.currentUser.isAdmin);
+    }
+
+    getUser() {
+        return this.currentUser;
+    }
+
+    getUserId() {
+        return this.currentUser ? this.currentUser.id : null;
+    }
+
+    /**
+     * Bejelentkezés e-mail és jelszó párossal
+     */
+    async login(email, password) {
+        email = (email || '').trim().toLowerCase();
+        password = (password || '').trim();
+
+        if (!email || !password) {
+            throw new Error('Kérjük, add meg az e-mail címedet és jelszavadat!');
+        }
+
+        let loginSuccess = false;
+        let authResult = null;
+
+        // 1. Próbálkozás a helyi Python szerver API-val
+        try {
+            const res = await fetch('/api/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password })
+            });
+
+            const data = await res.json();
+
+            if (res.ok && data.success) {
+                authResult = data.user;
+                if (data.token) {
+                    localStorage.setItem(this.tokenKey, data.token);
+                }
+                loginSuccess = true;
+            } else if (data.unverified) {
+                // E-mail nincs visszaigazolva
+                const err = new Error(data.error || 'A fiókod még nincs megerősítve!');
+                err.unverified = true;
+                err.email = data.email || email;
+                err.verificationUrl = data.verificationUrl;
+                err.verificationToken = data.verificationToken;
+                throw err;
+            } else {
+                throw new Error(data.error || 'Hibás e-mail cím vagy jelszó!');
+            }
+        } catch (serverErr) {
+            if (serverErr.unverified) {
+                throw serverErr;
+            }
+
+            // 2. Ha a szerver offline vagy nem válaszol, próbáljuk Firebase Auth-tal
+            if (typeof firebase !== 'undefined' && firebase.auth) {
+                try {
+                    const cred = await firebase.auth().signInWithEmailAndPassword(email, password);
+                    const fbUser = cred.user;
+                    if (!fbUser.emailVerified) {
+                        const err = new Error('Kérjük, igazold vissza az e-mail címedet a belépéshez!');
+                        err.unverified = true;
+                        err.email = fbUser.email;
+                        throw err;
+                    }
+                    const isAdmin = fbUser.email && (fbUser.email.startsWith('admin@') || fbUser.email === 'admin@butortervezo.hu');
+                    authResult = {
+                        id: fbUser.uid,
+                        email: fbUser.email,
+                        name: fbUser.displayName || fbUser.email.split('@')[0],
+                        role: isAdmin ? 'admin' : 'user',
+                        isAdmin: isAdmin,
+                        emailVerified: true
+                    };
+                    loginSuccess = true;
+                } catch (fbErr) {
+                    if (fbErr.unverified) throw fbErr;
+                    throw new Error(serverErr.message || fbErr.message || 'Sikertelen bejelentkezés!');
+                }
+            } else {
+                throw serverErr;
+            }
+        }
+
+        if (loginSuccess && authResult) {
+            authResult.isAdmin = (authResult.role === 'admin' || (authResult.email && authResult.email.startsWith('admin@')));
+            this.currentUser = authResult;
+            this.saveUserToStorage(authResult);
+            this.updateUI();
+            this.notifyAuthChange();
+            return authResult;
+        }
+
+        throw new Error('Ismeretlen hiba történt a bejelentkezés során.');
+    }
+
+    /**
+     * Regisztráció névvel, e-maillel, jelszóval és opcionális admin kóddal
+     */
+    async register(name, email, password, adminCode = '') {
+        email = (email || '').trim().toLowerCase();
+        password = (password || '').trim();
+        name = (name || '').trim();
+
+        if (!email || !password) {
+            throw new Error('E-mail cím és jelszó megadása kötelező!');
+        }
+        if (password.length < 6) {
+            throw new Error('A jelszónak legalább 6 karakter hosszúnak kell lennie!');
+        }
+
+        let regResult = null;
+
+        // 1. Regisztráció a helyi szerveren
+        try {
+            const res = await fetch('/api/auth/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, email, password, adminCode })
+            });
+
+            const data = await res.json();
+            if (res.ok && data.success) {
+                regResult = data;
+            } else {
+                throw new Error(data.error || 'Sikertelen regisztráció!');
+            }
+        } catch (serverErr) {
+            // 2. Ha a szerver offline, próbálkozás Firebase Auth-tal
+            if (typeof firebase !== 'undefined' && firebase.auth) {
+                try {
+                    const cred = await firebase.auth().createUserWithEmailAndPassword(email, password);
+                    await cred.user.sendEmailVerification();
+                    if (name && cred.user.updateProfile) {
+                        await cred.user.updateProfile({ displayName: name });
+                    }
+                    regResult = {
+                        success: true,
+                        message: 'Visszaigazoló e-mail elküldve a(z) ' + email + ' címre!',
+                        email: email
+                    };
+                } catch (fbErr) {
+                    throw new Error(fbErr.message || serverErr.message || 'Sikertelen regisztráció!');
+                }
+            } else {
+                throw serverErr;
+            }
+        }
+
+        return regResult;
+    }
+
+    /**
+     * Visszaigazoló e-mail újraküldése
+     */
+    async resendVerification(email) {
+        email = (email || '').trim().toLowerCase();
+        if (!email) throw new Error('Add meg az e-mail címet!');
+
+        try {
+            const res = await fetch('/api/auth/resend-verification', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email })
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                return data;
+            } else {
+                throw new Error(data.error || 'Nem sikerült az újraküldés.');
+            }
+        } catch (e) {
+            if (typeof firebase !== 'undefined' && firebase.auth && firebase.auth().currentUser) {
+                await firebase.auth().currentUser.sendEmailVerification();
+                return { success: true, message: 'A megerősítő e-mailt elküldtük!' };
+            }
+            throw e;
+        }
+    }
+
+    /**
+     * E-mail azonnali verifikálása (helyi tesztgombhoz vagy linkhez)
+     */
+    async verifyEmailToken(token) {
+        if (!token) throw new Error('Érvénytelen token!');
+        const res = await fetch(`/api/auth/verify?token=${encodeURIComponent(token)}`);
+        if (res.ok) {
+            return true;
+        }
+        throw new Error('A megerősítés sikertelen volt.');
+    }
+
+    /**
+     * Kijelentkezés
+     */
+    async logout() {
+        if (typeof firebase !== 'undefined' && firebase.auth) {
+            try {
+                await firebase.auth().signOut();
+            } catch (e) {
+                // Ignore
+            }
+        }
+
+        this.currentUser = null;
+        this.saveUserToStorage(null);
+        this.updateUI();
+        this.notifyAuthChange();
+    }
+
+    /**
+     * Felhasználói felület (fejléc, gombok) szinkronizálása a hitelesítési állapottal
+     */
+    updateUI() {
+        const btnOpenAuth = document.getElementById('btn-open-auth-modal');
+        const userDropdown = document.getElementById('auth-user-dropdown');
+        const userRoleBadge = document.getElementById('user-role-badge');
+        const userDisplayName = document.getElementById('user-display-name');
+        const userMenuEmail = document.getElementById('user-menu-email');
+        const userMenuRole = document.getElementById('user-menu-role');
+        const authHeaderLabel = document.getElementById('auth-header-label');
+        const scopeBadge = document.getElementById('catalog-scope-badge');
+
+        if (this.currentUser) {
+            if (btnOpenAuth) btnOpenAuth.style.display = 'none';
+            if (userDropdown) userDropdown.style.display = 'block';
+
+            const isAdmin = this.isAdmin();
+            if (userRoleBadge) {
+                userRoleBadge.textContent = isAdmin ? '👑' : '👤';
+            }
+            if (userDisplayName) {
+                userDisplayName.textContent = this.currentUser.name || this.currentUser.email;
+                userDisplayName.title = `${this.currentUser.email} (${isAdmin ? 'Adminisztrátor' : 'Felhasználó'})`;
+            }
+            if (userMenuEmail) {
+                userMenuEmail.textContent = this.currentUser.email;
+            }
+            if (userMenuRole) {
+                if (isAdmin) {
+                    userMenuRole.textContent = '👑 Adminisztrátor (Központi katalógus írás)';
+                    userMenuRole.style.color = '#f59e0b';
+                } else {
+                    userMenuRole.textContent = '👤 Felhasználó (Saját bútorok)';
+                    userMenuRole.style.color = '#38bdf8';
+                }
+            }
+
+            if (scopeBadge) {
+                if (isAdmin) {
+                    scopeBadge.textContent = '👑 Adminisztrátor';
+                    scopeBadge.style.background = 'rgba(245,158,11,0.2)';
+                    scopeBadge.style.color = '#f59e0b';
+                    scopeBadge.style.border = '1px solid rgba(245,158,11,0.4)';
+                    scopeBadge.title = 'A mentett bútoraid bekerülnek a központi katalógusba és mindenki látja őket!';
+                } else {
+                    scopeBadge.textContent = '👤 Saját bútorok';
+                    scopeBadge.style.background = 'rgba(56,189,248,0.2)';
+                    scopeBadge.style.color = '#38bdf8';
+                    scopeBadge.style.border = '1px solid rgba(56,189,248,0.4)';
+                    scopeBadge.title = 'A mentett bútoraid csak a Te fiókodban fognak megjelenni!';
+                }
+            }
+        } else {
+            if (btnOpenAuth) {
+                btnOpenAuth.style.display = 'flex';
+                if (authHeaderLabel) authHeaderLabel.textContent = 'Bejelentkezés';
+            }
+            if (userDropdown) userDropdown.style.display = 'none';
+
+            if (scopeBadge) {
+                scopeBadge.textContent = '🌐 Központi';
+                scopeBadge.style.background = 'rgba(59,130,246,0.2)';
+                scopeBadge.style.color = '#60a5fa';
+                scopeBadge.style.border = '1px solid rgba(59,130,246,0.3)';
+                scopeBadge.title = 'Központi katalógus (Vendég mód)';
+            }
+        }
+    }
+}
+
+// Globális elérhetőség
+if (typeof window !== 'undefined') {
+    window.AuthManager = AuthManager;
+}
+
 // --- MODULE: js/catalogManager.js ---
 const DEFAULT_CATALOG_CATEGORIES = [{"id": "cat_kitchen", "name": "Konyhabútor", "icon": "utensils", "color": "#f59e0b"}, {"id": "cat_living", "name": "Nappali & Polcok", "icon": "tv", "color": "#3b82f6"}, {"id": "cat_wardrobe", "name": "Gardrób & Szekrény", "icon": "archive", "color": "#10b981"}, {"id": "cat_office", "name": "Irodabútor & Asztal", "icon": "briefcase", "color": "#8b5cf6"}, {"id": "cat_bathroom", "name": "Fürdőszoba bútor", "icon": "droplet", "color": "#06b6d4"}];
 const DEFAULT_CATALOG_ITEMS = [{"id": "item_1788625667127", "name": "Kombinált Bútor (6 elem)", "categoryId": "cat_kitchen", "description": "", "dimensions": {"w": 2000, "h": 2190, "d": 603}, "boardCount": 141, "thumbnail": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAQAAAACZmYAAPKnAAANWQAAE9AAAApbAAAAAAAAAABtbHVjAAAAAAAAAAEAAAAMZW5VUwAAACAAAAAcAEcAbwBvAGcAbABlACAASQBuAGMALgAgADIAMAAxADb/2wBDAAMCAgICAgMCAgIDAwMDBAYEBAQEBAgGBgUGCQgKCgkICQkKDA8MCgsOCwkJDRENDg8QEBEQCgwSExIQEw8QEBD/2wBDAQMDAwQDBAgEBAgQCwkLEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBD/wAARCAIAAgADASIAAhEBAxEB/8QAHQABAAICAwEBAAAAAAAAAAAAAAYHBAUBAwgJAv/EAEoQAAEDAgQCBwUEBwcDAwQDAAEAAgMEEQUSITEGQQcTIlFhcYEIFDKRoSOxwfAVM0JSctHhCSRDYoKSomPC8VOy4hY0RHMlk9L/xAAYAQEBAQEBAAAAAAAAAAAAAAAAAQIDBP/EACQRAQEBAAICAgIDAQEBAQAAAAABEQISITEGQQNRYXETIjKB/9oADAMBAAIRAxEAPwDwIA7XOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA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AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB/9k=", "boards": {"corpora": [{"id": "corpus_1788625510159_848", "name": "Konyha Elem 4 (800×720)", "config": {"type": "base", "width": 800, "height": 720, "depth": 505, "thickness": 18, "textureKey": "front_k001", "edgeRadius": 1, "sides": {"enabled": true, "textureKey": "front_k001"}, "bottom": {"enabled": true, "placement": "between", "offsetFromGround": 0, "textureKey": "front_k001"}, "topType": "stretchers", "frontStretcher": {"enabled": true, "width": 80, "orientation": "flat", "insetFront": 0, "textureKey": "front_k001"}, "backStretcher": {"enabled": true, "width": 80, "orientation": "flat", "insetBack": 0, "textureKey": "front_k001"}, "backPanel": {"enabled": true, "type": "surface", "thickness": 3, "gap": 2.5, "height": 715, "offsetY": 0, "insetBack": 20, "textureKey": "white_matte"}, "legs": {"enabled": true, "height": 100, "model": "lab_01", "diameter": 45, "insetX": 50, "insetZ": 50}, "plinth": {"enabled": true, "height": 100, "thickness": 18, "insetFront": 20, "textureKey": "front_k001"}, "worktop": {"enabled": true, "thickness": 38, "depth": 600, "edgeRadius": 3, "overhangFront": 45, "overhangBack": 50, "textureKey": "wt_k002", "splashback": {"enabled": true, "height": 600, "thickness": 5, "textureKey": "wt_k002"}}, "shelves": {"count": 1, "thickness": 18, "insetFront": 15, "textureKey": "front_k001"}, "elements": [{"id": "elem_1788625499813_443", "type": "door", "name": "Ajtó Front", "height": 720, "gap": 3, "doorType": "double", "thickness": 18, "textureKey": "front_k001", "hasHandle": true, "handleModel": "fogo_01", "handlePosV": "top", "handlePosH": "center", "handleOrientation": "horizontal", "handleOffsetV": 40, "handleOffsetH": 40}]}, "x": 600, "y": 0, "z": 4}, {"id": "corpus_1788625492294_240", "name": "Konyha Elem (800×720)", "config": {"type": "base", "width": 800, "height": 720, "depth": 505, "thickness": 18, "textureKey": "front_k001", "edgeRadius": 1, "sides": {"enabled": true, "textureKey": "front_k001"}, "bottom": {"enabled": true, "placement": "between", "offsetFromGround": 0, "textureKey": "front_k001"}, "topType": "stretchers", "frontStretcher": {"enabled": true, "width": 80, "orientation": "flat", "insetFront": 0, "textureKey": "front_k001"}, "backStretcher": {"enabled": true, "width": 80, "orientation": "flat", "insetBack": 0, "textureKey": "front_k001"}, "backPanel": {"enabled": true, "type": "surface", "thickness": 3, "gap": 2.5, "height": 715, "offsetY": 0, "insetBack": 20, "textureKey": "white_matte"}, "legs": {"enabled": true, "height": 100, "model": "lab_01", "diameter": 45, "insetX": 50, "insetZ": 50}, "plinth": {"enabled": true, "height": 100, "thickness": 18, "insetFront": 20, "textureKey": "front_k001"}, "worktop": {"enabled": true, "thickness": 38, "depth": 600, "edgeRadius": 3, "overhangFront": 45, "overhangBack": 50, "textureKey": "wt_k002", "splashback": {"enabled": true, "height": 600, "thickness": 5, "textureKey": "wt_k002"}}, "shelves": {"count": 1, "thickness": 18, "insetFront": 15, "textureKey": "front_k001"}, "elements": [{"id": "elem_1788625499813_443", "type": "door", "name": "Ajtó Front", "height": 720, "gap": 3, "doorType": "double", "thickness": 18, "textureKey": "front_k001", "hasHandle": true, "handleModel": "fogo_01", "handlePosV": "top", "handlePosH": "center", "handleOrientation": "horizontal", "handleOffsetV": 40, "handleOffsetH": 40}]}, "x": -200, "y": 0, "z": 4}, {"id": "corpus_1788625417377_479", "name": "Konyha Elem (400×720)", "config": {"type": "base", "width": 400, "height": 720, "depth": 505, "thickness": 18, "textureKey": "front_k001", "edgeRadius": 1, "sides": {"enabled": true, "textureKey": "front_k001"}, "bottom": {"enabled": true, "placement": "between", "offsetFromGround": 0, "textureKey": "front_k001"}, "topType": "stretchers", "frontStretcher": {"enabled": true, "width": 80, "orientation": "flat", "insetFront": 0, "textureKey": "front_k001"}, "backStretcher": {"enabled": true, "width": 80, "orientation": "flat", "insetBack": 0, "textureKey": "front_k001"}, "backPanel": {"enabled": true, "type": "surface", "thickness": 3, "gap": 2.5, "height": 715, "offsetY": 0, "insetBack": 20, "textureKey": "white_matte"}, "legs": {"enabled": true, "height": 100, "model": "lab_01", "diameter": 45, "insetX": 50, "insetZ": 50}, "plinth": {"enabled": true, "height": 100, "thickness": 18, "insetFront": 20, "textureKey": "front_k001"}, "worktop": {"enabled": true, "thickness": 38, "depth": 600, "edgeRadius": 3, "overhangFront": 45, "overhangBack": 50, "textureKey": "wt_k002", "splashback": {"enabled": true, "height": 600, "thickness": 5, "textureKey": "wt_k002"}}, "shelves": {"count": 1, "thickness": 18, "insetFront": 15, "textureKey": "front_k001"}, "elements": [{"id": "elem_1788625439020_314", "type": "drawer", "name": "Fiók 1", "height": 294, "gap": 3, "thickness": 18, "textureKey": "front_k001", "hasHandle": true, "handleModel": "fogo_01", "handlePosV": "top", "handlePosH": "center", "handleOrientation": "horizontal", "handleOffsetV": 40, "handleOffsetH": 40}, {"id": "elem_1788625456108_857", "type": "drawer", "name": "Fiók 2", "height": 294, "gap": 3, "thickness": 18, "textureKey": "front_k001", "hasHandle": true, "handleModel": "fogo_01", "handlePosV": "top", "handlePosH": "center", "handleOrientation": "horizontal", "handleOffsetV": 40, "handleOffsetH": 40}, {"id": "elem_1788625467305_908", "type": "drawer", "name": "Fiók 3", "height": 140, "gap": 3, "thickness": 18, "textureKey": "front_k001", "hasHandle": true, "handleModel": "fogo_01", "handlePosV": "top", "handlePosH": "center", "handleOrientation": "horizontal", "handleOffsetV": 40, "handleOffsetH": 40}]}, "x": -800, "y": 0, "z": 4}, {"id": "corpus_1788625522444_457", "name": "Konyha Elem (400×720)", "config": {"type": "wall", "width": 400, "height": 720, "depth": 320, "thickness": 18, "textureKey": "front_k001", "edgeRadius": 1, "sides": {"enabled": true, "textureKey": "front_k001"}, "bottom": {"enabled": true, "placement": "between", "offsetFromGround": 0, "textureKey": "front_k001"}, "topType": "full_top", "frontStretcher": {"enabled": true, "width": 80, "orientation": "flat", "insetFront": 0, "textureKey": "front_k001"}, "backStretcher": {"enabled": true, "width": 80, "orientation": "flat", "insetBack": 0, "textureKey": "front_k001"}, "backPanel": {"enabled": true, "type": "surface", "thickness": 3, "gap": 2.5, "height": 715, "offsetY": 0, "insetBack": 15, "textureKey": "white_matte"}, "legs": {"enabled": false, "height": 100, "model": "lab_01", "diameter": 45, "insetX": 50, "insetZ": 50}, "plinth": {"enabled": false, "height": 100, "thickness": 18, "insetFront": 20, "textureKey": "front_k001"}, "worktop": {"enabled": false, "thickness": 38, "depth": 600, "edgeRadius": 3, "overhangFront": 45, "overhangBack": 235, "textureKey": "wt_k002", "splashback": {"enabled": true, "height": 600, "thickness": 5, "textureKey": "wt_k002"}}, "shelves": {"count": 2, "thickness": 18, "insetFront": 15, "textureKey": "front_k001"}, "elements": [{"id": "elem_1788625533390_416", "type": "door", "name": "Felnyíló Ajtó", "height": 360, "gap": 3, "doorType": "single_left", "thickness": 18, "textureKey": "front_k001", "hasHandle": true, "handleModel": "fogo_01", "handlePosV": "bottom", "handlePosH": "center", "handleOrientation": "horizontal", "handleOffsetV": 40, "handleOffsetH": 40}, {"id": "elem_1788625547605_313", "type": "door", "name": "Felnyíló Ajtó", "height": 360, "gap": 3, "doorType": "single_left", "thickness": 18, "textureKey": "front_k001", "hasHandle": true, "handleModel": "fogo_01", "handlePosV": "bottom", "handlePosH": "center", "handleOrientation": "horizontal", "handleOffsetV": 40, "handleOffsetH": 40}]}, "x": -800, "y": 1458, "z": -138.5}, {"id": "corpus_1788625580936_119", "name": "Konyha Elem (800×720)", "config": {"type": "wall", "width": 800, "height": 720, "depth": 320, "thickness": 18, "textureKey": "front_k001", "edgeRadius": 1, "sides": {"enabled": true, "textureKey": "front_k001"}, "bottom": {"enabled": true, "placement": "between", "offsetFromGround": 0, "textureKey": "front_k001"}, "topType": "full_top", "frontStretcher": {"enabled": true, "width": 80, "orientation": "flat", "insetFront": 0, "textureKey": "front_k001"}, "backStretcher": {"enabled": true, "width": 80, "orientation": "flat", "insetBack": 0, "textureKey": "front_k001"}, "backPanel": {"enabled": true, "type": "surface", "thickness": 3, "gap": 2.5, "height": 715, "offsetY": 0, "insetBack": 15, "textureKey": "white_matte"}, "legs": {"enabled": false, "height": 100, "model": "lab_01", "diameter": 45, "insetX": 50, "insetZ": 50}, "plinth": {"enabled": false, "height": 100, "thickness": 18, "insetFront": 20, "textureKey": "front_k001"}, "worktop": {"enabled": false, "thickness": 38, "depth": 600, "edgeRadius": 3, "overhangFront": 45, "overhangBack": 235, "textureKey": "wt_k002", "splashback": {"enabled": true, "height": 600, "thickness": 5, "textureKey": "wt_k002"}}, "shelves": {"count": 2, "thickness": 18, "insetFront": 15, "textureKey": "front_k001"}, "elements": [{"id": "elem_1788625533390_416", "type": "door", "name": "Felnyíló Ajtó", "height": 360, "gap": 3, "doorType": "lift_up", "thickness": 18, "textureKey": "front_k001", "hasHandle": true, "handleModel": "fogo_01", "handlePosV": "bottom", "handlePosH": "center", "handleOrientation": "horizontal", "handleOffsetV": 40, "handleOffsetH": 40}, {"id": "elem_1788625547605_313", "type": "door", "name": "Felnyíló Ajtó", "height": 360, "gap": 3, "doorType": "lift_up", "thickness": 18, "textureKey": "front_k001", "hasHandle": true, "handleModel": "fogo_01", "handlePosV": "bottom", "handlePosH": "center", "handleOrientation": "horizontal", "handleOffsetV": 40, "handleOffsetH": 40}]}, "x": -200, "y": 1458, "z": -138.5}, {"id": "corpus_1788625622399_269", "name": "Konyha Elem 7 (800×720)", "config": {"type": "wall", "width": 800, "height": 720, "depth": 320, "thickness": 18, "textureKey": "front_k001", "edgeRadius": 1, "sides": {"enabled": true, "textureKey": "front_k001"}, "bottom": {"enabled": true, "placement": "between", "offsetFromGround": 0, "textureKey": "front_k001"}, "topType": "full_top", "frontStretcher": {"enabled": true, "width": 80, "orientation": "flat", "insetFront": 0, "textureKey": "front_k001"}, "backStretcher": {"enabled": true, "width": 80, "orientation": "flat", "insetBack": 0, "textureKey": "front_k001"}, "backPanel": {"enabled": true, "type": "surface", "thickness": 3, "gap": 2.5, "height": 715, "offsetY": 0, "insetBack": 15, "textureKey": "white_matte"}, "legs": {"enabled": false, "height": 100, "model": "lab_01", "diameter": 45, "insetX": 50, "insetZ": 50}, "plinth": {"enabled": false, "height": 100, "thickness": 18, "insetFront": 20, "textureKey": "front_k001"}, "worktop": {"enabled": false, "thickness": 38, "depth": 600, "edgeRadius": 3, "overhangFront": 45, "overhangBack": 235, "textureKey": "wt_k002", "splashback": {"enabled": true, "height": 600, "thickness": 5, "textureKey": "wt_k002"}}, "shelves": {"count": 2, "thickness": 18, "insetFront": 15, "textureKey": "front_k001"}, "elements": [{"id": "elem_1788625533390_416", "type": "door", "name": "Felnyíló Ajtó", "height": 360, "gap": 3, "doorType": "lift_up", "thickness": 18, "textureKey": "front_k001", "hasHandle": true, "handleModel": "fogo_01", "handlePosV": "bottom", "handlePosH": "center", "handleOrientation": "horizontal", "handleOffsetV": 40, "handleOffsetH": 40}, {"id": "elem_1788625547605_313", "type": "door", "name": "Felnyíló Ajtó", "height": 360, "gap": 3, "doorType": "lift_up", "thickness": 18, "textureKey": "front_k001", "hasHandle": true, "handleModel": "fogo_01", "handlePosV": "bottom", "handlePosH": "center", "handleOrientation": "horizontal", "handleOffsetV": 40, "handleOffsetH": 40}]}, "x": 600, "y": 1458, "z": -138.5}], "customGroups": [], "boards": []}, "createdAt": "2026-09-05T16:27:47.127Z"}, {"id": "item_1788623972666", "name": "Konyha Elem (600×720)", "categoryId": "cat_kitchen", "description": "", "dimensions": {"w": 600, "h": 720, "d": 505}, "boardCount": 17, "thumbnail": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAQAAAACZmYAAPKnAAANWQAAE9AAAApbAAAAAAAAAABtbHVjAAAAAAAAAAEAAAAMZW5VUwAAACAAAAAcAEcAbwBvAGcAbABlACAASQBuAGMALgAgADIAMAAxADb/2wBDAAMCAgICAgMCAgIDAwMDBAYEBAQEBAgGBgUGCQgKCgkICQkKDA8MCgsOCwkJDRENDg8QEBEQCgwSExIQEw8QEBD/2wBDAQMDAwQDBAgEBAgQCwkLEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBD/wAARCANeBPcDASIAAhEBAxEB/8QAHQABAAICAwEBAAAAAAAAAAAAAAYHBAUBAwgJAv/EAE4QAQACAQIEAwYEAwQHBQYEBwABAgMEEQUSITEGQQcTIlFhcYEIFDKRoSOxwfAVM0JSctHhCSRDYoKSomPC8VOy4hY0RHMlk9L/xAAYAQEBAQEBAAAAAAAAAAAAAAAAAQIDBP/EACQRAQEBAAICAgIDAQEBAQAAAAABEQISITEGQQNRYXETIjKB/9oADAMBAAIRAxEAPwDwIA7XOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB/9k=", "boards": {"corpora": [{"id": "corpus_1788623781028_905", "name": "Konyha Elem (600×720)", "config": {"type": "base", "width": 600, "height": 720, "depth": 505, "thickness": 18, "textureKey": "front_k001", "edgeRadius": 1, "sides": {"enabled": true, "textureKey": "front_k001"}, "bottom": {"enabled": true, "placement": "between", "offsetFromGround": 0, "textureKey": "front_k001"}, "topType": "stretchers", "frontStretcher": {"enabled": true, "width": 80, "orientation": "flat", "insetFront": 0, "textureKey": "front_k001"}, "backStretcher": {"enabled": true, "width": 80, "orientation": "flat", "insetBack": 0, "textureKey": "front_k001"}, "backPanel": {"enabled": true, "type": "surface", "thickness": 3, "gap": 2.5, "height": 715, "offsetY": 0, "insetBack": 20, "textureKey": "white_matte"}, "legs": {"enabled": true, "height": 100, "model": "lab_02", "diameter": 45, "insetX": 50, "insetZ": 50}, "plinth": {"enabled": true, "height": 100, "thickness": 18, "insetFront": 20, "textureKey": "front_k001"}, "worktop": {"enabled": true, "thickness": 38, "depth": 600, "edgeRadius": 3, "overhangFront": 45, "overhangBack": 50, "textureKey": "wt_k002", "splashback": {"enabled": true, "height": 600, "thickness": 5, "textureKey": "wt_k002"}}, "shelves": {"count": 0, "thickness": 18, "insetFront": 15, "textureKey": "front_k001"}, "elements": [{"id": "elem_1788623841681_832", "type": "door", "name": "Ajtó Front", "height": 720, "gap": 3, "doorType": "single_left", "thickness": 18, "textureKey": "front_k001", "hasHandle": true, "handleModel": "fogo_01", "handlePosV": "top", "handlePosH": "center", "handleOrientation": "horizontal", "handleOffsetV": 40, "handleOffsetH": 40}]}, "x": 0, "y": 0, "z": 0}], "boards": []}, "createdAt": "2026-09-05T15:59:32.666Z"}];
@@ -5031,6 +5413,7 @@ const DEFAULT_CATALOG_ITEMS = [{"id": "item_1788625667127", "name": "Kombinált 
  * Kategóriák kezelése, bútorok mentése automatikus 3D előnézettel, visszatöltés, export/import,
  * valamint automatikus szinkronizáció a Firebase Felhővel, a helyi Python szerverrel és a GitHub-bal.
  */
+
 class CatalogManager {
     constructor(boardManager, scene3D, onCatalogChange) {
         this.boardManager = boardManager;
@@ -5038,8 +5421,11 @@ class CatalogManager {
         this.onCatalogChange = onCatalogChange;
 
         this.categories = [];
+        this.globalItems = [];
+        this.userItems = [];
         this.items = [];
         this.activeCategoryId = 'all'; // 'all' vagy konkrét category id
+        this.scopeFilter = 'all'; // 'all', 'global', 'my'
         this.searchQuery = '';
 
         this.storageKeyCategories = 'butortervezo_categories_v1';
@@ -5237,15 +5623,102 @@ class CatalogManager {
     }
 
     /**
-     * Katalógus elküldése a szervernek és a Firebase felhőbe
+     * Katalógus szűrés hatókörének beállítása ('all', 'global', 'my')
      */
-    async syncToServer(actionDescription = 'Katalógus frissítés') {
+    setScopeFilter(scope) {
+        this.scopeFilter = scope || 'all';
+        this.rebuildItems();
+    }
+
+    /**
+     * Bútorok listájának összeállítása a globális és a saját bútorokból a hatókör alapján
+     */
+    rebuildItems() {
+        // Megjelöljük az elemeket a kényelmes UI megjelenítéshez
+        (this.globalItems || []).forEach(i => { i.isGlobal = true; });
+        (this.userItems || []).forEach(i => { i.isGlobal = false; });
+
+        if (this.scopeFilter === 'global') {
+            this.items = [...(this.globalItems || [])];
+        } else if (this.scopeFilter === 'my') {
+            this.items = [...(this.userItems || [])];
+        } else {
+            // 'all': saját bútorok legfelül, utána a központiak
+            this.items = [...(this.userItems || []), ...(this.globalItems || [])];
+        }
+        this.notifyChange();
+    }
+
+    /**
+     * Felhasználó be- vagy kijelentkezésekor hívódik meg
+     */
+    async onUserChanged(user) {
+        if (user && user.id) {
+            // 1. Saját bútorok betöltése LocalStorage-ből
+            try {
+                const saved = localStorage.getItem(`butortervezo_user_items_${user.id}`);
+                if (saved) {
+                    this.userItems = JSON.parse(saved);
+                } else {
+                    this.userItems = [];
+                }
+            } catch (e) {
+                this.userItems = [];
+            }
+
+            // 2. Saját bútorok lekérése a Python szervertől a háttérben
+            try {
+                const res = await fetch(`/api/user-catalog?userId=${encodeURIComponent(user.id)}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data && data.success && Array.isArray(data.items)) {
+                        data.items.forEach(srvItem => {
+                            if (!this.userItems.some(i => i.id === srvItem.id)) {
+                                this.userItems.push(srvItem);
+                            }
+                        });
+                        this.saveUserItemsToStorage();
+                    }
+                }
+            } catch (e) {
+                // Offline mód
+            }
+        } else {
+            this.userItems = [];
+        }
+
+        this.rebuildItems();
+    }
+
+    /**
+     * Felhasználói privát katalógus mentése a szerverre
+     */
+    async syncUserCatalogToServer(userId) {
+        if (!userId) return;
+        try {
+            await fetch('/api/user-catalog', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    userId: userId,
+                    items: this.userItems
+                })
+            });
+        } catch (e) {
+            console.warn('[USER CATALOG] Hiba a szerver szinkronizálásakor:', e);
+        }
+    }
+
+    /**
+     * Központi katalógus elküldése a szervernek és a Firebase felhőbe (Kizárólag Admin)
+     */
+    async syncToServer(actionDescription = 'Katalógus frissítés', isGlobal = true) {
         let firebaseSaved = false;
         let localServerSaved = false;
 
         // 1. Mentés a Firebase Felhőbe (ha csatlakozva van)
         if (typeof window !== 'undefined' && window.FirebaseSync && window.FirebaseSync.isConnected) {
-            firebaseSaved = await window.FirebaseSync.saveCatalog(this.categories, this.items, actionDescription);
+            firebaseSaved = await window.FirebaseSync.saveCatalog(this.categories, this.globalItems, actionDescription);
         }
 
         // 2. Mentés a helyi Python szervernek és Git Push
@@ -5256,7 +5729,9 @@ class CatalogManager {
                 body: JSON.stringify({
                     action: actionDescription,
                     categories: this.categories,
-                    items: this.items
+                    items: this.globalItems,
+                    isAdmin: true,
+                    role: 'admin'
                 })
             });
 
@@ -5269,11 +5744,11 @@ class CatalogManager {
 
         // Visszajelzés a felhasználónak
         if (firebaseSaved && localServerSaved) {
-            this.showToast('☁️ Mentve a Firebase Felhőbe & GitHub-ra! 🚀', 'success');
+            this.showToast('☁️ Mentve a Központi Katalógusba (Felhő & GitHub)! 🚀', 'success');
         } else if (firebaseSaved) {
             this.showToast('☁️ Sikeresen mentve a Firebase Felhőbe! 🌐', 'success');
         } else if (localServerSaved) {
-            this.showToast('💾 Katalógus mentve & feltöltve a GitHub-ra! 🚀', 'success');
+            this.showToast('💾 Központi katalógus mentve & feltöltve a GitHub-ra! 🚀', 'success');
         } else {
             this.showToast('💾 Katalógus mentve a böngészőben (Helyi)', 'info');
         }
@@ -5302,18 +5777,33 @@ class CatalogManager {
 
             if (itemJson) {
                 try {
-                    this.items = JSON.parse(itemJson).filter(item => !item.id.startsWith('preset_'));
+                    this.globalItems = JSON.parse(itemJson).filter(item => !item.id.startsWith('preset_'));
                 } catch(e) {
-                    this.items = [];
+                    this.globalItems = [];
                 }
             }
-            if (!this.items || this.items.length === 0) {
-                this.items = (typeof DEFAULT_CATALOG_ITEMS !== 'undefined' ? DEFAULT_CATALOG_ITEMS : []).slice();
-                this.saveItemsToStorage();
+            if (!this.globalItems || this.globalItems.length === 0) {
+                this.globalItems = (typeof DEFAULT_CATALOG_ITEMS !== 'undefined' ? DEFAULT_CATALOG_ITEMS : []).slice();
+                this.saveGlobalItemsToStorage();
             }
+
+            // Bejelentkezett felhasználó bútorainak betöltése ha van aktív session
+            if (typeof window !== 'undefined' && window.authManager && window.authManager.getUserId()) {
+                const uid = window.authManager.getUserId();
+                try {
+                    const userSaved = localStorage.getItem(`butortervezo_user_items_${uid}`);
+                    if (userSaved) {
+                        this.userItems = JSON.parse(userSaved);
+                    }
+                } catch(e) {}
+            }
+
+            this.rebuildItems();
         } catch (e) {
             console.error('Hiba a katalógus betöltésekor:', e);
             this.categories = [];
+            this.globalItems = [];
+            this.userItems = [];
             this.items = [];
         }
     }
@@ -5326,12 +5816,26 @@ class CatalogManager {
         }
     }
 
-    saveItemsToStorage() {
+    saveGlobalItemsToStorage() {
         try {
-            localStorage.setItem(this.storageKeyItems, JSON.stringify(this.items));
+            localStorage.setItem(this.storageKeyItems, JSON.stringify(this.globalItems));
         } catch (e) {
-            console.error('Hiba a bútorok mentésekor:', e);
+            console.error('Hiba a központi bútorok mentésekor:', e);
         }
+    }
+
+    saveUserItemsToStorage() {
+        try {
+            const uid = (typeof window !== 'undefined' && window.authManager && window.authManager.getUserId()) || 'guest';
+            localStorage.setItem(`butortervezo_user_items_${uid}`, JSON.stringify(this.userItems));
+        } catch (e) {
+            console.error('Hiba a felhasználói bútorok mentésekor:', e);
+        }
+    }
+
+    saveItemsToStorage() {
+        this.saveGlobalItemsToStorage();
+        this.saveUserItemsToStorage();
     }
 
     notifyChange() {
@@ -5461,6 +5965,9 @@ class CatalogManager {
         const snapTarget = savingTarget.type === 'multiple' ? savingTarget.targets : savingTarget.target;
         const thumbnail = customThumbnail || this.scene3D.getSnapshot(snapTarget, 512, 512, snapshotAngle || 'iso-right');
 
+        const isAdmin = (typeof window !== 'undefined' && window.authManager && window.authManager.isAdmin()) || false;
+        const authUser = (typeof window !== 'undefined' && window.authManager && window.authManager.getUser()) || null;
+
         const newItem = {
             id: 'item_' + Date.now(),
             name: name && name.trim() !== '' ? name.trim() : (savingTarget.name || `Bútor ${this.items.length + 1}`),
@@ -5470,13 +5977,27 @@ class CatalogManager {
             boardCount: boardCount,
             thumbnail: thumbnail,
             boards: boardsData,
-            createdAt: new Date().toISOString()
+            createdAt: new Date().toISOString(),
+            isGlobal: isAdmin,
+            ownerId: isAdmin ? 'admin' : (authUser ? authUser.id : 'guest'),
+            ownerName: isAdmin ? (authUser ? authUser.name : 'Adminisztrátor') : (authUser ? authUser.name : 'Saját')
         };
 
-        this.items.unshift(newItem);
-        this.saveItemsToStorage();
-        this.notifyChange();
-        this.syncToServer(`Bútor mentve a katalógusba: ${newItem.name}`);
+        if (isAdmin) {
+            this.globalItems.unshift(newItem);
+            this.saveGlobalItemsToStorage();
+            this.rebuildItems();
+            this.syncToServer(`Központi bútor mentve: ${newItem.name}`, true);
+            this.showToast(`👑 Bútor mentve a Központi Katalógusba! (Mindenki látja)`, 'success');
+        } else {
+            this.userItems.unshift(newItem);
+            this.saveUserItemsToStorage();
+            this.rebuildItems();
+            if (authUser) {
+                this.syncUserCatalogToServer(authUser.id);
+            }
+            this.showToast(`🔒 Bútor mentve a Saját Fiókodba! (Csak Nálad jelenik meg)`, 'success');
+        }
         return newItem;
     }
 
@@ -5493,6 +6014,9 @@ class CatalogManager {
         const bounds = this.boardManager.getFurnitureBoundingBox();
         const thumbnail = customThumbnail || this.scene3D.getSnapshot(null, 512, 512, snapshotAngle || 'iso-right');
 
+        const isAdmin = (typeof window !== 'undefined' && window.authManager && window.authManager.isAdmin()) || false;
+        const authUser = (typeof window !== 'undefined' && window.authManager && window.authManager.getUser()) || null;
+
         const newItem = {
             id: 'item_' + Date.now(),
             name: name && name.trim() !== '' ? name.trim() : `Bútor ${this.items.length + 1}`,
@@ -5506,13 +6030,27 @@ class CatalogManager {
             boardCount: this.boardManager.boards.length,
             thumbnail: thumbnail,
             boards: boardsData,
-            createdAt: new Date().toISOString()
+            createdAt: new Date().toISOString(),
+            isGlobal: isAdmin,
+            ownerId: isAdmin ? 'admin' : (authUser ? authUser.id : 'guest'),
+            ownerName: isAdmin ? (authUser ? authUser.name : 'Adminisztrátor') : (authUser ? authUser.name : 'Saját')
         };
 
-        this.items.unshift(newItem); // Elejére szúrjuk be
-        this.saveItemsToStorage();
-        this.notifyChange();
-        this.syncToServer(`Bútor mentve a katalógusba: ${newItem.name}`);
+        if (isAdmin) {
+            this.globalItems.unshift(newItem); // Elejére szúrjuk be
+            this.saveGlobalItemsToStorage();
+            this.rebuildItems();
+            this.syncToServer(`Központi bútor mentve: ${newItem.name}`, true);
+            this.showToast(`👑 Bútor mentve a Központi Katalógusba! (Mindenki látja)`, 'success');
+        } else {
+            this.userItems.unshift(newItem);
+            this.saveUserItemsToStorage();
+            this.rebuildItems();
+            if (authUser) {
+                this.syncUserCatalogToServer(authUser.id);
+            }
+            this.showToast(`🔒 Bútor mentve a Saját Fiókodba! (Csak Nálad jelenik meg)`, 'success');
+        }
         return newItem;
     }
 
@@ -5559,11 +6097,33 @@ class CatalogManager {
 
     deleteItem(itemId) {
         const item = this.items.find(i => i.id === itemId);
-        const itemName = item ? item.name : itemId;
-        this.items = this.items.filter(i => i.id !== itemId);
-        this.saveItemsToStorage();
-        this.notifyChange();
-        this.syncToServer(`Bútor törölve a katalógusból: ${itemName}`);
+        if (!item) return;
+
+        const isAdmin = (typeof window !== 'undefined' && window.authManager && window.authManager.isAdmin()) || false;
+        const authUser = (typeof window !== 'undefined' && window.authManager && window.authManager.getUser()) || null;
+
+        if (item.isGlobal && !isAdmin) {
+            alert('A központi katalógus bútorait kizárólag az adminisztrátor törölheti!');
+            return;
+        }
+
+        const itemName = item.name || itemId;
+
+        if (item.isGlobal) {
+            this.globalItems = this.globalItems.filter(i => i.id !== itemId);
+            this.saveGlobalItemsToStorage();
+            this.rebuildItems();
+            this.syncToServer(`Központi bútor törölve: ${itemName}`, true);
+            this.showToast(`Központi bútor törölve: ${itemName}`, 'info');
+        } else {
+            this.userItems = this.userItems.filter(i => i.id !== itemId);
+            this.saveUserItemsToStorage();
+            this.rebuildItems();
+            if (authUser) {
+                this.syncUserCatalogToServer(authUser.id);
+            }
+            this.showToast(`Bútor törölve a saját fiókodból: ${itemName}`, 'info');
+        }
     }
 
     /**
@@ -5637,7 +6197,6 @@ class CatalogManager {
         });
     }
 }
-
 
 // --- MODULE: js/cutListManager.js ---
 /**
@@ -7805,13 +8364,6 @@ class KitchenCorpusGenerator {
  */
 
 
-
-
-
-
-
-
-
 /**
  * 3D Élőkép és Előnézet kezelő a Konyha Korpusz Varázsló jobb oldalán
  */
@@ -8037,7 +8589,7 @@ class KitchenPreview3D {
 /**
  * 3D Anyag Előnézet és Fizikai Megjelenítés (PBR Preview) Gömb és 40x70 cm Bútorlap modellekkel
  */
-class PBRMaterialPreview3D {
+export class PBRMaterialPreview3D {
     constructor(containerId) {
         this.container = document.getElementById(containerId);
         if (!this.container) return;
@@ -8279,6 +8831,13 @@ class FurnitureApp {
             () => this.renderCatalogUI()
         );
         this.cutListManager = new CutListManager(this.boardManager);
+        this.authManager = new AuthManager((user) => {
+            if (this.catalogManager) {
+                this.catalogManager.onUserChanged(user);
+            }
+            this.renderCatalogUI();
+        });
+        window.authManager = this.authManager;
 
         // 4. Konyha Varázsló Élőkép 3D inicializálása
         this.kitchenPreview = new KitchenPreview3D('kitchen-preview-3d-container');
@@ -8319,6 +8878,9 @@ class FurnitureApp {
     // ==========================================
 
     bindUIEvents() {
+        // --- Felhasználókezelés és Auth események ---
+        this.bindAuthEvents();
+
         // --- Fejléc gombok ---
         document.getElementById('btn-new-project').addEventListener('click', () => {
             if (confirm('Biztosan új projektet kezdesz? A nem mentett bútorlapok törlődnek.')) {
@@ -10875,7 +11437,19 @@ class FurnitureApp {
                         const dimW = (item.dimensions && item.dimensions.w) || 0;
                         const dimH = (item.dimensions && item.dimensions.h) || 0;
                         const dimD = (item.dimensions && item.dimensions.d) || 0;
-                        const boardCount = item.boardCount || (item.boards && item.boards.length) || 1;
+                        const isGlobal = (item.isGlobal !== false);
+                        const isAdmin = (this.authManager && this.authManager.isAdmin()) || false;
+                        const currentUid = this.authManager && this.authManager.getUserId();
+                        const isOwner = currentUid && (item.ownerId === currentUid);
+                        const canDelete = isAdmin || (!isGlobal && (isOwner || !item.ownerId || item.ownerId === 'guest'));
+
+                        const badgeHtml = isGlobal
+                            ? `<span style="font-size:9px; color:#60a5fa; background:rgba(59,130,246,0.18); border:1px solid rgba(59,130,246,0.35); padding:1px 4px; border-radius:3px; font-weight:600; flex-shrink:0;">🌐 Központi</span>`
+                            : `<span style="font-size:9px; color:#38bdf8; background:rgba(56,189,248,0.18); border:1px solid rgba(56,189,248,0.35); padding:1px 4px; border-radius:3px; font-weight:600; flex-shrink:0;">👤 Saját</span>`;
+
+                        const deleteBtnHtml = canDelete
+                            ? `<button class="btn btn-sm btn-danger btn-delete-item" style="padding:4px 8px; font-size:13px; line-height:1; background:rgba(239, 68, 68, 0.18); color:#ef4444; border-color:rgba(239, 68, 68, 0.4);" title="Törlés a katalógusból">🗑️</button>`
+                            : `<button class="btn btn-sm" disabled style="padding:4px 8px; font-size:13px; line-height:1; opacity:0.35; cursor:not-allowed; border-color:transparent;" title="Központi katalógus bútort csak adminisztrátor törölhet">🔒</button>`;
 
                         card.innerHTML = `
                             <div class="card-img-container" style="width:72px; height:72px; min-width:72px; min-height:72px; aspect-ratio:1/1; border-radius:var(--radius-sm); overflow:hidden; background:#0b1120; border:1px solid var(--border-color); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
@@ -10883,16 +11457,17 @@ class FurnitureApp {
                             </div>
                             <div class="card-body" style="flex:1; min-width:0; padding:0; display:flex; flex-direction:column; justify-content:space-between; height:72px;">
                                 <div style="min-width:0;">
-                                    <div class="card-title" style="font-size:13px; font-weight:600; color:var(--text-primary); margin-bottom:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${item.name}">${item.name}</div>
+                                    <div class="card-title" style="font-size:13px; font-weight:600; color:var(--text-primary); margin-bottom:2px; display:flex; align-items:center; gap:5px;" title="${item.name}">
+                                        <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${item.name}</span>
+                                        ${badgeHtml}
+                                    </div>
                                     <div style="font-size:11px; color:#38bdf8; font-weight:500;">📏 ${dimW}×${dimH}×${dimD} mm</div>
                                 </div>
                                 <div class="card-actions" style="display:flex; gap:6px; align-items:center; justify-content:flex-end; margin-top:auto;">
                                     <button class="btn btn-sm btn-primary btn-add-scene" style="padding:4px 10px; font-size:14px; line-height:1;" title="Hozzáadás a jelenethez">
                                         ➡️
                                     </button>
-                                    <button class="btn btn-sm btn-danger btn-delete-item" style="padding:4px 8px; font-size:13px; line-height:1; background:rgba(239, 68, 68, 0.18); color:#ef4444; border-color:rgba(239, 68, 68, 0.4);" title="Törlés a katalógusból">
-                                        🗑️
-                                    </button>
+                                    ${deleteBtnHtml}
                                 </div>
                             </div>
                         `;
@@ -10907,12 +11482,15 @@ class FurnitureApp {
                         });
 
                         // Törlés a katalógusból
-                        card.querySelector('.btn-delete-item').addEventListener('click', (e) => {
-                            e.stopPropagation();
-                            if (confirm(`Biztosan törölni szeretnéd a(z) "${item.name}" bútort a katalógusból?`)) {
-                                this.catalogManager.deleteItem(item.id);
-                            }
-                        });
+                        const deleteBtn = card.querySelector('.btn-delete-item');
+                        if (deleteBtn) {
+                            deleteBtn.addEventListener('click', (e) => {
+                                e.stopPropagation();
+                                if (confirm(`Biztosan törölni szeretnéd a(z) "${item.name}" bútort a katalógusból?`)) {
+                                    this.catalogManager.deleteItem(item.id);
+                                }
+                            });
+                        }
 
                         body.appendChild(card);
                     });
@@ -11140,6 +11718,290 @@ class FurnitureApp {
         }
     }
 
+    openAuthModal(tab = 'login') {
+        this.openModal('modal-auth');
+        const tabLogin = document.getElementById('auth-tab-login');
+        const tabRegister = document.getElementById('auth-tab-register');
+        const alertEl = document.getElementById('auth-alert');
+        if (alertEl) alertEl.style.display = 'none';
+
+        if (tab === 'register' && tabRegister) {
+            tabRegister.click();
+        } else if (tabLogin) {
+            tabLogin.click();
+        }
+    }
+
+    bindAuthEvents() {
+        // --- Felhasználókezelés (Auth Modal & Dropdown) ---
+        const btnOpenAuth = document.getElementById('btn-open-auth-modal');
+        if (btnOpenAuth) {
+            btnOpenAuth.addEventListener('click', () => {
+                this.openAuthModal('login');
+            });
+        }
+
+        const btnUserProfile = document.getElementById('btn-user-profile');
+        const userMenuPopover = document.getElementById('user-menu-popover');
+        if (btnUserProfile && userMenuPopover) {
+            btnUserProfile.addEventListener('click', (e) => {
+                e.stopPropagation();
+                userMenuPopover.style.display = (userMenuPopover.style.display === 'flex') ? 'none' : 'flex';
+            });
+            document.addEventListener('click', () => {
+                if (userMenuPopover) userMenuPopover.style.display = 'none';
+            });
+            userMenuPopover.addEventListener('click', (e) => e.stopPropagation());
+        }
+
+        const btnLogout = document.getElementById('btn-logout');
+        if (btnLogout) {
+            btnLogout.addEventListener('click', async () => {
+                if (userMenuPopover) userMenuPopover.style.display = 'none';
+                await this.authManager.logout();
+                this.catalogManager.showToast('Sikeresen kijelentkeztél!', 'info');
+            });
+        }
+
+        const btnUserMenuMyItems = document.getElementById('btn-user-menu-my-items');
+        if (btnUserMenuMyItems) {
+            btnUserMenuMyItems.addEventListener('click', () => {
+                if (userMenuPopover) userMenuPopover.style.display = 'none';
+                this.catalogManager.setScopeFilter('my');
+                document.querySelectorAll('.btn-catalog-scope').forEach(b => {
+                    b.classList.toggle('active', b.getAttribute('data-scope') === 'my');
+                });
+            });
+        }
+
+        // Auth Fülek (Login vs Register)
+        const tabLogin = document.getElementById('auth-tab-login');
+        const tabRegister = document.getElementById('auth-tab-register');
+        const formLogin = document.getElementById('form-auth-login');
+        const formRegister = document.getElementById('form-auth-register');
+        const viewVerification = document.getElementById('auth-view-verification');
+        const authAlert = document.getElementById('auth-alert');
+
+        if (tabLogin && tabRegister) {
+            tabLogin.addEventListener('click', () => {
+                tabLogin.style.borderBottomColor = '#3b82f6';
+                tabLogin.style.color = '#fff';
+                tabRegister.style.borderBottomColor = 'transparent';
+                tabRegister.style.color = '#94a3b8';
+                if (formLogin) formLogin.style.display = 'flex';
+                if (formRegister) formRegister.style.display = 'none';
+                if (viewVerification) viewVerification.style.display = 'none';
+                if (authAlert) authAlert.style.display = 'none';
+            });
+
+            tabRegister.addEventListener('click', () => {
+                tabRegister.style.borderBottomColor = '#10b981';
+                tabRegister.style.color = '#fff';
+                tabLogin.style.borderBottomColor = 'transparent';
+                tabLogin.style.color = '#94a3b8';
+                if (formLogin) formLogin.style.display = 'none';
+                if (formRegister) formRegister.style.display = 'flex';
+                if (viewVerification) viewVerification.style.display = 'none';
+                if (authAlert) authAlert.style.display = 'none';
+            });
+        }
+
+        // Admin kód checkbox
+        const regIsAdminCheck = document.getElementById('reg-is-admin-check');
+        const regAdminCodeContainer = document.getElementById('reg-admin-code-container');
+        if (regIsAdminCheck && regAdminCodeContainer) {
+            regIsAdminCheck.addEventListener('change', (e) => {
+                regAdminCodeContainer.style.display = e.target.checked ? 'block' : 'none';
+            });
+        }
+
+        // Bejelentkezés submit
+        if (formLogin) {
+            formLogin.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const email = document.getElementById('login-email').value;
+                const password = document.getElementById('login-password').value;
+                const btnSubmit = document.getElementById('btn-submit-login');
+
+                try {
+                    btnSubmit.disabled = true;
+                    btnSubmit.textContent = '⏳ Belépés folyamatban...';
+                    await this.authManager.login(email, password);
+                    this.closeModal('modal-auth');
+                    this.catalogManager.showToast(`Üdvözlünk, ${this.authManager.getUser().name || email}! 👋`, 'success');
+                } catch (err) {
+                    if (err.unverified) {
+                        if (formLogin) formLogin.style.display = 'none';
+                        if (viewVerification) viewVerification.style.display = 'flex';
+                        const verifyEmailEl = document.getElementById('verify-display-email');
+                        if (verifyEmailEl) verifyEmailEl.textContent = err.email || email;
+                        this.pendingVerificationEmail = err.email || email;
+                        this.pendingVerificationToken = err.verificationToken;
+
+                        const testBox = document.getElementById('verify-local-test-box');
+                        if (testBox && err.verificationToken) {
+                            testBox.style.display = 'block';
+                        }
+                    } else {
+                        if (authAlert) {
+                            authAlert.style.display = 'block';
+                            authAlert.style.background = 'rgba(239, 68, 68, 0.2)';
+                            authAlert.style.color = '#f87171';
+                            authAlert.style.border = '1px solid #ef4444';
+                            authAlert.textContent = err.message || 'Sikertelen bejelentkezés!';
+                        }
+                    }
+                } finally {
+                    btnSubmit.disabled = false;
+                    btnSubmit.textContent = '🚀 Bejelentkezés';
+                }
+            });
+        }
+
+        // Gyors admin belépés gomb teszteléshez
+        const btnQuickAdmin = document.getElementById('btn-quick-admin-login');
+        if (btnQuickAdmin) {
+            btnQuickAdmin.addEventListener('click', async () => {
+                const emailInput = document.getElementById('login-email');
+                const passwordInput = document.getElementById('login-password');
+                if (emailInput) emailInput.value = 'admin@butortervezo.hu';
+                if (passwordInput) passwordInput.value = 'admin123';
+
+                try {
+                    btnQuickAdmin.disabled = true;
+                    btnQuickAdmin.textContent = '⏳ Belépés adminként...';
+                    await this.authManager.login('admin@butortervezo.hu', 'admin123');
+                    this.closeModal('modal-auth');
+                    this.catalogManager.showToast('👑 Sikeresen beléptél Adminisztrátorként! (Központi katalógus írás aktív)', 'success');
+                } catch (err) {
+                    if (authAlert) {
+                        authAlert.style.display = 'block';
+                        authAlert.style.background = 'rgba(239, 68, 68, 0.2)';
+                        authAlert.style.color = '#f87171';
+                        authAlert.textContent = err.message || 'Sikertelen admin belépés!';
+                    }
+                } finally {
+                    btnQuickAdmin.disabled = false;
+                    btnQuickAdmin.innerHTML = '<span>👑</span> Belépés Adminisztrátorként (Teszt)';
+                }
+            });
+        }
+
+        // Regisztráció submit
+        if (formRegister) {
+            formRegister.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const name = document.getElementById('reg-name').value;
+                const email = document.getElementById('reg-email').value;
+                const password = document.getElementById('reg-password').value;
+                const confirmPassword = document.getElementById('reg-password-confirm').value;
+                const isAdmin = document.getElementById('reg-is-admin-check') ? document.getElementById('reg-is-admin-check').checked : false;
+                const adminCode = isAdmin && document.getElementById('reg-admin-code') ? document.getElementById('reg-admin-code').value : '';
+                const btnSubmit = document.getElementById('btn-submit-register');
+
+                if (password !== confirmPassword) {
+                    if (authAlert) {
+                        authAlert.style.display = 'block';
+                        authAlert.style.background = 'rgba(239, 68, 68, 0.2)';
+                        authAlert.style.color = '#f87171';
+                        authAlert.textContent = 'A megadott két jelszó nem egyezik meg!';
+                    }
+                    return;
+                }
+
+                try {
+                    btnSubmit.disabled = true;
+                    btnSubmit.textContent = '⏳ Regisztráció folyamatban...';
+                    const res = await this.authManager.register(name, email, password, adminCode);
+
+                    if (formRegister) formRegister.style.display = 'none';
+                    if (viewVerification) viewVerification.style.display = 'flex';
+                    const verifyEmailEl = document.getElementById('verify-display-email');
+                    if (verifyEmailEl) verifyEmailEl.textContent = email;
+                    this.pendingVerificationEmail = email;
+                    this.pendingVerificationToken = res && res.verificationToken;
+
+                    const testBox = document.getElementById('verify-local-test-box');
+                    if (testBox && res && res.verificationToken) {
+                        testBox.style.display = 'block';
+                    }
+                } catch (err) {
+                    if (authAlert) {
+                        authAlert.style.display = 'block';
+                        authAlert.style.background = 'rgba(239, 68, 68, 0.2)';
+                        authAlert.style.color = '#f87171';
+                        authAlert.textContent = err.message || 'Sikertelen regisztráció!';
+                    }
+                } finally {
+                    btnSubmit.disabled = false;
+                    btnSubmit.textContent = '📧 Regisztráció és E-mail megerősítés';
+                }
+            });
+        }
+
+        // Helyi azonnali aktiválás tesztgomb
+        const btnInstantVerify = document.getElementById('btn-instant-verify');
+        if (btnInstantVerify) {
+            btnInstantVerify.addEventListener('click', async () => {
+                if (!this.pendingVerificationToken) return;
+                try {
+                    btnInstantVerify.disabled = true;
+                    btnInstantVerify.textContent = '⏳ Aktiválás...';
+                    await this.authManager.verifyEmailToken(this.pendingVerificationToken);
+                    this.catalogManager.showToast('✅ E-mail sikeresen megerősítve!', 'success');
+                    if (tabLogin) tabLogin.click();
+                    const emailInput = document.getElementById('login-email');
+                    if (emailInput && this.pendingVerificationEmail) emailInput.value = this.pendingVerificationEmail;
+                } catch (err) {
+                    alert('Hiba az aktiváláskor: ' + err.message);
+                } finally {
+                    btnInstantVerify.disabled = false;
+                    btnInstantVerify.textContent = '✅ Fiók azonnali aktiválása most';
+                }
+            });
+        }
+
+        // E-mail újraküldése gomb
+        const btnResend = document.getElementById('btn-resend-verification');
+        if (btnResend) {
+            btnResend.addEventListener('click', async () => {
+                if (!this.pendingVerificationEmail) return;
+                try {
+                    btnResend.disabled = true;
+                    btnResend.textContent = '⏳ Küldés...';
+                    const res = await this.authManager.resendVerification(this.pendingVerificationEmail);
+                    if (res && res.verificationToken) {
+                        this.pendingVerificationToken = res.verificationToken;
+                    }
+                    this.catalogManager.showToast('📧 Megerősítő e-mail újra elküldve!', 'info');
+                } catch (err) {
+                    alert('Hiba: ' + err.message);
+                } finally {
+                    btnResend.disabled = false;
+                    btnResend.textContent = '🔄 Újraküldés';
+                }
+            });
+        }
+
+        // Vissza a bejelentkezéshez
+        const btnBackLogin = document.getElementById('btn-back-to-login');
+        if (btnBackLogin) {
+            btnBackLogin.addEventListener('click', () => {
+                if (tabLogin) tabLogin.click();
+            });
+        }
+
+        // Katalógus hatókör szűrő gombok (.btn-catalog-scope)
+        document.querySelectorAll('.btn-catalog-scope').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.btn-catalog-scope').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                const scope = btn.getAttribute('data-scope') || 'all';
+                this.catalogManager.setScopeFilter(scope);
+            });
+        });
+    }
+
     openSaveFurnitureModal() {
         if (this.boardManager.boards.length === 0 && this.boardManager.corpora.length === 0) {
             alert('A 3D munkatér üres! Hozz létre legalább egy bútorlapot vagy konyha korpuszt a mentéshez.');
@@ -11256,6 +12118,42 @@ class FurnitureApp {
 
         const infoEl = document.getElementById('save-modal-target-info');
         if (infoEl) infoEl.textContent = targetInfoText;
+
+        // Mentési hatókör jelzés (Admin = Központi, Felhasználó = Saját)
+        const scopeIndicator = document.getElementById('save-catalog-scope-indicator');
+        if (scopeIndicator) {
+            const isAdmin = this.authManager && this.authManager.isAdmin();
+            const isLogged = this.authManager && this.authManager.isLoggedIn();
+            if (isAdmin) {
+                scopeIndicator.style.display = 'flex';
+                scopeIndicator.style.background = 'rgba(245, 158, 11, 0.15)';
+                scopeIndicator.style.border = '1px solid rgba(245, 158, 11, 0.4)';
+                scopeIndicator.style.color = '#f59e0b';
+                scopeIndicator.innerHTML = '<span>👑</span> <div><strong>Központi Katalógus mentés (Admin):</strong> Ez a bútor a <em>Központi Katalógusba</em> kerül, mindenki látni fogja és szinkronizálódik a felhőbe / GitHub-ra!</div>';
+            } else if (isLogged) {
+                scopeIndicator.style.display = 'flex';
+                scopeIndicator.style.background = 'rgba(56, 189, 248, 0.15)';
+                scopeIndicator.style.border = '1px solid rgba(56, 189, 248, 0.4)';
+                scopeIndicator.style.color = '#38bdf8';
+                scopeIndicator.innerHTML = '<span>🔒</span> <div><strong>Saját Bútortár mentés:</strong> Ez a bútor kizárólag a <em>Te személyes fiókodba</em> mentődik, más felhasználók nem látják!</div>';
+            } else {
+                scopeIndicator.style.display = 'flex';
+                scopeIndicator.style.background = 'rgba(148, 163, 184, 0.15)';
+                scopeIndicator.style.border = '1px solid rgba(148, 163, 184, 0.3)';
+                scopeIndicator.style.color = '#94a3b8';
+                scopeIndicator.innerHTML = '<span>⚠️</span> <div><strong>Vendég mentés:</strong> Nem vagy bejelentkezve. <a href="#" id="btn-save-modal-login-link" style="color:#60a5fa; font-weight:700;">Jelentkezz be</a> a saját vagy központi fiókba mentéshez!</div>';
+                setTimeout(() => {
+                    const loginLink = document.getElementById('btn-save-modal-login-link');
+                    if (loginLink) {
+                        loginLink.addEventListener('click', (e) => {
+                            e.preventDefault();
+                            this.closeModal('modal-save-furniture');
+                            this.openAuthModal('login');
+                        });
+                    }
+                }, 50);
+            }
+        }
 
         this.openModal('modal-save-furniture');
     }
@@ -12455,6 +13353,5 @@ if (document.readyState === 'loading') {
 } else {
     startFurnitureApp();
 }
-
 
 })();

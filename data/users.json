@@ -1,0 +1,13 @@
+{
+  "users": [
+    {
+      "id": "admin_default",
+      "email": "admin@butortervezo.hu",
+      "name": "Adminisztrátor",
+      "passwordHash": "352b8cbae0f2fe35e86ea1a38200980281aca568683e6884b1a2f0a08a636088",
+      "role": "admin",
+      "emailVerified": true,
+      "createdAt": "2026-09-13T08:54:08.973568"
+    }
+  ]
+}

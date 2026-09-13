@@ -14,8 +14,11 @@ export class CatalogManager {
         this.onCatalogChange = onCatalogChange;
 
         this.categories = [];
+        this.globalItems = [];
+        this.userItems = [];
         this.items = [];
         this.activeCategoryId = 'all'; // 'all' vagy konkrét category id
+        this.scopeFilter = 'all'; // 'all', 'global', 'my'
         this.searchQuery = '';
 
         this.storageKeyCategories = 'butortervezo_categories_v1';
@@ -213,15 +216,102 @@ export class CatalogManager {
     }
 
     /**
-     * Katalógus elküldése a szervernek és a Firebase felhőbe
+     * Katalógus szűrés hatókörének beállítása ('all', 'global', 'my')
      */
-    async syncToServer(actionDescription = 'Katalógus frissítés') {
+    setScopeFilter(scope) {
+        this.scopeFilter = scope || 'all';
+        this.rebuildItems();
+    }
+
+    /**
+     * Bútorok listájának összeállítása a globális és a saját bútorokból a hatókör alapján
+     */
+    rebuildItems() {
+        // Megjelöljük az elemeket a kényelmes UI megjelenítéshez
+        (this.globalItems || []).forEach(i => { i.isGlobal = true; });
+        (this.userItems || []).forEach(i => { i.isGlobal = false; });
+
+        if (this.scopeFilter === 'global') {
+            this.items = [...(this.globalItems || [])];
+        } else if (this.scopeFilter === 'my') {
+            this.items = [...(this.userItems || [])];
+        } else {
+            // 'all': saját bútorok legfelül, utána a központiak
+            this.items = [...(this.userItems || []), ...(this.globalItems || [])];
+        }
+        this.notifyChange();
+    }
+
+    /**
+     * Felhasználó be- vagy kijelentkezésekor hívódik meg
+     */
+    async onUserChanged(user) {
+        if (user && user.id) {
+            // 1. Saját bútorok betöltése LocalStorage-ből
+            try {
+                const saved = localStorage.getItem(`butortervezo_user_items_${user.id}`);
+                if (saved) {
+                    this.userItems = JSON.parse(saved);
+                } else {
+                    this.userItems = [];
+                }
+            } catch (e) {
+                this.userItems = [];
+            }
+
+            // 2. Saját bútorok lekérése a Python szervertől a háttérben
+            try {
+                const res = await fetch(`/api/user-catalog?userId=${encodeURIComponent(user.id)}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data && data.success && Array.isArray(data.items)) {
+                        data.items.forEach(srvItem => {
+                            if (!this.userItems.some(i => i.id === srvItem.id)) {
+                                this.userItems.push(srvItem);
+                            }
+                        });
+                        this.saveUserItemsToStorage();
+                    }
+                }
+            } catch (e) {
+                // Offline mód
+            }
+        } else {
+            this.userItems = [];
+        }
+
+        this.rebuildItems();
+    }
+
+    /**
+     * Felhasználói privát katalógus mentése a szerverre
+     */
+    async syncUserCatalogToServer(userId) {
+        if (!userId) return;
+        try {
+            await fetch('/api/user-catalog', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    userId: userId,
+                    items: this.userItems
+                })
+            });
+        } catch (e) {
+            console.warn('[USER CATALOG] Hiba a szerver szinkronizálásakor:', e);
+        }
+    }
+
+    /**
+     * Központi katalógus elküldése a szervernek és a Firebase felhőbe (Kizárólag Admin)
+     */
+    async syncToServer(actionDescription = 'Katalógus frissítés', isGlobal = true) {
         let firebaseSaved = false;
         let localServerSaved = false;
 
         // 1. Mentés a Firebase Felhőbe (ha csatlakozva van)
         if (typeof window !== 'undefined' && window.FirebaseSync && window.FirebaseSync.isConnected) {
-            firebaseSaved = await window.FirebaseSync.saveCatalog(this.categories, this.items, actionDescription);
+            firebaseSaved = await window.FirebaseSync.saveCatalog(this.categories, this.globalItems, actionDescription);
         }
 
         // 2. Mentés a helyi Python szervernek és Git Push
@@ -232,7 +322,9 @@ export class CatalogManager {
                 body: JSON.stringify({
                     action: actionDescription,
                     categories: this.categories,
-                    items: this.items
+                    items: this.globalItems,
+                    isAdmin: true,
+                    role: 'admin'
                 })
             });
 
@@ -245,11 +337,11 @@ export class CatalogManager {
 
         // Visszajelzés a felhasználónak
         if (firebaseSaved && localServerSaved) {
-            this.showToast('☁️ Mentve a Firebase Felhőbe & GitHub-ra! 🚀', 'success');
+            this.showToast('☁️ Mentve a Központi Katalógusba (Felhő & GitHub)! 🚀', 'success');
         } else if (firebaseSaved) {
             this.showToast('☁️ Sikeresen mentve a Firebase Felhőbe! 🌐', 'success');
         } else if (localServerSaved) {
-            this.showToast('💾 Katalógus mentve & feltöltve a GitHub-ra! 🚀', 'success');
+            this.showToast('💾 Központi katalógus mentve & feltöltve a GitHub-ra! 🚀', 'success');
         } else {
             this.showToast('💾 Katalógus mentve a böngészőben (Helyi)', 'info');
         }
@@ -278,18 +370,33 @@ export class CatalogManager {
 
             if (itemJson) {
                 try {
-                    this.items = JSON.parse(itemJson).filter(item => !item.id.startsWith('preset_'));
+                    this.globalItems = JSON.parse(itemJson).filter(item => !item.id.startsWith('preset_'));
                 } catch(e) {
-                    this.items = [];
+                    this.globalItems = [];
                 }
             }
-            if (!this.items || this.items.length === 0) {
-                this.items = (typeof DEFAULT_CATALOG_ITEMS !== 'undefined' ? DEFAULT_CATALOG_ITEMS : []).slice();
-                this.saveItemsToStorage();
+            if (!this.globalItems || this.globalItems.length === 0) {
+                this.globalItems = (typeof DEFAULT_CATALOG_ITEMS !== 'undefined' ? DEFAULT_CATALOG_ITEMS : []).slice();
+                this.saveGlobalItemsToStorage();
             }
+
+            // Bejelentkezett felhasználó bútorainak betöltése ha van aktív session
+            if (typeof window !== 'undefined' && window.authManager && window.authManager.getUserId()) {
+                const uid = window.authManager.getUserId();
+                try {
+                    const userSaved = localStorage.getItem(`butortervezo_user_items_${uid}`);
+                    if (userSaved) {
+                        this.userItems = JSON.parse(userSaved);
+                    }
+                } catch(e) {}
+            }
+
+            this.rebuildItems();
         } catch (e) {
             console.error('Hiba a katalógus betöltésekor:', e);
             this.categories = [];
+            this.globalItems = [];
+            this.userItems = [];
             this.items = [];
         }
     }
@@ -302,12 +409,26 @@ export class CatalogManager {
         }
     }
 
-    saveItemsToStorage() {
+    saveGlobalItemsToStorage() {
         try {
-            localStorage.setItem(this.storageKeyItems, JSON.stringify(this.items));
+            localStorage.setItem(this.storageKeyItems, JSON.stringify(this.globalItems));
         } catch (e) {
-            console.error('Hiba a bútorok mentésekor:', e);
+            console.error('Hiba a központi bútorok mentésekor:', e);
         }
+    }
+
+    saveUserItemsToStorage() {
+        try {
+            const uid = (typeof window !== 'undefined' && window.authManager && window.authManager.getUserId()) || 'guest';
+            localStorage.setItem(`butortervezo_user_items_${uid}`, JSON.stringify(this.userItems));
+        } catch (e) {
+            console.error('Hiba a felhasználói bútorok mentésekor:', e);
+        }
+    }
+
+    saveItemsToStorage() {
+        this.saveGlobalItemsToStorage();
+        this.saveUserItemsToStorage();
     }
 
     notifyChange() {
@@ -437,6 +558,9 @@ export class CatalogManager {
         const snapTarget = savingTarget.type === 'multiple' ? savingTarget.targets : savingTarget.target;
         const thumbnail = customThumbnail || this.scene3D.getSnapshot(snapTarget, 512, 512, snapshotAngle || 'iso-right');
 
+        const isAdmin = (typeof window !== 'undefined' && window.authManager && window.authManager.isAdmin()) || false;
+        const authUser = (typeof window !== 'undefined' && window.authManager && window.authManager.getUser()) || null;
+
         const newItem = {
             id: 'item_' + Date.now(),
             name: name && name.trim() !== '' ? name.trim() : (savingTarget.name || `Bútor ${this.items.length + 1}`),
@@ -446,13 +570,27 @@ export class CatalogManager {
             boardCount: boardCount,
             thumbnail: thumbnail,
             boards: boardsData,
-            createdAt: new Date().toISOString()
+            createdAt: new Date().toISOString(),
+            isGlobal: isAdmin,
+            ownerId: isAdmin ? 'admin' : (authUser ? authUser.id : 'guest'),
+            ownerName: isAdmin ? (authUser ? authUser.name : 'Adminisztrátor') : (authUser ? authUser.name : 'Saját')
         };
 
-        this.items.unshift(newItem);
-        this.saveItemsToStorage();
-        this.notifyChange();
-        this.syncToServer(`Bútor mentve a katalógusba: ${newItem.name}`);
+        if (isAdmin) {
+            this.globalItems.unshift(newItem);
+            this.saveGlobalItemsToStorage();
+            this.rebuildItems();
+            this.syncToServer(`Központi bútor mentve: ${newItem.name}`, true);
+            this.showToast(`👑 Bútor mentve a Központi Katalógusba! (Mindenki látja)`, 'success');
+        } else {
+            this.userItems.unshift(newItem);
+            this.saveUserItemsToStorage();
+            this.rebuildItems();
+            if (authUser) {
+                this.syncUserCatalogToServer(authUser.id);
+            }
+            this.showToast(`🔒 Bútor mentve a Saját Fiókodba! (Csak Nálad jelenik meg)`, 'success');
+        }
         return newItem;
     }
 
@@ -469,6 +607,9 @@ export class CatalogManager {
         const bounds = this.boardManager.getFurnitureBoundingBox();
         const thumbnail = customThumbnail || this.scene3D.getSnapshot(null, 512, 512, snapshotAngle || 'iso-right');
 
+        const isAdmin = (typeof window !== 'undefined' && window.authManager && window.authManager.isAdmin()) || false;
+        const authUser = (typeof window !== 'undefined' && window.authManager && window.authManager.getUser()) || null;
+
         const newItem = {
             id: 'item_' + Date.now(),
             name: name && name.trim() !== '' ? name.trim() : `Bútor ${this.items.length + 1}`,
@@ -482,13 +623,27 @@ export class CatalogManager {
             boardCount: this.boardManager.boards.length,
             thumbnail: thumbnail,
             boards: boardsData,
-            createdAt: new Date().toISOString()
+            createdAt: new Date().toISOString(),
+            isGlobal: isAdmin,
+            ownerId: isAdmin ? 'admin' : (authUser ? authUser.id : 'guest'),
+            ownerName: isAdmin ? (authUser ? authUser.name : 'Adminisztrátor') : (authUser ? authUser.name : 'Saját')
         };
 
-        this.items.unshift(newItem); // Elejére szúrjuk be
-        this.saveItemsToStorage();
-        this.notifyChange();
-        this.syncToServer(`Bútor mentve a katalógusba: ${newItem.name}`);
+        if (isAdmin) {
+            this.globalItems.unshift(newItem); // Elejére szúrjuk be
+            this.saveGlobalItemsToStorage();
+            this.rebuildItems();
+            this.syncToServer(`Központi bútor mentve: ${newItem.name}`, true);
+            this.showToast(`👑 Bútor mentve a Központi Katalógusba! (Mindenki látja)`, 'success');
+        } else {
+            this.userItems.unshift(newItem);
+            this.saveUserItemsToStorage();
+            this.rebuildItems();
+            if (authUser) {
+                this.syncUserCatalogToServer(authUser.id);
+            }
+            this.showToast(`🔒 Bútor mentve a Saját Fiókodba! (Csak Nálad jelenik meg)`, 'success');
+        }
         return newItem;
     }
 
@@ -535,11 +690,33 @@ export class CatalogManager {
 
     deleteItem(itemId) {
         const item = this.items.find(i => i.id === itemId);
-        const itemName = item ? item.name : itemId;
-        this.items = this.items.filter(i => i.id !== itemId);
-        this.saveItemsToStorage();
-        this.notifyChange();
-        this.syncToServer(`Bútor törölve a katalógusból: ${itemName}`);
+        if (!item) return;
+
+        const isAdmin = (typeof window !== 'undefined' && window.authManager && window.authManager.isAdmin()) || false;
+        const authUser = (typeof window !== 'undefined' && window.authManager && window.authManager.getUser()) || null;
+
+        if (item.isGlobal && !isAdmin) {
+            alert('A központi katalógus bútorait kizárólag az adminisztrátor törölheti!');
+            return;
+        }
+
+        const itemName = item.name || itemId;
+
+        if (item.isGlobal) {
+            this.globalItems = this.globalItems.filter(i => i.id !== itemId);
+            this.saveGlobalItemsToStorage();
+            this.rebuildItems();
+            this.syncToServer(`Központi bútor törölve: ${itemName}`, true);
+            this.showToast(`Központi bútor törölve: ${itemName}`, 'info');
+        } else {
+            this.userItems = this.userItems.filter(i => i.id !== itemId);
+            this.saveUserItemsToStorage();
+            this.rebuildItems();
+            if (authUser) {
+                this.syncUserCatalogToServer(authUser.id);
+            }
+            this.showToast(`Bútor törölve a saját fiókodból: ${itemName}`, 'info');
+        }
     }
 
     /**

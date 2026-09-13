@@ -12,6 +12,7 @@ import { CutListManager } from './cutListManager.js';
 import { PresetFurniture } from './presetFurniture.js';
 import { KitchenCorpusGenerator } from './kitchenCorpusGenerator.js';
 import { ModelManager } from './modelManager.js';
+import { AuthManager } from './authManager.js';
 
 /**
  * 3D Élőkép és Előnézet kezelő a Konyha Korpusz Varázsló jobb oldalán
@@ -480,6 +481,13 @@ class FurnitureApp {
             () => this.renderCatalogUI()
         );
         this.cutListManager = new CutListManager(this.boardManager);
+        this.authManager = new AuthManager((user) => {
+            if (this.catalogManager) {
+                this.catalogManager.onUserChanged(user);
+            }
+            this.renderCatalogUI();
+        });
+        window.authManager = this.authManager;
 
         // 4. Konyha Varázsló Élőkép 3D inicializálása
         this.kitchenPreview = new KitchenPreview3D('kitchen-preview-3d-container');
@@ -520,6 +528,9 @@ class FurnitureApp {
     // ==========================================
 
     bindUIEvents() {
+        // --- Felhasználókezelés és Auth események ---
+        this.bindAuthEvents();
+
         // --- Fejléc gombok ---
         document.getElementById('btn-new-project').addEventListener('click', () => {
             if (confirm('Biztosan új projektet kezdesz? A nem mentett bútorlapok törlődnek.')) {
@@ -3076,7 +3087,19 @@ class FurnitureApp {
                         const dimW = (item.dimensions && item.dimensions.w) || 0;
                         const dimH = (item.dimensions && item.dimensions.h) || 0;
                         const dimD = (item.dimensions && item.dimensions.d) || 0;
-                        const boardCount = item.boardCount || (item.boards && item.boards.length) || 1;
+                        const isGlobal = (item.isGlobal !== false);
+                        const isAdmin = (this.authManager && this.authManager.isAdmin()) || false;
+                        const currentUid = this.authManager && this.authManager.getUserId();
+                        const isOwner = currentUid && (item.ownerId === currentUid);
+                        const canDelete = isAdmin || (!isGlobal && (isOwner || !item.ownerId || item.ownerId === 'guest'));
+
+                        const badgeHtml = isGlobal
+                            ? `<span style="font-size:9px; color:#60a5fa; background:rgba(59,130,246,0.18); border:1px solid rgba(59,130,246,0.35); padding:1px 4px; border-radius:3px; font-weight:600; flex-shrink:0;">🌐 Központi</span>`
+                            : `<span style="font-size:9px; color:#38bdf8; background:rgba(56,189,248,0.18); border:1px solid rgba(56,189,248,0.35); padding:1px 4px; border-radius:3px; font-weight:600; flex-shrink:0;">👤 Saját</span>`;
+
+                        const deleteBtnHtml = canDelete
+                            ? `<button class="btn btn-sm btn-danger btn-delete-item" style="padding:4px 8px; font-size:13px; line-height:1; background:rgba(239, 68, 68, 0.18); color:#ef4444; border-color:rgba(239, 68, 68, 0.4);" title="Törlés a katalógusból">🗑️</button>`
+                            : `<button class="btn btn-sm" disabled style="padding:4px 8px; font-size:13px; line-height:1; opacity:0.35; cursor:not-allowed; border-color:transparent;" title="Központi katalógus bútort csak adminisztrátor törölhet">🔒</button>`;
 
                         card.innerHTML = `
                             <div class="card-img-container" style="width:72px; height:72px; min-width:72px; min-height:72px; aspect-ratio:1/1; border-radius:var(--radius-sm); overflow:hidden; background:#0b1120; border:1px solid var(--border-color); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
@@ -3084,16 +3107,17 @@ class FurnitureApp {
                             </div>
                             <div class="card-body" style="flex:1; min-width:0; padding:0; display:flex; flex-direction:column; justify-content:space-between; height:72px;">
                                 <div style="min-width:0;">
-                                    <div class="card-title" style="font-size:13px; font-weight:600; color:var(--text-primary); margin-bottom:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${item.name}">${item.name}</div>
+                                    <div class="card-title" style="font-size:13px; font-weight:600; color:var(--text-primary); margin-bottom:2px; display:flex; align-items:center; gap:5px;" title="${item.name}">
+                                        <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${item.name}</span>
+                                        ${badgeHtml}
+                                    </div>
                                     <div style="font-size:11px; color:#38bdf8; font-weight:500;">📏 ${dimW}×${dimH}×${dimD} mm</div>
                                 </div>
                                 <div class="card-actions" style="display:flex; gap:6px; align-items:center; justify-content:flex-end; margin-top:auto;">
                                     <button class="btn btn-sm btn-primary btn-add-scene" style="padding:4px 10px; font-size:14px; line-height:1;" title="Hozzáadás a jelenethez">
                                         ➡️
                                     </button>
-                                    <button class="btn btn-sm btn-danger btn-delete-item" style="padding:4px 8px; font-size:13px; line-height:1; background:rgba(239, 68, 68, 0.18); color:#ef4444; border-color:rgba(239, 68, 68, 0.4);" title="Törlés a katalógusból">
-                                        🗑️
-                                    </button>
+                                    ${deleteBtnHtml}
                                 </div>
                             </div>
                         `;
@@ -3108,12 +3132,15 @@ class FurnitureApp {
                         });
 
                         // Törlés a katalógusból
-                        card.querySelector('.btn-delete-item').addEventListener('click', (e) => {
-                            e.stopPropagation();
-                            if (confirm(`Biztosan törölni szeretnéd a(z) "${item.name}" bútort a katalógusból?`)) {
-                                this.catalogManager.deleteItem(item.id);
-                            }
-                        });
+                        const deleteBtn = card.querySelector('.btn-delete-item');
+                        if (deleteBtn) {
+                            deleteBtn.addEventListener('click', (e) => {
+                                e.stopPropagation();
+                                if (confirm(`Biztosan törölni szeretnéd a(z) "${item.name}" bútort a katalógusból?`)) {
+                                    this.catalogManager.deleteItem(item.id);
+                                }
+                            });
+                        }
 
                         body.appendChild(card);
                     });
@@ -3341,6 +3368,290 @@ class FurnitureApp {
         }
     }
 
+    openAuthModal(tab = 'login') {
+        this.openModal('modal-auth');
+        const tabLogin = document.getElementById('auth-tab-login');
+        const tabRegister = document.getElementById('auth-tab-register');
+        const alertEl = document.getElementById('auth-alert');
+        if (alertEl) alertEl.style.display = 'none';
+
+        if (tab === 'register' && tabRegister) {
+            tabRegister.click();
+        } else if (tabLogin) {
+            tabLogin.click();
+        }
+    }
+
+    bindAuthEvents() {
+        // --- Felhasználókezelés (Auth Modal & Dropdown) ---
+        const btnOpenAuth = document.getElementById('btn-open-auth-modal');
+        if (btnOpenAuth) {
+            btnOpenAuth.addEventListener('click', () => {
+                this.openAuthModal('login');
+            });
+        }
+
+        const btnUserProfile = document.getElementById('btn-user-profile');
+        const userMenuPopover = document.getElementById('user-menu-popover');
+        if (btnUserProfile && userMenuPopover) {
+            btnUserProfile.addEventListener('click', (e) => {
+                e.stopPropagation();
+                userMenuPopover.style.display = (userMenuPopover.style.display === 'flex') ? 'none' : 'flex';
+            });
+            document.addEventListener('click', () => {
+                if (userMenuPopover) userMenuPopover.style.display = 'none';
+            });
+            userMenuPopover.addEventListener('click', (e) => e.stopPropagation());
+        }
+
+        const btnLogout = document.getElementById('btn-logout');
+        if (btnLogout) {
+            btnLogout.addEventListener('click', async () => {
+                if (userMenuPopover) userMenuPopover.style.display = 'none';
+                await this.authManager.logout();
+                this.catalogManager.showToast('Sikeresen kijelentkeztél!', 'info');
+            });
+        }
+
+        const btnUserMenuMyItems = document.getElementById('btn-user-menu-my-items');
+        if (btnUserMenuMyItems) {
+            btnUserMenuMyItems.addEventListener('click', () => {
+                if (userMenuPopover) userMenuPopover.style.display = 'none';
+                this.catalogManager.setScopeFilter('my');
+                document.querySelectorAll('.btn-catalog-scope').forEach(b => {
+                    b.classList.toggle('active', b.getAttribute('data-scope') === 'my');
+                });
+            });
+        }
+
+        // Auth Fülek (Login vs Register)
+        const tabLogin = document.getElementById('auth-tab-login');
+        const tabRegister = document.getElementById('auth-tab-register');
+        const formLogin = document.getElementById('form-auth-login');
+        const formRegister = document.getElementById('form-auth-register');
+        const viewVerification = document.getElementById('auth-view-verification');
+        const authAlert = document.getElementById('auth-alert');
+
+        if (tabLogin && tabRegister) {
+            tabLogin.addEventListener('click', () => {
+                tabLogin.style.borderBottomColor = '#3b82f6';
+                tabLogin.style.color = '#fff';
+                tabRegister.style.borderBottomColor = 'transparent';
+                tabRegister.style.color = '#94a3b8';
+                if (formLogin) formLogin.style.display = 'flex';
+                if (formRegister) formRegister.style.display = 'none';
+                if (viewVerification) viewVerification.style.display = 'none';
+                if (authAlert) authAlert.style.display = 'none';
+            });
+
+            tabRegister.addEventListener('click', () => {
+                tabRegister.style.borderBottomColor = '#10b981';
+                tabRegister.style.color = '#fff';
+                tabLogin.style.borderBottomColor = 'transparent';
+                tabLogin.style.color = '#94a3b8';
+                if (formLogin) formLogin.style.display = 'none';
+                if (formRegister) formRegister.style.display = 'flex';
+                if (viewVerification) viewVerification.style.display = 'none';
+                if (authAlert) authAlert.style.display = 'none';
+            });
+        }
+
+        // Admin kód checkbox
+        const regIsAdminCheck = document.getElementById('reg-is-admin-check');
+        const regAdminCodeContainer = document.getElementById('reg-admin-code-container');
+        if (regIsAdminCheck && regAdminCodeContainer) {
+            regIsAdminCheck.addEventListener('change', (e) => {
+                regAdminCodeContainer.style.display = e.target.checked ? 'block' : 'none';
+            });
+        }
+
+        // Bejelentkezés submit
+        if (formLogin) {
+            formLogin.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const email = document.getElementById('login-email').value;
+                const password = document.getElementById('login-password').value;
+                const btnSubmit = document.getElementById('btn-submit-login');
+
+                try {
+                    btnSubmit.disabled = true;
+                    btnSubmit.textContent = '⏳ Belépés folyamatban...';
+                    await this.authManager.login(email, password);
+                    this.closeModal('modal-auth');
+                    this.catalogManager.showToast(`Üdvözlünk, ${this.authManager.getUser().name || email}! 👋`, 'success');
+                } catch (err) {
+                    if (err.unverified) {
+                        if (formLogin) formLogin.style.display = 'none';
+                        if (viewVerification) viewVerification.style.display = 'flex';
+                        const verifyEmailEl = document.getElementById('verify-display-email');
+                        if (verifyEmailEl) verifyEmailEl.textContent = err.email || email;
+                        this.pendingVerificationEmail = err.email || email;
+                        this.pendingVerificationToken = err.verificationToken;
+
+                        const testBox = document.getElementById('verify-local-test-box');
+                        if (testBox && err.verificationToken) {
+                            testBox.style.display = 'block';
+                        }
+                    } else {
+                        if (authAlert) {
+                            authAlert.style.display = 'block';
+                            authAlert.style.background = 'rgba(239, 68, 68, 0.2)';
+                            authAlert.style.color = '#f87171';
+                            authAlert.style.border = '1px solid #ef4444';
+                            authAlert.textContent = err.message || 'Sikertelen bejelentkezés!';
+                        }
+                    }
+                } finally {
+                    btnSubmit.disabled = false;
+                    btnSubmit.textContent = '🚀 Bejelentkezés';
+                }
+            });
+        }
+
+        // Gyors admin belépés gomb teszteléshez
+        const btnQuickAdmin = document.getElementById('btn-quick-admin-login');
+        if (btnQuickAdmin) {
+            btnQuickAdmin.addEventListener('click', async () => {
+                const emailInput = document.getElementById('login-email');
+                const passwordInput = document.getElementById('login-password');
+                if (emailInput) emailInput.value = 'admin@butortervezo.hu';
+                if (passwordInput) passwordInput.value = 'admin123';
+
+                try {
+                    btnQuickAdmin.disabled = true;
+                    btnQuickAdmin.textContent = '⏳ Belépés adminként...';
+                    await this.authManager.login('admin@butortervezo.hu', 'admin123');
+                    this.closeModal('modal-auth');
+                    this.catalogManager.showToast('👑 Sikeresen beléptél Adminisztrátorként! (Központi katalógus írás aktív)', 'success');
+                } catch (err) {
+                    if (authAlert) {
+                        authAlert.style.display = 'block';
+                        authAlert.style.background = 'rgba(239, 68, 68, 0.2)';
+                        authAlert.style.color = '#f87171';
+                        authAlert.textContent = err.message || 'Sikertelen admin belépés!';
+                    }
+                } finally {
+                    btnQuickAdmin.disabled = false;
+                    btnQuickAdmin.innerHTML = '<span>👑</span> Belépés Adminisztrátorként (Teszt)';
+                }
+            });
+        }
+
+        // Regisztráció submit
+        if (formRegister) {
+            formRegister.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const name = document.getElementById('reg-name').value;
+                const email = document.getElementById('reg-email').value;
+                const password = document.getElementById('reg-password').value;
+                const confirmPassword = document.getElementById('reg-password-confirm').value;
+                const isAdmin = document.getElementById('reg-is-admin-check') ? document.getElementById('reg-is-admin-check').checked : false;
+                const adminCode = isAdmin && document.getElementById('reg-admin-code') ? document.getElementById('reg-admin-code').value : '';
+                const btnSubmit = document.getElementById('btn-submit-register');
+
+                if (password !== confirmPassword) {
+                    if (authAlert) {
+                        authAlert.style.display = 'block';
+                        authAlert.style.background = 'rgba(239, 68, 68, 0.2)';
+                        authAlert.style.color = '#f87171';
+                        authAlert.textContent = 'A megadott két jelszó nem egyezik meg!';
+                    }
+                    return;
+                }
+
+                try {
+                    btnSubmit.disabled = true;
+                    btnSubmit.textContent = '⏳ Regisztráció folyamatban...';
+                    const res = await this.authManager.register(name, email, password, adminCode);
+
+                    if (formRegister) formRegister.style.display = 'none';
+                    if (viewVerification) viewVerification.style.display = 'flex';
+                    const verifyEmailEl = document.getElementById('verify-display-email');
+                    if (verifyEmailEl) verifyEmailEl.textContent = email;
+                    this.pendingVerificationEmail = email;
+                    this.pendingVerificationToken = res && res.verificationToken;
+
+                    const testBox = document.getElementById('verify-local-test-box');
+                    if (testBox && res && res.verificationToken) {
+                        testBox.style.display = 'block';
+                    }
+                } catch (err) {
+                    if (authAlert) {
+                        authAlert.style.display = 'block';
+                        authAlert.style.background = 'rgba(239, 68, 68, 0.2)';
+                        authAlert.style.color = '#f87171';
+                        authAlert.textContent = err.message || 'Sikertelen regisztráció!';
+                    }
+                } finally {
+                    btnSubmit.disabled = false;
+                    btnSubmit.textContent = '📧 Regisztráció és E-mail megerősítés';
+                }
+            });
+        }
+
+        // Helyi azonnali aktiválás tesztgomb
+        const btnInstantVerify = document.getElementById('btn-instant-verify');
+        if (btnInstantVerify) {
+            btnInstantVerify.addEventListener('click', async () => {
+                if (!this.pendingVerificationToken) return;
+                try {
+                    btnInstantVerify.disabled = true;
+                    btnInstantVerify.textContent = '⏳ Aktiválás...';
+                    await this.authManager.verifyEmailToken(this.pendingVerificationToken);
+                    this.catalogManager.showToast('✅ E-mail sikeresen megerősítve!', 'success');
+                    if (tabLogin) tabLogin.click();
+                    const emailInput = document.getElementById('login-email');
+                    if (emailInput && this.pendingVerificationEmail) emailInput.value = this.pendingVerificationEmail;
+                } catch (err) {
+                    alert('Hiba az aktiváláskor: ' + err.message);
+                } finally {
+                    btnInstantVerify.disabled = false;
+                    btnInstantVerify.textContent = '✅ Fiók azonnali aktiválása most';
+                }
+            });
+        }
+
+        // E-mail újraküldése gomb
+        const btnResend = document.getElementById('btn-resend-verification');
+        if (btnResend) {
+            btnResend.addEventListener('click', async () => {
+                if (!this.pendingVerificationEmail) return;
+                try {
+                    btnResend.disabled = true;
+                    btnResend.textContent = '⏳ Küldés...';
+                    const res = await this.authManager.resendVerification(this.pendingVerificationEmail);
+                    if (res && res.verificationToken) {
+                        this.pendingVerificationToken = res.verificationToken;
+                    }
+                    this.catalogManager.showToast('📧 Megerősítő e-mail újra elküldve!', 'info');
+                } catch (err) {
+                    alert('Hiba: ' + err.message);
+                } finally {
+                    btnResend.disabled = false;
+                    btnResend.textContent = '🔄 Újraküldés';
+                }
+            });
+        }
+
+        // Vissza a bejelentkezéshez
+        const btnBackLogin = document.getElementById('btn-back-to-login');
+        if (btnBackLogin) {
+            btnBackLogin.addEventListener('click', () => {
+                if (tabLogin) tabLogin.click();
+            });
+        }
+
+        // Katalógus hatókör szűrő gombok (.btn-catalog-scope)
+        document.querySelectorAll('.btn-catalog-scope').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.btn-catalog-scope').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                const scope = btn.getAttribute('data-scope') || 'all';
+                this.catalogManager.setScopeFilter(scope);
+            });
+        });
+    }
+
     openSaveFurnitureModal() {
         if (this.boardManager.boards.length === 0 && this.boardManager.corpora.length === 0) {
             alert('A 3D munkatér üres! Hozz létre legalább egy bútorlapot vagy konyha korpuszt a mentéshez.');
@@ -3457,6 +3768,42 @@ class FurnitureApp {
 
         const infoEl = document.getElementById('save-modal-target-info');
         if (infoEl) infoEl.textContent = targetInfoText;
+
+        // Mentési hatókör jelzés (Admin = Központi, Felhasználó = Saját)
+        const scopeIndicator = document.getElementById('save-catalog-scope-indicator');
+        if (scopeIndicator) {
+            const isAdmin = this.authManager && this.authManager.isAdmin();
+            const isLogged = this.authManager && this.authManager.isLoggedIn();
+            if (isAdmin) {
+                scopeIndicator.style.display = 'flex';
+                scopeIndicator.style.background = 'rgba(245, 158, 11, 0.15)';
+                scopeIndicator.style.border = '1px solid rgba(245, 158, 11, 0.4)';
+                scopeIndicator.style.color = '#f59e0b';
+                scopeIndicator.innerHTML = '<span>👑</span> <div><strong>Központi Katalógus mentés (Admin):</strong> Ez a bútor a <em>Központi Katalógusba</em> kerül, mindenki látni fogja és szinkronizálódik a felhőbe / GitHub-ra!</div>';
+            } else if (isLogged) {
+                scopeIndicator.style.display = 'flex';
+                scopeIndicator.style.background = 'rgba(56, 189, 248, 0.15)';
+                scopeIndicator.style.border = '1px solid rgba(56, 189, 248, 0.4)';
+                scopeIndicator.style.color = '#38bdf8';
+                scopeIndicator.innerHTML = '<span>🔒</span> <div><strong>Saját Bútortár mentés:</strong> Ez a bútor kizárólag a <em>Te személyes fiókodba</em> mentődik, más felhasználók nem látják!</div>';
+            } else {
+                scopeIndicator.style.display = 'flex';
+                scopeIndicator.style.background = 'rgba(148, 163, 184, 0.15)';
+                scopeIndicator.style.border = '1px solid rgba(148, 163, 184, 0.3)';
+                scopeIndicator.style.color = '#94a3b8';
+                scopeIndicator.innerHTML = '<span>⚠️</span> <div><strong>Vendég mentés:</strong> Nem vagy bejelentkezve. <a href="#" id="btn-save-modal-login-link" style="color:#60a5fa; font-weight:700;">Jelentkezz be</a> a saját vagy központi fiókba mentéshez!</div>';
+                setTimeout(() => {
+                    const loginLink = document.getElementById('btn-save-modal-login-link');
+                    if (loginLink) {
+                        loginLink.addEventListener('click', (e) => {
+                            e.preventDefault();
+                            this.closeModal('modal-save-furniture');
+                            this.openAuthModal('login');
+                        });
+                    }
+                }, 50);
+            }
+        }
 
         this.openModal('modal-save-furniture');
     }

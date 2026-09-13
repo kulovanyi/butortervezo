@@ -28,6 +28,7 @@
     <!-- Google Firebase SDK (Ingyenes valós idejű felhő szinkronizáció) -->
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
     <script>
         window.addEventListener('error', function(e) {
             console.error('ALKALMAZÁS HIBA:', e.error || e.message, e);
@@ -93,25 +94,58 @@
                 <span>📂</span>
                 <input type="file" id="input-import-json" accept=".json" style="display:none;">
             </label>
+
+            <!-- Felhasználókezelés / Bejelentkezés a fejlécben -->
+            <div id="auth-header-container" style="display:flex; align-items:center; gap:8px; margin-left:8px;">
+                <button id="btn-open-auth-modal" class="btn btn-primary" style="padding: 6px 14px; font-weight: 600; background: linear-gradient(135deg, #3b82f6, #1d4ed8); border: 1px solid rgba(59,130,246,0.5); display: flex; align-items: center; gap: 6px;" title="Bejelentkezés vagy Regisztráció">
+                    <span>👤</span> <span id="auth-header-label">Bejelentkezés</span>
+                </button>
+                <div id="auth-user-dropdown" style="display:none; position:relative;">
+                    <button id="btn-user-profile" class="btn" style="padding: 6px 12px; display:flex; align-items:center; gap:6px; background:var(--bg-card); border: 1px solid var(--border-color);">
+                        <span id="user-role-badge">👤</span>
+                        <span id="user-display-name" style="max-width:130px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600;">Felhasználó</span>
+                        <span style="font-size:10px; opacity:0.7;">▼</span>
+                    </button>
+                    <!-- Profil menü lenyíló -->
+                    <div id="user-menu-popover" style="display:none; position:absolute; right:0; top:115%; width:210px; background:#1e293b; border:1px solid #334155; border-radius:8px; box-shadow:0 12px 30px rgba(0,0,0,0.6); z-index:99999; padding:8px; flex-direction:column; gap:6px;">
+                        <div style="padding:6px 8px; border-bottom:1px solid #334155; margin-bottom:4px;">
+                            <div id="user-menu-email" style="font-size:11px; color:#94a3b8; word-break:break-all;"></div>
+                            <div id="user-menu-role" style="font-size:11px; font-weight:700; color:#38bdf8; margin-top:2px;"></div>
+                        </div>
+                        <button id="btn-user-menu-my-items" class="btn btn-sm" style="width:100%; text-align:left; justify-content:flex-start;">
+                            <span>📁 Saját bútoraim</span>
+                        </button>
+                        <button id="btn-logout" class="btn btn-sm btn-danger" style="width:100%; text-align:left; justify-content:flex-start; margin-top:4px; background:rgba(239, 68, 68, 0.18); color:#ef4444; border-color:rgba(239, 68, 68, 0.4);">
+                            <span>🚪 Kijelentkezés</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
         </div>
     </header>
 
     <!-- 2. Fő Munkatér Elrendezés (Bal: Katalógus, Közép: 3D Canvas, Jobb: Tulajdonságok & Illesztés) -->
     <main class="main-layout">
 
-        <!-- BAL OLDALI SÁV: Katalógus, Szabászat, Lapok fája -->
+        <!-- BAL OLDALI SÁV: Katalógus (Lapok fül nélkül) -->
         <aside class="sidebar-left">
-            <div class="sidebar-tabs">
-                <button class="sidebar-tab-btn active" data-tab="catalog-tab">
-                    <span>🗂️ Katalógus</span>
-                </button>
-                <button class="sidebar-tab-btn" data-tab="tree-tab">
-                    <span>🧩 Lapok (<span id="boards-count-tab">0</span>)</span>
-                </button>
+            <div class="sidebar-header-catalog" style="display:flex; align-items:center; justify-content:space-between; padding: 11px 14px; border-bottom: 1px solid var(--border-color); background: rgba(15,23,42,0.6);">
+                <span style="font-size: 13px; font-weight: 700; color: #f8fafc; display:flex; align-items:center; gap: 8px;">
+                    <span>🗂️</span> Bútorkatalógus
+                </span>
+                <span id="catalog-scope-badge" class="badge" style="font-size:10px; padding: 2px 7px; border-radius: 4px; background: rgba(59,130,246,0.2); color: #60a5fa; border: 1px solid rgba(59,130,246,0.3); font-weight:600;">
+                    🌐 Központi
+                </span>
             </div>
 
             <!-- TAB 1: KATALÓGUS ÉS KATEGÓRIÁK -->
             <div id="catalog-tab" class="sidebar-content">
+                <!-- Katalógus nézet szűrő: Összes | Központi | Saját -->
+                <div id="catalog-scope-filters" style="display:flex; gap:4px; margin-bottom:10px; background:rgba(15,23,42,0.4); padding:3px; border-radius:6px; border:1px solid var(--border-color);">
+                    <button class="btn btn-sm btn-catalog-scope active" data-scope="all" style="flex:1; padding:3px 6px; font-size:11px; justify-content:center;">Összes</button>
+                    <button class="btn btn-sm btn-catalog-scope" data-scope="global" style="flex:1; padding:3px 6px; font-size:11px; justify-content:center;" title="Központi katalógus elemek">🌐 Központi</button>
+                    <button class="btn btn-sm btn-catalog-scope" data-scope="my" style="flex:1; padding:3px 6px; font-size:11px; justify-content:center;" title="Saját mentett bútoraim">👤 Saját</button>
+                </div>
                 <!-- Mentés Katalógusba gomb a bal oldali sáv tetején -->
                 <button id="btn-save-to-catalog" class="btn btn-primary" style="width: 100%; margin-bottom: 12px; padding: 9px 12px; justify-content: center; font-weight: 700; background: linear-gradient(135deg, #3b82f6, #0284c7); box-shadow: 0 2px 8px rgba(59,130,246,0.3);" title="Kijelölt bútorok vagy teljes terv mentése a katalógusba">
                     <span>🗂️ Mentés Katalógusba</span>
@@ -763,6 +797,124 @@
 
     </main>
 
+    <!-- AUTH MODAL: BEJELENTKEZÉS ÉS REGISZTRÁCIÓ -->
+    <div class="modal-overlay" id="modal-auth">
+        <div class="modal-dialog" style="max-width: 440px; border: 1px solid rgba(59, 130, 246, 0.4); box-shadow: 0 25px 60px rgba(0,0,0,0.6);">
+            <div class="modal-header" style="border-bottom: 1px solid var(--border-color); padding: 14px 18px;">
+                <div class="modal-title" style="display:flex; align-items:center; gap:8px; font-size:16px;">
+                    <span id="auth-modal-icon">🔑</span>
+                    <span id="auth-modal-title">Fiók Bejelentkezés</span>
+                </div>
+                <button class="btn btn-icon btn-close-modal" data-modal="modal-auth">✕</button>
+            </div>
+
+            <!-- FÜLEK: Bejelentkezés vs Regisztráció -->
+            <div style="display:flex; border-bottom: 1px solid var(--border-color); background: rgba(15,23,42,0.4);">
+                <button id="auth-tab-login" class="btn" style="flex:1; border:none; border-radius:0; padding:10px; font-weight:700; background:transparent; border-bottom: 2px solid #3b82f6; color:#fff;">
+                    🔑 Bejelentkezés
+                </button>
+                <button id="auth-tab-register" class="btn" style="flex:1; border:none; border-radius:0; padding:10px; font-weight:600; background:transparent; border-bottom: 2px solid transparent; color:#94a3b8;">
+                    📝 Regisztráció
+                </button>
+            </div>
+
+            <div class="modal-body" style="padding: 18px; display:flex; flex-direction:column; gap: 14px;">
+                <!-- Hiba / Értesítés sáv -->
+                <div id="auth-alert" style="display:none; padding: 10px 14px; border-radius: 8px; font-size: 13px; line-height: 1.4;"></div>
+
+                <!-- 1. BEJELENTKEZÉSI FORM -->
+                <form id="form-auth-login" style="display:flex; flex-direction:column; gap:12px;">
+                    <div class="form-group">
+                        <label class="form-label" style="font-size:12px; font-weight:600;">E-mail cím</label>
+                        <input type="email" id="login-email" class="form-control" placeholder="pelda@email.hu" required autocomplete="email">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" style="font-size:12px; font-weight:600;">Jelszó</label>
+                        <input type="password" id="login-password" class="form-control" placeholder="••••••••" required autocomplete="current-password">
+                    </div>
+                    <div style="display:flex; align-items:center; gap:8px; font-size:12px; color:#94a3b8;">
+                        <input type="checkbox" id="login-remember" checked style="accent-color:#3b82f6; cursor:pointer;">
+                        <label for="login-remember" style="cursor:pointer;">Emlékezz rám ezen a gépen</label>
+                    </div>
+
+                    <button type="submit" id="btn-submit-login" class="btn btn-primary" style="padding:10px; font-weight:700; width:100%; margin-top:6px; background:linear-gradient(135deg, #3b82f6, #0284c7);">
+                        🚀 Bejelentkezés
+                    </button>
+
+                    <!-- Gyors admin belépés teszteléshez -->
+                    <div style="margin-top:8px; padding-top:10px; border-top:1px dashed var(--border-color); text-align:center;">
+                        <button type="button" id="btn-quick-admin-login" class="btn btn-sm" style="width:100%; padding:8px; background:rgba(245,158,11,0.12); color:#f59e0b; border:1px solid rgba(245,158,11,0.35); font-weight:600; display:flex; align-items:center; justify-content:center; gap:6px;">
+                            <span>👑</span> Belépés Adminisztrátorként (Teszt)
+                        </button>
+                    </div>
+                </form>
+
+                <!-- 2. REGISZTRÁCIÓS FORM -->
+                <form id="form-auth-register" style="display:none; flex-direction:column; gap:12px;">
+                    <div class="form-group">
+                        <label class="form-label" style="font-size:12px; font-weight:600;">Teljes név</label>
+                        <input type="text" id="reg-name" class="form-control" placeholder="pl. Kovács Péter" required autocomplete="name">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" style="font-size:12px; font-weight:600;">E-mail cím *</label>
+                        <input type="email" id="reg-email" class="form-control" placeholder="pelda@email.hu" required autocomplete="email">
+                        <small style="font-size:11px; color:#94a3b8;">Erre a címre küldjük a visszaigazoló aktivációs linket.</small>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" style="font-size:12px; font-weight:600;">Jelszó (legalább 6 karakter) *</label>
+                        <input type="password" id="reg-password" class="form-control" placeholder="Legalább 6 karakter" minlength="6" required autocomplete="new-password">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" style="font-size:12px; font-weight:600;">Jelszó megerősítése *</label>
+                        <input type="password" id="reg-password-confirm" class="form-control" placeholder="Jelszó újra" minlength="6" required autocomplete="new-password">
+                    </div>
+
+                    <!-- Admin kód lenyitható mező -->
+                    <div style="background:rgba(15,23,42,0.5); padding:8px 10px; border-radius:6px; border:1px solid var(--border-color);">
+                        <label style="display:flex; align-items:center; gap:6px; font-size:11px; color:#f59e0b; cursor:pointer; font-weight:600;">
+                            <input type="checkbox" id="reg-is-admin-check" style="accent-color:#f59e0b;">
+                            👑 Adminisztrátori fiók létrehozása
+                        </label>
+                        <div id="reg-admin-code-container" style="display:none; margin-top:8px;">
+                            <input type="password" id="reg-admin-code" class="form-control" placeholder="Admin biztonsági kód (pl. admin123)" style="font-size:12px;">
+                        </div>
+                    </div>
+
+                    <button type="submit" id="btn-submit-register" class="btn btn-success" style="padding:10px; font-weight:700; width:100%; margin-top:6px; background:linear-gradient(135deg, #10b981, #059669);">
+                        📧 Regisztráció és E-mail megerősítés
+                    </button>
+                </form>
+
+                <!-- 3. E-MAIL VISSZAIGAZOLÁSRA VÁRÓ NÉZET -->
+                <div id="auth-view-verification" style="display:none; flex-direction:column; align-items:center; text-align:center; padding:10px 0; gap:12px;">
+                    <div style="font-size:48px;">📬</div>
+                    <h3 style="color:#10b981; margin:0; font-size:18px;">Visszaigazoló e-mail elküldve!</h3>
+                    <p style="color:#94a3b8; font-size:13px; line-height:1.5; margin:0;">
+                        Küldtünk egy megerősítő levelet a(z) <strong id="verify-display-email" style="color:#fff;"></strong> címre.<br>
+                        Kérjük, kattints a levélben lévő aktiváló linkre a fiókod megerősítéséhez!
+                    </p>
+
+                    <!-- Helyi azonnali aktiválás tesztgomb -->
+                    <div id="verify-local-test-box" style="display:none; width:100%; background:rgba(59,130,246,0.1); border:1px solid rgba(59,130,246,0.3); border-radius:8px; padding:10px; margin-top:8px;">
+                        <div style="font-size:11px; color:#60a5fa; font-weight:600; margin-bottom:6px;">⚡ Helyi teszteléshez:</div>
+                        <button type="button" id="btn-instant-verify" class="btn btn-sm btn-primary" style="width:100%; font-weight:700;">
+                            ✅ Fiók azonnali aktiválása most
+                        </button>
+                    </div>
+
+                    <div style="display:flex; gap:8px; width:100%; margin-top:8px;">
+                        <button type="button" id="btn-resend-verification" class="btn btn-sm" style="flex:1;">
+                            🔄 Újraküldés
+                        </button>
+                        <button type="button" id="btn-back-to-login" class="btn btn-sm btn-primary" style="flex:1;">
+                            🔑 Belépés
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- MODAL 1: BÚTOR MENTÉSE KATALÓGUSBA -->
     <div class="modal-overlay" id="modal-save-furniture">
         <div class="modal-dialog">
@@ -771,6 +923,10 @@
                 <button class="btn btn-icon btn-close-modal" data-modal="modal-save-furniture">✕</button>
             </div>
             <div class="modal-body">
+                <!-- Mentési hatókör jelzés (Admin vs Felhasználó) -->
+                <div id="save-catalog-scope-indicator" style="padding: 10px 14px; border-radius: 8px; font-size: 12px; margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+                </div>
+
                 <!-- 3D Előnézeti fotó (1:1 négyzetes) és Kameraszög választó -->
                 <div style="display:flex; flex-direction:column; align-items:center; margin-bottom:12px;">
                     <div style="width:190px; height:190px; min-width:190px; min-height:190px; aspect-ratio:1/1; background:#0b1120; border-radius:var(--radius-md); overflow:hidden; display:flex; align-items:center; justify-content:center; border:1px solid var(--border-color); box-shadow:0 4px 12px rgba(0,0,0,0.3);">
