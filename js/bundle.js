@@ -10665,6 +10665,11 @@ class FurnitureApp {
 
             this.openModal('modal-kitchen-generator');
             document.querySelectorAll('.wizard-accordion-item').forEach(item => item.classList.remove('is-open'));
+            const dimsSec = document.getElementById('wz-sec-dims');
+            if (dimsSec) dimsSec.classList.add('is-open');
+            const frontsSec = document.getElementById('wz-sec-fronts');
+            if (frontsSec) frontsSec.classList.add('is-open');
+
             this.applyKitchenTypePreset(document.getElementById('kc-cabinet-type')?.value || 'base');
             this.syncKitchenWorktopMath();
 
@@ -11341,6 +11346,14 @@ class FurnitureApp {
 
         this.openModal('modal-kitchen-generator');
         document.querySelectorAll('.wizard-accordion-item').forEach(item => item.classList.remove('is-open'));
+        const dimsSec = document.getElementById('wz-sec-dims');
+        if (dimsSec) dimsSec.classList.add('is-open');
+        const frontsSec = document.getElementById('wz-sec-fronts');
+        if (frontsSec) frontsSec.classList.add('is-open');
+        if (corpusGroup.userData && corpusGroup.userData.config && corpusGroup.userData.config.endUnit && corpusGroup.userData.config.endUnit.enabled) {
+            const endSec = document.getElementById('wz-sec-endunit');
+            if (endSec) endSec.classList.add('is-open');
+        }
         this.syncKitchenWorktopMath();
 
         setTimeout(() => {
@@ -12252,6 +12265,7 @@ class FurnitureApp {
     // ==========================================
 
     renderCatalogUI() {
+        if (!this.catalogManager) return;
         const container = document.getElementById('category-accordion-container');
         if (!container) return;
         container.innerHTML = '';
@@ -14333,6 +14347,9 @@ class FurnitureApp {
         this.updateSnapTargetDropdown();
         if (newCorpus) {
             this.scene3D.selectBoard(newCorpus);
+            if (this.catalogManager && this.catalogManager.showToast) {
+                this.catalogManager.showToast(`🍳 ${newCorpus.userData?.name || 'Konyha Elem'} sikeresen hozzáadva!`, 'success');
+            }
         }
     }
 }
