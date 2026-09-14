@@ -9786,6 +9786,8 @@ class FurnitureApp {
                     alert('Hiba történt a felhőbe töltéskor.');
                 }
             });
+        }
+
         // --- Egységes Export Gomb & Lenyíló Menü (OBJ, JSON, Kép) ---
         const btnMainExport = document.getElementById('btn-main-export');
         const dropdownExportMenu = document.getElementById('dropdown-export-menu');
