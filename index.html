@@ -113,6 +113,11 @@
                 <span>📸</span>
             </button>
 
+            <button id="btn-export-obj" class="btn" title="3D Terv exportálása OBJ formátumba (Blender, 3ds Max, Maya, Rhino)" style="padding: 6px 12px; display:flex; align-items:center; gap:6px; font-weight:600; background: var(--bg-card); border: 1px solid var(--border-color);">
+                <span>📦</span>
+                <span>OBJ Export</span>
+            </button>
+
             <button id="btn-export-json" class="btn btn-icon" title="3D Terv exportálása JSON-be">
                 <span>💾</span>
             </button>
@@ -1132,6 +1137,84 @@
                     <button class="btn btn-close-modal" data-modal="modal-firebase-config">Bezárás</button>
                     <button id="btn-save-firebase-config" class="btn btn-primary">Mentés & Csatlakozás</button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: WAVEFRONT OBJ EXPORT -->
+    <div class="modal-overlay" id="modal-obj-export">
+        <div class="modal-dialog" style="max-width:540px; width:95vw;">
+            <div class="modal-header">
+                <div class="modal-title" style="display:flex; align-items:center; gap:8px;">
+                    <span style="font-size:18px;">📦</span>
+                    <span style="font-weight:700;">3D Wavefront OBJ Exportálása</span>
+                </div>
+                <button class="btn btn-icon btn-close-modal" data-modal="modal-obj-export">✕</button>
+            </div>
+            <div class="modal-body" style="padding:16px 20px; display:flex; flex-direction:column; gap:16px;">
+                <p style="font-size:13px; color:var(--text-secondary); margin:0; line-height:1.5;">
+                    Exportáld a tervezett konyhabútort univerzális <strong>Wavefront OBJ</strong> és <strong>MTL</strong> formátumba. A modell közvetlenül importálható <strong>Blender, 3ds Max, Maya, Rhino, SketchUp, Cinema 4D</strong> vagy más 3D szoftverekbe.
+                </p>
+
+                <!-- Jellemzők lista -->
+                <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-color); border-radius:8px; padding:12px 14px; display:flex; flex-direction:column; gap:10px;">
+                    <div style="display:flex; align-items:flex-start; gap:10px;">
+                        <span style="font-size:16px;">🏷️</span>
+                        <div>
+                            <strong style="font-size:12px; color:#fff; display:block;">Minden konyha elem külön 3D Object</strong>
+                            <span style="font-size:11px; color:#94a3b8;">A 3D szoftver Outliner / Object listájában szekrényenként különálló elemként jelenik meg.</span>
+                        </div>
+                    </div>
+                    <div style="display:flex; align-items:flex-start; gap:10px;">
+                        <span style="font-size:16px;">🎨</span>
+                        <div>
+                            <strong style="font-size:12px; color:#fff; display:block;">4 Különálló Anyagcsoport (Material Slots)</strong>
+                            <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:4px;">
+                                <span style="font-size:11px; padding:2px 8px; border-radius:12px; background:rgba(59,130,246,0.2); color:#60a5fa; border:1px solid rgba(59,130,246,0.3);">korpusz</span>
+                                <span style="font-size:11px; padding:2px 8px; border-radius:12px; background:rgba(16,185,129,0.2); color:#34d399; border:1px solid rgba(16,185,129,0.3);">front</span>
+                                <span style="font-size:11px; padding:2px 8px; border-radius:12px; background:rgba(245,158,11,0.2); color:#fbbf24; border:1px solid rgba(245,158,11,0.3);">munkalap</span>
+                                <span style="font-size:11px; padding:2px 8px; border-radius:12px; background:rgba(168,85,247,0.2); color:#c084fc; border:1px solid rgba(168,85,247,0.3);">kiegészítők</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div style="display:flex; align-items:flex-start; gap:10px;">
+                        <span style="font-size:16px;">📐</span>
+                        <div>
+                            <strong style="font-size:12px; color:#fff; display:block;">CAD Pontosság (mm) & UV Textúratérkép</strong>
+                            <span style="font-size:11px; color:#94a3b8;">Valós méretek, normálvektorok és UV koordináták textúrázáshoz és rendereléshez.</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Export beállítások -->
+                <div class="form-group" style="margin:0;">
+                    <label class="form-label" style="font-size:12px;">Fájlnév</label>
+                    <div class="input-with-unit">
+                        <input type="text" id="obj-export-filename" class="form-control" value="konyha_terv" placeholder="konyha_terv" style="padding:8px 12px; font-size:13px;">
+                        <span class="input-unit">.obj</span>
+                    </div>
+                </div>
+
+                <!-- Letöltési gombok -->
+                <div style="display:flex; flex-direction:column; gap:8px; margin-top:4px;">
+                    <button id="btn-do-export-obj-zip" class="btn btn-primary" style="padding:10px; font-weight:700; font-size:13px; display:flex; align-items:center; justify-content:center; gap:8px;">
+                        <span>📦</span>
+                        <span>Letöltés Teljes Csomagként (OBJ + MTL ZIP)</span>
+                    </button>
+                    <div style="display:flex; gap:8px;">
+                        <button id="btn-do-export-obj-only" class="btn" style="flex:1; padding:8px; font-size:12px; background:var(--bg-card); display:flex; align-items:center; justify-content:center; gap:6px;">
+                            <span>📄</span>
+                            <span>Csak .OBJ fájl</span>
+                        </button>
+                        <button id="btn-do-export-mtl-only" class="btn" style="flex:1; padding:8px; font-size:12px; background:var(--bg-card); display:flex; align-items:center; justify-content:center; gap:6px;">
+                            <span>🎨</span>
+                            <span>Csak .MTL anyagfájl</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer" style="display:flex; justify-content:flex-end;">
+                <button class="btn btn-close-modal" data-modal="modal-obj-export">Mégse</button>
             </div>
         </div>
     </div>

@@ -13,6 +13,7 @@ import { PresetFurniture } from './presetFurniture.js';
 import { KitchenCorpusGenerator } from './kitchenCorpusGenerator.js';
 import { ModelManager } from './modelManager.js';
 import { AuthManager } from './authManager.js';
+import { ObjExporter } from './objExporter.js';
 
 /**
  * 3D Élőkép és Előnézet kezelő a Konyha Korpusz Varázsló jobb oldalán
@@ -681,6 +682,51 @@ class FurnitureApp {
             a.download = `butorterv_${Date.now()}.jpg`;
             a.click();
         });
+
+        // Wavefront OBJ Export gomb és modál kezelése
+        const btnExportObj = document.getElementById('btn-export-obj');
+        if (btnExportObj) {
+            btnExportObj.addEventListener('click', () => {
+                if (this.boardManager.boards.length === 0 && this.boardManager.corpora.length === 0) {
+                    alert('A 3D munkatér üres! Hozz létre legalább egy konyhabútort vagy korpuszt az OBJ exportáláshoz.');
+                    return;
+                }
+                this.openModal('modal-obj-export');
+            });
+        }
+
+        const btnDoExportObjZip = document.getElementById('btn-do-export-obj-zip');
+        if (btnDoExportObjZip) {
+            btnDoExportObjZip.addEventListener('click', () => {
+                const rawName = (document.getElementById('obj-export-filename') && document.getElementById('obj-export-filename').value.trim()) || 'konyha_terv';
+                const baseName = ObjExporter.sanitizeName(rawName, 'konyha_terv');
+                const res = ObjExporter.exportZip(this.boardManager, baseName);
+                this.closeModal('modal-obj-export');
+                this.catalogManager.showToast(`📦 Sikeres OBJ export! (Letöltve: ${res.filename})`, 'success');
+            });
+        }
+
+        const btnDoExportObjOnly = document.getElementById('btn-do-export-obj-only');
+        if (btnDoExportObjOnly) {
+            btnDoExportObjOnly.addEventListener('click', () => {
+                const rawName = (document.getElementById('obj-export-filename') && document.getElementById('obj-export-filename').value.trim()) || 'konyha_terv';
+                const baseName = ObjExporter.sanitizeName(rawName, 'konyha_terv');
+                const res = ObjExporter.exportOBJOnly(this.boardManager, baseName);
+                this.closeModal('modal-obj-export');
+                this.catalogManager.showToast(`📄 Sikeres OBJ export! (Letöltve: ${res.filename})`, 'success');
+            });
+        }
+
+        const btnDoExportMtlOnly = document.getElementById('btn-do-export-mtl-only');
+        if (btnDoExportMtlOnly) {
+            btnDoExportMtlOnly.addEventListener('click', () => {
+                const rawName = (document.getElementById('obj-export-filename') && document.getElementById('obj-export-filename').value.trim()) || 'konyha_terv';
+                const baseName = ObjExporter.sanitizeName(rawName, 'konyha_terv');
+                const res = ObjExporter.exportMTLOnly(this.boardManager, baseName);
+                this.closeModal('modal-obj-export');
+                this.catalogManager.showToast(`🎨 Sikeres MTL anyag export! (Letöltve: ${res.filename})`, 'success');
+            });
+        }
 
         document.getElementById('btn-export-json').addEventListener('click', () => {
             const data = {
