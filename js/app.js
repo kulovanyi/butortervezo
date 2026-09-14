@@ -673,28 +673,56 @@ class FurnitureApp {
                     alert('Hiba történt a felhőbe töltéskor.');
                 }
             });
+        // --- Egységes Export Gomb & Lenyíló Menü (OBJ, JSON, Kép) ---
+        const btnMainExport = document.getElementById('btn-main-export');
+        const dropdownExportMenu = document.getElementById('dropdown-export-menu');
+        const wrapperExportDropdown = document.getElementById('wrapper-export-dropdown');
+
+        if (btnMainExport && dropdownExportMenu) {
+            btnMainExport.addEventListener('click', (e) => {
+                e.stopPropagation();
+                dropdownExportMenu.style.display = (dropdownExportMenu.style.display === 'flex') ? 'none' : 'flex';
+            });
+
+            document.addEventListener('click', (e) => {
+                if (wrapperExportDropdown && !wrapperExportDropdown.contains(e.target)) {
+                    dropdownExportMenu.style.display = 'none';
+                }
+            });
         }
 
-        document.getElementById('btn-take-screenshot').addEventListener('click', () => {
-            const snap = this.scene3D.getSnapshot(1920, 1080);
-            const a = document.createElement('a');
-            a.href = snap;
-            a.download = `butorterv_${Date.now()}.jpg`;
-            a.click();
-        });
-
-        // Wavefront OBJ Export gomb és modál kezelése
-        const btnExportObj = document.getElementById('btn-export-obj');
-        if (btnExportObj) {
-            btnExportObj.addEventListener('click', () => {
+        // 1. OBJ Export opció a menüből
+        const btnMenuExportObj = document.getElementById('btn-menu-export-obj');
+        if (btnMenuExportObj) {
+            btnMenuExportObj.addEventListener('click', () => {
+                if (dropdownExportMenu) dropdownExportMenu.style.display = 'none';
                 if (this.boardManager.boards.length === 0 && this.boardManager.corpora.length === 0) {
-                    alert('A 3D munkatér üres! Hozz létre legalább egy konyhabútort vagy korpuszt az OBJ exportáláshoz.');
+                    this.catalogManager.showToast('A 3D munkatér üres! Hozz létre legalább egy konyhabútort az OBJ exportáláshoz.', 'warning');
                     return;
                 }
                 this.openModal('modal-obj-export');
             });
         }
 
+        // 2. JSON Projekt Mentés opció a menüből
+        const btnMenuExportJson = document.getElementById('btn-menu-export-json');
+        if (btnMenuExportJson) {
+            btnMenuExportJson.addEventListener('click', () => {
+                if (dropdownExportMenu) dropdownExportMenu.style.display = 'none';
+                this.exportProjectJSON();
+            });
+        }
+
+        // 3. Kép / Screenshot Mentés opció a menüből
+        const btnMenuExportScreenshot = document.getElementById('btn-menu-export-screenshot');
+        if (btnMenuExportScreenshot) {
+            btnMenuExportScreenshot.addEventListener('click', () => {
+                if (dropdownExportMenu) dropdownExportMenu.style.display = 'none';
+                this.exportSnapshot();
+            });
+        }
+
+        // OBJ Modálbeli gombok:
         const btnDoExportObjZip = document.getElementById('btn-do-export-obj-zip');
         if (btnDoExportObjZip) {
             btnDoExportObjZip.addEventListener('click', () => {
@@ -728,21 +756,21 @@ class FurnitureApp {
             });
         }
 
-        document.getElementById('btn-export-json').addEventListener('click', () => {
-            const data = {
-                name: '3D Bútor Terv',
-                exportedAt: new Date().toISOString(),
-                dimensions: this.boardManager.getFurnitureBoundingBox(),
-                boards: this.boardManager.toJSON()
-            };
-            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `butor_terv_${Date.now()}.json`;
-            a.click();
-            URL.revokeObjectURL(url);
-        });
+        const btnModalExportJson = document.getElementById('btn-modal-export-json');
+        if (btnModalExportJson) {
+            btnModalExportJson.addEventListener('click', () => {
+                this.closeModal('modal-obj-export');
+                this.exportProjectJSON();
+            });
+        }
+
+        const btnModalExportScreenshot = document.getElementById('btn-modal-export-screenshot');
+        if (btnModalExportScreenshot) {
+            btnModalExportScreenshot.addEventListener('click', () => {
+                this.closeModal('modal-obj-export');
+                this.exportSnapshot();
+            });
+        }
 
         document.getElementById('input-import-json').addEventListener('change', (e) => {
             const file = e.target.files[0];
@@ -3457,6 +3485,37 @@ class FurnitureApp {
         document.querySelectorAll('.hierarchy-item').forEach(item => item.classList.remove('active'));
         if (boardId) {
             this.renderHierarchyTree();
+        }
+    }
+
+    exportProjectJSON() {
+        const data = {
+            name: '3D Bútor Terv',
+            exportedAt: new Date().toISOString(),
+            dimensions: this.boardManager.getFurnitureBoundingBox(),
+            boards: this.boardManager.toJSON()
+        };
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `butor_terv_${Date.now()}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        if (this.catalogManager && this.catalogManager.showToast) {
+            this.catalogManager.showToast('📄 Terv sikeresen elmentve (.json)!', 'success');
+        }
+    }
+
+    exportSnapshot() {
+        if (!this.scene3D) return;
+        const snap = this.scene3D.getSnapshot(1920, 1080);
+        const a = document.createElement('a');
+        a.href = snap;
+        a.download = `butorterv_${Date.now()}.jpg`;
+        a.click();
+        if (this.catalogManager && this.catalogManager.showToast) {
+            this.catalogManager.showToast('📸 Látványterv sikeresen lementve (.jpg)!', 'success');
         }
     }
 

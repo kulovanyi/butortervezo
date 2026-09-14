@@ -8668,61 +8668,43 @@ class KitchenCorpusGenerator {
 
 // --- MODULE: js/objExporter.js ---
 /**
- * Wavefront OBJ és MTL Exportáló Modul (objExporter.js)
- * Professzionális 3D CAD/DCC (Blender, 3ds Max, Maya, Rhino, SketchUp, Cinema 4D).
- * 
- * Kiemelt funkciók a kérésnek megfelelően:
- * 1. Minden konyha elem külön 3D Objectként ('o') jelenik meg a 3D szoftverek Outliner / Elemfájában.
- * 2. Négy különálló, szabványos anyagtípus (Material slots):
- *    - korpusz (váz, oldallapok, fenéklap, tető, összekötők, hátfal, polcok, szokli)
- *    - front (ajtók, fiókelők, előlapok)
- *    - munkalap (konyhai munkalapok, saroklevágott elemek, vízzárók)
- *    - kiegeszitok (fogantyúk, fém/műanyag lábak, pántok, beépített gépek)
- * 3. Valósághű színek kinyerése a projekt anyagaiból az MTL fájlba.
- * 4. fflate ZIP csomagolás: azonnali, egykattintásos letöltés (OBJ + MTL).
+ * Wavefront OBJ es MTL Exportalo Modul (objExporter.js)
+ * Professzionalis 3D CAD/DCC (Blender, 3ds Max, Maya, Rhino, SketchUp, Cinema 4D).
  */
 
 class ObjExporter {
-    /**
-     * Meghatározza, hogy egy adott mesh melyik anyagcsoporthoz tartozik:
-     * 'korpusz' | 'front' | 'munkalap' | 'kiegeszitok'
-     */
     static resolveCategory(mesh) {
         let curr = mesh;
         while (curr) {
             const d = curr.userData || {};
             const name = (d.name || curr.name || '').toLowerCase();
 
-            // 1. Munkalap (Worktop)
             if (d.isWorktop || d.type === 'worktop' || d.isSplashback ||
-                name.includes('munkalap') || name.includes('vízzáró') || name.includes('vizzaro')) {
+                name.includes('munkalap') || name.includes('vizzaro') || name.includes('vízzáró')) {
                 return 'munkalap';
             }
 
-            // 2. Front (Ajtók, fiókok)
             if (d.isFront || d.isDoor || d.isDrawer || d.type === 'door' || d.type === 'drawer' ||
-                name.includes('ajtó') || name.includes('ajto') || name.includes('fiók') || name.includes('fiok') ||
-                name.includes('front') || name.includes('előlap') || name.includes('elolap')) {
+                name.includes('ajto') || name.includes('ajtó') || name.includes('fiok') || name.includes('fiók') ||
+                name.includes('front') || name.includes('elolap') || name.includes('előlap')) {
                 return 'front';
             }
 
-            // 3. Kiegészítők (Hardware: fogantyúk, lábak, pántok, beépített gépek)
             if (d.isHardware || d.type === 'hardware' || d.isHandle || d.isLeg || d.isHinge ||
                 d.isAppliance || d.type === 'appliance' ||
-                name.includes('fogantyú') || name.includes('fogantyu') || name.includes('láb') || name.includes('lab') ||
-                name.includes('pánt') || name.includes('pant') || name.includes('mosogató') || name.includes('mosogato') ||
-                name.includes('sütő') || name.includes('suto') || name.includes('főzőlap') || name.includes('fozolap') ||
+                name.includes('fogantyu') || name.includes('fogantyú') || name.includes('lab') || name.includes('láb') ||
+                name.includes('pant') || name.includes('pánt') || name.includes('mosogato') || name.includes('mosogató') ||
+                name.includes('suto') || name.includes('sütő') || name.includes('fozolap') || name.includes('főzőlap') ||
                 name.includes('csaptelep')) {
                 return 'kiegeszitok';
             }
 
-            // 4. Korpusz (Váz alkatrészek)
             if (d.type === 'side' || d.type === 'bottom' || d.type === 'top' || d.type === 'shelf' || d.type === 'back' ||
-                name.includes('oldallap') || name.includes('fenéklap') || name.includes('feneklap') ||
-                name.includes('hátfal') || name.includes('hatfal') || name.includes('polc') ||
-                name.includes('összekötő') || name.includes('osszekoto') || name.includes('tető') ||
-                name.includes('szokli') || name.includes('lábazat') || name.includes('labazat') ||
-                name.includes('korpusz') || name.includes('osztófal') || name.includes('osztofal')) {
+                name.includes('oldallap') || name.includes('feneklap') || name.includes('fenéklap') ||
+                name.includes('hatfal') || name.includes('hátfal') || name.includes('polc') ||
+                name.includes('osszekoto') || name.includes('összekötő') || name.includes('teto') || name.includes('tető') ||
+                name.includes('szokli') || name.includes('labazat') || name.includes('lábazat') ||
+                name.includes('korpusz') || name.includes('osztofal') || name.includes('osztófal')) {
                 return 'korpusz';
             }
 
@@ -8733,9 +8715,6 @@ class ObjExporter {
         return 'korpusz';
     }
 
-    /**
-     * Ellenőrzi, hogy a mesh exportálandó valós 3D geometria-e
-     */
     static isExportableMesh(mesh) {
         if (!mesh || !mesh.isMesh || !mesh.geometry) return false;
         if (mesh.name === '__selection_outline__' || mesh.name === '__selection_highlight__') return false;
@@ -8745,29 +8724,21 @@ class ObjExporter {
         return true;
     }
 
-    /**
-     * Szövegbiztonság OBJ objektumnevekhez (Blender & 3D szoftver kompatibilitás)
-     */
     static sanitizeName(name, fallback = 'Konyha_Elem') {
         if (!name) return fallback;
         const clean = String(name)
-            .replace(/[\[\]\(\)\{\}\<\>]/g, '')
-            .replace(/[\s	,;:/\]+/g, '_')
-            .replace(/[^\w\d\-_áéíóöőúüűÁÉÍÓÖŐÚÜŰ]/g, '')
+            .replace(/[^a-zA-Z0-9_áéíóöőúüűÁÉÍÓÖŐÚÜŰ]+/g, '_')
             .replace(/_+/g, '_')
             .replace(/^_|_$/g, '');
         return clean || fallback;
     }
 
-    /**
-     * Megkeresi a 4 kategóriához tartozó reprezentatív színeket az MTL fájlhoz
-     */
     static extractCategoryColors(boardManager) {
         const colors = {
-            korpusz: { r: 0.90, g: 0.90, b: 0.92, name: 'Korpusz' },
-            front: { r: 0.25, g: 0.45, b: 0.55, name: 'Front' },
-            munkalap: { r: 0.22, g: 0.24, b: 0.28, name: 'Munkalap' },
-            kiegeszitok: { r: 0.75, g: 0.75, b: 0.78, name: 'Kiegészítők' }
+            korpusz: { r: 0.90, g: 0.90, b: 0.92 },
+            front: { r: 0.25, g: 0.45, b: 0.55 },
+            munkalap: { r: 0.22, g: 0.24, b: 0.28 },
+            kiegeszitok: { r: 0.75, g: 0.75, b: 0.78 }
         };
 
         if (!boardManager || !boardManager.boards) return colors;
@@ -8786,115 +8757,78 @@ class ObjExporter {
         return colors;
     }
 
-    /**
-     * MTL (Material Template Library) generálása
-     */
     static generateMTL(boardManager) {
         const colors = this.extractCategoryColors(boardManager);
         const timestamp = new Date().toISOString();
 
-        let mtl = # Wavefront Material Library
-# Készítette: 3D Bútortervező Studio
-# Exportálva: 
-# Anyagok száma: 4 (korpusz, front, munkalap, kiegeszitok)
+        let mtl = '# Wavefront Material Library\n';
+        mtl += '# Keszitette: 3D Butortervezo Studio\n';
+        mtl += '# Exportalva: ' + timestamp + '\n\n';
 
-# ==========================================
-# 1. KORPUSZ ANYAG (Vázszerkezet)
-# ==========================================
-newmtl korpusz
-Ka 0.2500 0.2500 0.2500
-Kd   
-Ks 0.2000 0.2000 0.2000
-Ns 25.0000
-d 1.0000
-illum 2
+        mtl += 'newmtl korpusz\n';
+        mtl += 'Ka 0.2500 0.2500 0.2500\n';
+        mtl += 'Kd ' + colors.korpusz.r.toFixed(4) + ' ' + colors.korpusz.g.toFixed(4) + ' ' + colors.korpusz.b.toFixed(4) + '\n';
+        mtl += 'Ks 0.2000 0.2000 0.2000\n';
+        mtl += 'Ns 25.0000\n';
+        mtl += 'd 1.0000\n';
+        mtl += 'illum 2\n\n';
 
-# ==========================================
-# 2. FRONT ANYAG (Ajtók, Fiókelők)
-# ==========================================
-newmtl front
-Ka 0.2500 0.2500 0.2500
-Kd   
-Ks 0.3500 0.3500 0.3500
-Ns 45.0000
-d 1.0000
-illum 2
+        mtl += 'newmtl front\n';
+        mtl += 'Ka 0.2500 0.2500 0.2500\n';
+        mtl += 'Kd ' + colors.front.r.toFixed(4) + ' ' + colors.front.g.toFixed(4) + ' ' + colors.front.b.toFixed(4) + '\n';
+        mtl += 'Ks 0.3500 0.3500 0.3500\n';
+        mtl += 'Ns 45.0000\n';
+        mtl += 'd 1.0000\n';
+        mtl += 'illum 2\n\n';
 
-# ==========================================
-# 3. MUNKALAP ANYAG (Konyhapult)
-# ==========================================
-newmtl munkalap
-Ka 0.2500 0.2500 0.2500
-Kd   
-Ks 0.4000 0.4000 0.4000
-Ns 55.0000
-d 1.0000
-illum 2
+        mtl += 'newmtl munkalap\n';
+        mtl += 'Ka 0.2500 0.2500 0.2500\n';
+        mtl += 'Kd ' + colors.munkalap.r.toFixed(4) + ' ' + colors.munkalap.g.toFixed(4) + ' ' + colors.munkalap.b.toFixed(4) + '\n';
+        mtl += 'Ks 0.4000 0.4000 0.4000\n';
+        mtl += 'Ns 55.0000\n';
+        mtl += 'd 1.0000\n';
+        mtl += 'illum 2\n\n';
 
-# ==========================================
-# 4. KIEGÉSZÍTŐK ANYAG (Fogantyúk, Lábak, Pántok)
-# ==========================================
-newmtl kiegeszitok
-Ka 0.2500 0.2500 0.2500
-Kd   
-Ks 0.8500 0.8500 0.8500
-Ns 85.0000
-d 1.0000
-illum 2
-;
+        mtl += 'newmtl kiegeszitok\n';
+        mtl += 'Ka 0.2500 0.2500 0.2500\n';
+        mtl += 'Kd ' + colors.kiegeszitok.r.toFixed(4) + ' ' + colors.kiegeszitok.g.toFixed(4) + ' ' + colors.kiegeszitok.b.toFixed(4) + '\n';
+        mtl += 'Ks 0.8500 0.8500 0.8500\n';
+        mtl += 'Ns 85.0000\n';
+        mtl += 'd 1.0000\n';
+        mtl += 'illum 2\n';
+
         return mtl;
     }
 
-    /**
-     * Wavefront OBJ generálása
-     * - Minden konyhai korpusz külön Object: o [Név]
-     * - Mindegyik elemen belül a felületek kategóriák szerint csoportosítva (usemtl korpusz, usemtl front, usemtl munkalap, usemtl kiegeszitok)
-     */
     static generateOBJ(boardManager, mtlFilename = 'konyha_terv.mtl') {
         if (!boardManager) return '';
 
-        // Three.js transzformációs segédváltozók
         const normalMatrix = new THREE.Matrix3();
         const tempV = new THREE.Vector3();
         const tempN = new THREE.Vector3();
         const tempUV = new THREE.Vector2();
 
-        let obj = # Wavefront OBJ File
-# Készítette: 3D Bútortervező Studio
-# Mértékegység: milliméter (mm)
-# Koordináta-rendszer: X=Jobbra, Y=Felfelé, Z=Előre
-mtllib 
-
-;
+        let obj = '# Wavefront OBJ File\n';
+        obj += '# Keszitette: 3D Butortervezo Studio\n';
+        obj += '# Mertekegyseg: millimeter (mm)\n';
+        obj += 'mtllib ' + mtlFilename + '\n\n';
 
         let vertexOffset = 1;
         let uvOffset = 1;
         let normalOffset = 1;
 
-        // Korpusz egységek és egyedi lapok gyűjtése
         const corpora = boardManager.corpora || [];
         const corpusElementIds = new Set(corpora.map(c => c.userData && c.userData.id));
-
-        // Önálló (nem korpuszhoz tartozó) lapok
         const standaloneBoards = (boardManager.boards || []).filter(b => !b.corpusId || !corpusElementIds.has(b.corpusId));
 
-        // 1. KONYHAI KORPUSZ ELEMEK EXPORTÁLÁSA
         corpora.forEach((corpusGroup, cIdx) => {
             corpusGroup.updateMatrixWorld(true);
             const corpusData = corpusGroup.userData || {};
-            const rawName = corpusData.name || Konyha_Elem_;
-            const objName = this.sanitizeName(rawName, Konyha_Elem_);
+            const rawName = corpusData.name || ('Konyha_Elem_' + (cIdx + 1));
+            const objName = this.sanitizeName(rawName, 'Konyha_Elem_' + (cIdx + 1));
 
-            obj += # -----------------------------------------------------
-;
-            obj += # KONYHA ELEM #: 
-;
-            obj += # -----------------------------------------------------
-;
-            obj += o 
-;
+            obj += 'o ' + objName + '\n';
 
-            // Meshek gyűjtése és kategória szerinti csoportosítása
             const categorizedMeshes = {
                 korpusz: [],
                 front: [],
@@ -8914,15 +8848,13 @@ mtllib
                 }
             });
 
-            // Kategóriák sorrendje a tiszta szerkezetért
             const categories = ['korpusz', 'front', 'munkalap', 'kiegeszitok'];
 
             categories.forEach(cat => {
                 const meshes = categorizedMeshes[cat];
                 if (meshes.length === 0) return;
 
-                obj += usemtl 
-;
+                obj += 'usemtl ' + cat + '\n';
 
                 meshes.forEach(mesh => {
                     const geometry = mesh.geometry;
@@ -8938,36 +8870,29 @@ mtllib
                     const uvStart = uvOffset;
                     const nStart = normalOffset;
 
-                    // Csúcsok (Vertices)
                     for (let i = 0; i < posAttr.count; i++) {
                         tempV.fromBufferAttribute(posAttr, i);
                         tempV.applyMatrix4(mesh.matrixWorld);
-                        obj +=    
-;
+                        obj += 'v ' + tempV.x.toFixed(3) + ' ' + tempV.y.toFixed(3) + ' ' + tempV.z.toFixed(3) + '\n';
                     }
 
-                    // Textúra koordináták (UVs)
                     const hasUV = !!(uvAttr && uvAttr.count > 0);
                     if (hasUV) {
                         for (let i = 0; i < uvAttr.count; i++) {
                             tempUV.fromBufferAttribute(uvAttr, i);
-                            obj += t  
-;
+                            obj += 'vt ' + tempUV.x.toFixed(4) + ' ' + tempUV.y.toFixed(4) + '\n';
                         }
                     }
 
-                    // Normálvektorok (Normals)
                     const hasNorm = !!(normAttr && normAttr.count > 0);
                     if (hasNorm) {
                         for (let i = 0; i < normAttr.count; i++) {
                             tempN.fromBufferAttribute(normAttr, i);
                             tempN.applyMatrix3(normalMatrix).normalize();
-                            obj += n   
-;
+                            obj += 'vn ' + tempN.x.toFixed(4) + ' ' + tempN.y.toFixed(4) + ' ' + tempN.z.toFixed(4) + '\n';
                         }
                     }
 
-                    // Lapok (Faces)
                     const index = geometry.index;
                     if (index) {
                         for (let i = 0; i < index.count; i += 3) {
@@ -8986,27 +8911,22 @@ mtllib
                                 const n0 = nStart + i0;
                                 const n1 = nStart + i1;
                                 const n2 = nStart + i2;
-                                obj +=  // // //
-;
+                                obj += 'f ' + v0 + '/' + u0 + '/' + n0 + ' ' + v1 + '/' + u1 + '/' + n1 + ' ' + v2 + '/' + u2 + '/' + n2 + '\n';
                             } else if (hasNorm) {
                                 const n0 = nStart + i0;
                                 const n1 = nStart + i1;
                                 const n2 = nStart + i2;
-                                obj +=  // // //
-;
+                                obj += 'f ' + v0 + '//' + n0 + ' ' + v1 + '//' + n1 + ' ' + v2 + '//' + n2 + '\n';
                             } else if (hasUV) {
                                 const u0 = uvStart + i0;
                                 const u1 = uvStart + i1;
                                 const u2 = uvStart + i2;
-                                obj +=  / / /
-;
+                                obj += 'f ' + v0 + '/' + u0 + ' ' + v1 + '/' + u1 + ' ' + v2 + '/' + u2 + '\n';
                             } else {
-                                obj +=    
-;
+                                obj += 'f ' + v0 + ' ' + v1 + ' ' + v2 + '\n';
                             }
                         }
                     } else {
-                        // Nem indexelt geometria
                         for (let i = 0; i < posAttr.count; i += 3) {
                             const v0 = vStart + i;
                             const v1 = vStart + i + 1;
@@ -9019,23 +8939,19 @@ mtllib
                                 const n0 = nStart + i;
                                 const n1 = nStart + i + 1;
                                 const n2 = nStart + i + 2;
-                                obj +=  // // //
-;
+                                obj += 'f ' + v0 + '/' + u0 + '/' + n0 + ' ' + v1 + '/' + u1 + '/' + n1 + ' ' + v2 + '/' + u2 + '/' + n2 + '\n';
                             } else if (hasNorm) {
                                 const n0 = nStart + i;
                                 const n1 = nStart + i + 1;
                                 const n2 = nStart + i + 2;
-                                obj +=  // // //
-;
+                                obj += 'f ' + v0 + '//' + n0 + ' ' + v1 + '//' + n1 + ' ' + v2 + '//' + n2 + '\n';
                             } else if (hasUV) {
                                 const u0 = uvStart + i;
                                 const u1 = uvStart + i + 1;
                                 const u2 = uvStart + i + 2;
-                                obj +=  / / /
-;
+                                obj += 'f ' + v0 + '/' + u0 + ' ' + v1 + '/' + u1 + ' ' + v2 + '/' + u2 + '\n';
                             } else {
-                                obj +=    
-;
+                                obj += 'f ' + v0 + ' ' + v1 + ' ' + v2 + '\n';
                             }
                         }
                     }
@@ -9046,20 +8962,11 @@ mtllib
                 });
             });
 
-            obj += 
-;
+            obj += '\n';
         });
 
-        // 2. ÖNÁLLÓ EGYEDI BÚTORLAPOK EXPORTÁLÁSA (ha vannak)
         if (standaloneBoards.length > 0) {
-            obj += # -----------------------------------------------------
-;
-            obj += # EGYEDI BÚTORLAPOK
-;
-            obj += # -----------------------------------------------------
-;
-            obj += o Egyedi_Butorlapok
-;
+            obj += 'o Egyedi_Butorlapok\n';
 
             const standaloneCat = {
                 korpusz: [],
@@ -9081,8 +8988,7 @@ mtllib
                 const meshes = standaloneCat[cat];
                 if (meshes.length === 0) return;
 
-                obj += usemtl 
-;
+                obj += 'usemtl ' + cat + '\n';
 
                 meshes.forEach(mesh => {
                     const geometry = mesh.geometry;
@@ -9101,16 +9007,14 @@ mtllib
                     for (let i = 0; i < posAttr.count; i++) {
                         tempV.fromBufferAttribute(posAttr, i);
                         tempV.applyMatrix4(mesh.matrixWorld);
-                        obj +=    
-;
+                        obj += 'v ' + tempV.x.toFixed(3) + ' ' + tempV.y.toFixed(3) + ' ' + tempV.z.toFixed(3) + '\n';
                     }
 
                     const hasUV = !!(uvAttr && uvAttr.count > 0);
                     if (hasUV) {
                         for (let i = 0; i < uvAttr.count; i++) {
                             tempUV.fromBufferAttribute(uvAttr, i);
-                            obj += t  
-;
+                            obj += 'vt ' + tempUV.x.toFixed(4) + ' ' + tempUV.y.toFixed(4) + '\n';
                         }
                     }
 
@@ -9119,8 +9023,7 @@ mtllib
                         for (let i = 0; i < normAttr.count; i++) {
                             tempN.fromBufferAttribute(normAttr, i);
                             tempN.applyMatrix3(normalMatrix).normalize();
-                            obj += n   
-;
+                            obj += 'vn ' + tempN.x.toFixed(4) + ' ' + tempN.y.toFixed(4) + ' ' + tempN.z.toFixed(4) + '\n';
                         }
                     }
 
@@ -9135,14 +9038,11 @@ mtllib
                             const v2 = vStart + i2;
 
                             if (hasUV && hasNorm) {
-                                obj +=  // // //
-;
+                                obj += 'f ' + v0 + '/' + (uvStart + i0) + '/' + (nStart + i0) + ' ' + v1 + '/' + (uvStart + i1) + '/' + (nStart + i1) + ' ' + v2 + '/' + (uvStart + i2) + '/' + (nStart + i2) + '\n';
                             } else if (hasNorm) {
-                                obj +=  // // //
-;
+                                obj += 'f ' + v0 + '//' + (nStart + i0) + ' ' + v1 + '//' + (nStart + i1) + ' ' + v2 + '//' + (nStart + i2) + '\n';
                             } else {
-                                obj +=    
-;
+                                obj += 'f ' + v0 + ' ' + v1 + ' ' + v2 + '\n';
                             }
                         }
                     }
@@ -9157,9 +9057,6 @@ mtllib
         return obj;
     }
 
-    /**
-     * Letöltés indítása közvetlen böngésző Blob segítségével
-     */
     static triggerDownload(blob, filename) {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -9171,18 +9068,14 @@ mtllib
         setTimeout(() => URL.revokeObjectURL(url), 2000);
     }
 
-    /**
-     * ZIP csomag exportálása és letöltése (OBJ + MTL együtt)
-     */
     static exportZip(boardManager, baseFilename = 'konyha_terv') {
-        const objName = ${baseFilename}.obj;
-        const mtlName = ${baseFilename}.mtl;
-        const zipName = ${baseFilename}_obj.zip;
+        const objName = baseFilename + '.obj';
+        const mtlName = baseFilename + '.mtl';
+        const zipName = baseFilename + '_obj.zip';
 
         const objContent = this.generateOBJ(boardManager, mtlName);
         const mtlContent = this.generateMTL(boardManager);
 
-        // Ha elérhető az fflate tömörítő könyvtár
         if (typeof fflate !== 'undefined' && typeof fflate.zipSync === 'function') {
             try {
                 const zipData = fflate.zipSync({
@@ -9193,33 +9086,26 @@ mtllib
                 this.triggerDownload(blob, zipName);
                 return { success: true, filename: zipName, format: 'zip' };
             } catch (err) {
-                console.warn('[OBJ Export] Hiba a ZIP tömörítéskor, visszaváltás OBJ letöltésre:', err);
+                console.warn('[OBJ Export] Hiba a ZIP csomagolaskor:', err);
             }
         }
 
-        // Tartalék mód: OBJ fájl közvetlen letöltése
         const blob = new Blob([objContent], { type: 'text/plain;charset=utf-8' });
         this.triggerDownload(blob, objName);
         return { success: true, filename: objName, format: 'obj' };
     }
 
-    /**
-     * Csak az OBJ fájl letöltése
-     */
     static exportOBJOnly(boardManager, baseFilename = 'konyha_terv') {
-        const objName = ${baseFilename}.obj;
-        const mtlName = ${baseFilename}.mtl;
+        const objName = baseFilename + '.obj';
+        const mtlName = baseFilename + '.mtl';
         const objContent = this.generateOBJ(boardManager, mtlName);
         const blob = new Blob([objContent], { type: 'text/plain;charset=utf-8' });
         this.triggerDownload(blob, objName);
         return { success: true, filename: objName };
     }
 
-    /**
-     * Csak az MTL anyagfájl letöltése
-     */
     static exportMTLOnly(boardManager, baseFilename = 'konyha_terv') {
-        const mtlName = ${baseFilename}.mtl;
+        const mtlName = baseFilename + '.mtl';
         const mtlContent = this.generateMTL(boardManager);
         const blob = new Blob([mtlContent], { type: 'text/plain;charset=utf-8' });
         this.triggerDownload(blob, mtlName);
@@ -9231,11 +9117,16 @@ if (typeof window !== 'undefined') {
     window.ObjExporter = ObjExporter;
 }
 
+if (typeof window !== "undefined") {
+    window.ObjExporter = ObjExporter;
+}
+
 // --- MODULE: js/app.js ---
 /**
  * Fő Alkalmazás Vezérlő (app.js)
  * Összeköti a 3D grafikai motort, a lapkezelőt, az intelligens illesztőt, textúrákat és a bal oldali katalógust.
  */
+
 
 /**
  * 3D Élőkép és Előnézet kezelő a Konyha Korpusz Varázsló jobb oldalán
@@ -9895,28 +9786,56 @@ class FurnitureApp {
                     alert('Hiba történt a felhőbe töltéskor.');
                 }
             });
+        // --- Egységes Export Gomb & Lenyíló Menü (OBJ, JSON, Kép) ---
+        const btnMainExport = document.getElementById('btn-main-export');
+        const dropdownExportMenu = document.getElementById('dropdown-export-menu');
+        const wrapperExportDropdown = document.getElementById('wrapper-export-dropdown');
+
+        if (btnMainExport && dropdownExportMenu) {
+            btnMainExport.addEventListener('click', (e) => {
+                e.stopPropagation();
+                dropdownExportMenu.style.display = (dropdownExportMenu.style.display === 'flex') ? 'none' : 'flex';
+            });
+
+            document.addEventListener('click', (e) => {
+                if (wrapperExportDropdown && !wrapperExportDropdown.contains(e.target)) {
+                    dropdownExportMenu.style.display = 'none';
+                }
+            });
         }
 
-        document.getElementById('btn-take-screenshot').addEventListener('click', () => {
-            const snap = this.scene3D.getSnapshot(1920, 1080);
-            const a = document.createElement('a');
-            a.href = snap;
-            a.download = `butorterv_${Date.now()}.jpg`;
-            a.click();
-        });
-
-        // Wavefront OBJ Export gomb és modál kezelése
-        const btnExportObj = document.getElementById('btn-export-obj');
-        if (btnExportObj) {
-            btnExportObj.addEventListener('click', () => {
+        // 1. OBJ Export opció a menüből
+        const btnMenuExportObj = document.getElementById('btn-menu-export-obj');
+        if (btnMenuExportObj) {
+            btnMenuExportObj.addEventListener('click', () => {
+                if (dropdownExportMenu) dropdownExportMenu.style.display = 'none';
                 if (this.boardManager.boards.length === 0 && this.boardManager.corpora.length === 0) {
-                    alert('A 3D munkatér üres! Hozz létre legalább egy konyhabútort vagy korpuszt az OBJ exportáláshoz.');
+                    this.catalogManager.showToast('A 3D munkatér üres! Hozz létre legalább egy konyhabútort az OBJ exportáláshoz.', 'warning');
                     return;
                 }
                 this.openModal('modal-obj-export');
             });
         }
 
+        // 2. JSON Projekt Mentés opció a menüből
+        const btnMenuExportJson = document.getElementById('btn-menu-export-json');
+        if (btnMenuExportJson) {
+            btnMenuExportJson.addEventListener('click', () => {
+                if (dropdownExportMenu) dropdownExportMenu.style.display = 'none';
+                this.exportProjectJSON();
+            });
+        }
+
+        // 3. Kép / Screenshot Mentés opció a menüből
+        const btnMenuExportScreenshot = document.getElementById('btn-menu-export-screenshot');
+        if (btnMenuExportScreenshot) {
+            btnMenuExportScreenshot.addEventListener('click', () => {
+                if (dropdownExportMenu) dropdownExportMenu.style.display = 'none';
+                this.exportSnapshot();
+            });
+        }
+
+        // OBJ Modálbeli gombok:
         const btnDoExportObjZip = document.getElementById('btn-do-export-obj-zip');
         if (btnDoExportObjZip) {
             btnDoExportObjZip.addEventListener('click', () => {
@@ -9950,21 +9869,21 @@ class FurnitureApp {
             });
         }
 
-        document.getElementById('btn-export-json').addEventListener('click', () => {
-            const data = {
-                name: '3D Bútor Terv',
-                exportedAt: new Date().toISOString(),
-                dimensions: this.boardManager.getFurnitureBoundingBox(),
-                boards: this.boardManager.toJSON()
-            };
-            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `butor_terv_${Date.now()}.json`;
-            a.click();
-            URL.revokeObjectURL(url);
-        });
+        const btnModalExportJson = document.getElementById('btn-modal-export-json');
+        if (btnModalExportJson) {
+            btnModalExportJson.addEventListener('click', () => {
+                this.closeModal('modal-obj-export');
+                this.exportProjectJSON();
+            });
+        }
+
+        const btnModalExportScreenshot = document.getElementById('btn-modal-export-screenshot');
+        if (btnModalExportScreenshot) {
+            btnModalExportScreenshot.addEventListener('click', () => {
+                this.closeModal('modal-obj-export');
+                this.exportSnapshot();
+            });
+        }
 
         document.getElementById('input-import-json').addEventListener('change', (e) => {
             const file = e.target.files[0];
@@ -12682,6 +12601,37 @@ class FurnitureApp {
         }
     }
 
+    exportProjectJSON() {
+        const data = {
+            name: '3D Bútor Terv',
+            exportedAt: new Date().toISOString(),
+            dimensions: this.boardManager.getFurnitureBoundingBox(),
+            boards: this.boardManager.toJSON()
+        };
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `butor_terv_${Date.now()}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        if (this.catalogManager && this.catalogManager.showToast) {
+            this.catalogManager.showToast('📄 Terv sikeresen elmentve (.json)!', 'success');
+        }
+    }
+
+    exportSnapshot() {
+        if (!this.scene3D) return;
+        const snap = this.scene3D.getSnapshot(1920, 1080);
+        const a = document.createElement('a');
+        a.href = snap;
+        a.download = `butorterv_${Date.now()}.jpg`;
+        a.click();
+        if (this.catalogManager && this.catalogManager.showToast) {
+            this.catalogManager.showToast('📸 Látványterv sikeresen lementve (.jpg)!', 'success');
+        }
+    }
+
     // ==========================================
     // MODAL KEZELŐK
     // ==========================================
@@ -14383,23 +14333,6 @@ class FurnitureApp {
             this.scene3D.selectBoard(newCorpus);
         }
     }
-}
-
-// Alkalmazás indítása a DOM betöltődése után
-function startFurnitureApp() {
-    if (!window.app) {
-        try {
-            window.app = new FurnitureApp();
-        } catch (e) {
-            console.error('Hiba az alkalmazás indításakor:', e);
-        }
-    }
-}
-
-if (document.readyState === 'loading') {
-    window.addEventListener('DOMContentLoaded', startFurnitureApp);
-} else {
-    startFurnitureApp();
 }
 
 // Alkalmazás indítása a DOM betöltődése után
