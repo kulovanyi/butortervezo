@@ -515,6 +515,8 @@ class FurnitureApp {
         if (!this.authManager.isLoggedIn()) {
             this.openAuthGate();
         }
+
+        window.openKitchenModal = () => this.openKitchenModal();
     }
 
     /**
@@ -1520,62 +1522,12 @@ class FurnitureApp {
             }
         });
 
-        // --- Konyha Korpusz Varázsló Események (Élőkép & Dinamikus Munkalap kalkuláció) ---
-        const openKitchenModal = () => {
-            this.editingCorpusId = null;
-            this.kitchenBackupConfig = null;
-            this.kitchenElements = []; // Alapértelmezésben üres, front nélküli tiszta korpusz
-            this.previewCorpus = null;
-            this.renderKitchenElementsUI();
-
-            // Termékkód és Elem Név inicializálása új elem készítéséhez
-            const nextIdx = (this.boardManager.corpora ? this.boardManager.corpora.length : 0) + 1;
-            const defaultCode = `K-${String(nextIdx).padStart(3, '0')}`;
-            const defaultName = 'Konyhai Alsószekrény 600mm';
-            const codeInput = document.getElementById('kc-product-code');
-            if (codeInput) codeInput.value = defaultCode;
-            const nameInput = document.getElementById('kc-element-name');
-            if (nameInput) nameInput.value = defaultName;
-
-            // Számítsuk ki a helyét a meglévő bútorok mellett X eltolással
-            const currentBounds = this.boardManager.getFurnitureBoundingBox();
-            const initialW = Number(document.getElementById('kc-width').value) || 600;
-            this.newCorpusOffsetX = currentBounds.width > 0 ? (currentBounds.width / 2 + initialW / 2 + 80) : 0;
-            this.newCorpusOffsetY = 0;
-            this.newCorpusOffsetZ = 0;
-
-            const modalTitle = document.querySelector('#modal-kitchen-generator .modal-title');
-            if (modalTitle) modalTitle.innerHTML = '🍳 Konyha Elem Tervező Varázsló';
-
-            const btnConfirm = document.getElementById('btn-confirm-kitchen');
-            if (btnConfirm) btnConfirm.innerHTML = '➕ Konyha Elem Hozzáadása';
-
-            this.openModal('modal-kitchen-generator');
-            document.querySelectorAll('.wizard-accordion-item').forEach(item => item.classList.remove('is-open'));
-            const dimsSec = document.getElementById('wz-sec-dims');
-            if (dimsSec) dimsSec.classList.add('is-open');
-            const frontsSec = document.getElementById('wz-sec-fronts');
-            if (frontsSec) frontsSec.classList.add('is-open');
-
-            this.applyKitchenTypePreset(document.getElementById('kc-cabinet-type')?.value || 'base');
-            this.syncKitchenWorktopMath();
-
-            const config = this.getKitchenConfigFromUI();
-
-            setTimeout(() => {
-                if (this.kitchenPreview) {
-                    this.kitchenPreview.resize();
-                    this.kitchenPreview.update(config);
-                    this.kitchenPreview.resetCamera();
-                }
-            }, 60);
-        };
-
+        // --- Konyha Korpusz Varázsló Események ---
         const btnKitchenTop = document.getElementById('btn-kitchen-wizard');
-        if (btnKitchenTop) btnKitchenTop.addEventListener('click', openKitchenModal);
+        if (btnKitchenTop) btnKitchenTop.addEventListener('click', () => this.openKitchenModal());
 
         const btnKitchenSide = document.getElementById('btn-sidebar-kitchen-wizard');
-        if (btnKitchenSide) btnKitchenSide.addEventListener('click', openKitchenModal);
+        if (btnKitchenSide) btnKitchenSide.addEventListener('click', () => this.openKitchenModal());
 
         // Dinamikus Front Elem Hozzáadás Gombok (Nyíló Ajtó, Felnyíló Ajtó, Fiók, Sütő)
         const btnAddDoor = document.getElementById('btn-kc-add-door');
@@ -3803,6 +3755,20 @@ class FurnitureApp {
             });
         }
 
+        // Vendégként folytatom gomb
+        const btnGuestLogin = document.getElementById('btn-guest-login');
+        if (btnGuestLogin) {
+            btnGuestLogin.addEventListener('click', () => {
+                if (this.authManager && this.authManager.continueAsGuest) {
+                    this.authManager.continueAsGuest();
+                }
+                this.closeAuthGate();
+                if (this.catalogManager && this.catalogManager.showToast) {
+                    this.catalogManager.showToast('👋 Beléptél Vendégként (Kipróbálás mód)!', 'info');
+                }
+            });
+        }
+
         // Regisztráció submit
         if (formRegister) {
             formRegister.addEventListener('submit', async (e) => {
@@ -4270,6 +4236,64 @@ class FurnitureApp {
     // ==========================================
     // KONYHA KORPUSZ GENERÁLÓ METÓDUSOK
     // ==========================================
+
+    openKitchenModal() {
+        try {
+            console.log('🍳 Konyha Varázsló megnyitása kezdeményezve...');
+            this.editingCorpusId = null;
+            this.kitchenBackupConfig = null;
+            this.kitchenElements = []; // Alapértelmezésben üres, front nélküli tiszta korpusz
+            this.previewCorpus = null;
+            this.renderKitchenElementsUI();
+
+            // Termékkód és Elem Név inicializálása új elem készítéséhez
+            const nextIdx = (this.boardManager && this.boardManager.corpora ? this.boardManager.corpora.length : 0) + 1;
+            const defaultCode = `K-${String(nextIdx).padStart(3, '0')}`;
+            const defaultName = 'Konyhai Alsószekrény 600mm';
+            const codeInput = document.getElementById('kc-product-code');
+            if (codeInput) codeInput.value = defaultCode;
+            const nameInput = document.getElementById('kc-element-name');
+            if (nameInput) nameInput.value = defaultName;
+
+            // Számítsuk ki a helyét a meglévő bútorok mellett X eltolással
+            const currentBounds = (this.boardManager && this.boardManager.getFurnitureBoundingBox) ? 
+                this.boardManager.getFurnitureBoundingBox() : { width: 0 };
+            const initialW = Number(document.getElementById('kc-width')?.value) || 600;
+            this.newCorpusOffsetX = (currentBounds && currentBounds.width > 0) ? (currentBounds.width / 2 + initialW / 2 + 80) : 0;
+            this.newCorpusOffsetY = 0;
+            this.newCorpusOffsetZ = 0;
+
+            const modalTitle = document.querySelector('#modal-kitchen-generator .modal-title');
+            if (modalTitle) modalTitle.innerHTML = '🍳 Konyha Elem Tervező Varázsló';
+
+            const btnConfirm = document.getElementById('btn-confirm-kitchen');
+            if (btnConfirm) btnConfirm.innerHTML = '➕ Konyha Elem Hozzáadása';
+
+            this.openModal('modal-kitchen-generator');
+            document.querySelectorAll('.wizard-accordion-item').forEach(item => item.classList.remove('is-open'));
+            const dimsSec = document.getElementById('wz-sec-dims');
+            if (dimsSec) dimsSec.classList.add('is-open');
+            const frontsSec = document.getElementById('wz-sec-fronts');
+            if (frontsSec) frontsSec.classList.add('is-open');
+
+            const cabType = document.getElementById('kc-cabinet-type')?.value || 'base';
+            this.applyKitchenTypePreset(cabType);
+            this.syncKitchenWorktopMath();
+
+            const config = this.getKitchenConfigFromUI();
+
+            setTimeout(() => {
+                if (this.kitchenPreview) {
+                    this.kitchenPreview.resize();
+                    this.kitchenPreview.update(config);
+                    this.kitchenPreview.resetCamera();
+                }
+            }, 60);
+        } catch (err) {
+            console.error('Hiba a Konyha Varázsló megnyitásakor:', err);
+            alert('Hiba a Konyha Varázsló megnyitásakor: ' + (err?.message || err));
+        }
+    }
 
     applyKitchenTypePreset(type) {
         document.querySelectorAll('.kc-preset-btn').forEach(b => {

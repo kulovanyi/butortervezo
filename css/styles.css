@@ -1163,9 +1163,20 @@ header.app-header {
     transition: opacity 0.2s ease;
 }
 
+.modal-overlay:not(.open) {
+    display: none !important;
+    pointer-events: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+}
+
 .modal-overlay.open {
     opacity: 1;
     pointer-events: auto;
+}
+
+#modal-kitchen-generator.open {
+    z-index: 2000 !important;
 }
 
 .modal-dialog {
@@ -1649,7 +1660,7 @@ header.app-header {
 /* ==========================================================================
    PRÉMIUM OSZTOTT KÉPERNYŐS AUTH LOGIN GATE (Auth Modal)
    ========================================================================== */
-.auth-gate-overlay {
+.auth-gate-overlay.open {
     position: fixed !important;
     inset: 0 !important;
     z-index: 999999 !important;
@@ -1660,6 +1671,14 @@ header.app-header {
     backdrop-filter: blur(20px) !important;
     padding: 20px;
     box-sizing: border-box;
+}
+
+.auth-gate-overlay:not(.open) {
+    display: none !important;
+    pointer-events: none !important;
+    visibility: hidden !important;
+    z-index: -10 !important;
+    opacity: 0 !important;
 }
 
 .auth-card-split {

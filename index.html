@@ -110,7 +110,7 @@
             </button>
 
             <!-- Konyha Elem Varázsló Felső Gomb -->
-            <button id="btn-kitchen-wizard" class="btn btn-primary" style="padding: 6px 14px; font-weight: 700; display:flex; align-items:center; gap:6px; background: linear-gradient(135deg, #f59e0b, #d97706); border: 1px solid #d97706;" title="Konyha Elem Tervező Varázsló megnyitása">
+            <button id="btn-kitchen-wizard" class="btn btn-primary" onclick="window.openKitchenModal ? window.openKitchenModal() : (window.app && window.app.openKitchenModal && window.app.openKitchenModal());" style="padding: 6px 14px; font-weight: 700; display:flex; align-items:center; gap:6px; background: linear-gradient(135deg, #f59e0b, #d97706); border: 1px solid #d97706;" title="Konyha Elem Tervező Varázsló megnyitása">
                 <span>🍳</span>
                 <span>Konyha Varázsló</span>
             </button>
@@ -438,7 +438,7 @@
                     <button id="btn-add-custom-board" class="btn btn-primary" style="width:100%; justify-content:center;">
                         <span>✨ Egyedi Bútorlap</span>
                     </button>
-                    <button id="btn-sidebar-kitchen-wizard" class="btn btn-primary" style="width:100%; background: linear-gradient(135deg, #f59e0b, #d97706); border-color: #d97706; justify-content:center;">
+                    <button id="btn-sidebar-kitchen-wizard" class="btn btn-primary" onclick="window.openKitchenModal ? window.openKitchenModal() : (window.app && window.app.openKitchenModal && window.app.openKitchenModal());" style="width:100%; background: linear-gradient(135deg, #f59e0b, #d97706); border-color: #d97706; justify-content:center;">
                         <span>🍳 Konyha Elem Varázsló...</span>
                     </button>
                 </div>
@@ -979,10 +979,13 @@
                         🚀 Bejelentkezés
                     </button>
 
-                    <!-- Gyors admin belépés gomb teszteléshez -->
-                    <div class="auth-quick-admin-row">
+                    <!-- Gyors admin és Vendég belépés gombok -->
+                    <div class="auth-quick-admin-row" style="display:flex; flex-direction:column; gap:8px;">
                         <button type="button" id="btn-quick-admin-login" class="btn btn-sm btn-quick-admin">
                             <span>👑</span> Belépés Adminisztrátorként (Gyors teszt)
+                        </button>
+                        <button type="button" id="btn-guest-login" class="btn btn-sm" style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15); color:#94a3b8; width:100%; justify-content:center;">
+                            <span>👀</span> Kipróbálás Vendégként (Bejelentkezés nélkül)
                         </button>
                     </div>
                 </form>
@@ -2206,6 +2209,6 @@
     </div>
 
     <!-- Betöltjük a fő alkalmazás scriptet (Működik közvetlen fájlmegnyitással és webszerverrel is) -->
-    <script src="js/bundle.js?v=4.6"></script>
+    <script src="js/bundle.js?v=4.7"></script>
 </body>
 </html>
