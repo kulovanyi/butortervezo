@@ -30,6 +30,33 @@
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
     <script>
+        // Firebase automatikus inicializálása az alkalmazás indulása előtt
+        try {
+            if (typeof firebase !== 'undefined' && (!firebase.apps || firebase.apps.length === 0)) {
+                var fbSavedConfig = null;
+                try {
+                    var fbRaw = localStorage.getItem('butortervezo_firebase_config_v1');
+                    if (fbRaw) fbSavedConfig = JSON.parse(fbRaw);
+                } catch(e) {}
+
+                var fbConfig = fbSavedConfig || {
+                    apiKey: "AIzaSyA7g7Y63Ht9F2IY2KuhUvdmi-d4lXImrJ0",
+                    authDomain: "butortervezo-3da49.firebaseapp.com",
+                    databaseURL: "https://butortervezo-3da49-default-rtdb.firebaseio.com",
+                    projectId: "butortervezo-3da49",
+                    storageBucket: "butortervezo-3da49.firebasestorage.app",
+                    messagingSenderId: "146339595839",
+                    appId: "1:146339595839:web:2a7059895c8b8581e21a8a",
+                    measurementId: "G-006Q1HLZTE"
+                };
+                firebase.initializeApp(fbConfig);
+                console.log('[FIREBASE] Automatikusan inicializálva a fejlécben:', fbConfig.projectId);
+            }
+        } catch(err) {
+            console.warn('[FIREBASE] Fejléc inicializálási figyelmeztetés:', err);
+        }
+    </script>
+    <script>
         window.addEventListener('error', function(e) {
             console.error('ALKALMAZÁS HIBA:', e.error || e.message, e);
             var banner = document.getElementById('global-error-banner');

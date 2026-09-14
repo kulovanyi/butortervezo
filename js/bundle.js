@@ -5243,6 +5243,43 @@ class AuthManager {
     }
 
     /**
+     * Firebase alkalmazás inicializálásának ellenőrzése és biztosítása
+     */
+    ensureFirebase() {
+        if (typeof firebase === 'undefined') {
+            return false;
+        }
+        if (!firebase.apps || firebase.apps.length === 0) {
+            try {
+                let config = null;
+                try {
+                    const raw = localStorage.getItem('butortervezo_firebase_config_v1');
+                    if (raw) config = JSON.parse(raw);
+                } catch (e) {}
+
+                if (!config) {
+                    config = {
+                        apiKey: "AIzaSyA7g7Y63Ht9F2IY2KuhUvdmi-d4lXImrJ0",
+                        authDomain: "butortervezo-3da49.firebaseapp.com",
+                        databaseURL: "https://butortervezo-3da49-default-rtdb.firebaseio.com",
+                        projectId: "butortervezo-3da49",
+                        storageBucket: "butortervezo-3da49.firebasestorage.app",
+                        messagingSenderId: "146339595839",
+                        appId: "1:146339595839:web:2a7059895c8b8581e21a8a",
+                        measurementId: "G-006Q1HLZTE"
+                    };
+                }
+                firebase.initializeApp(config);
+                console.log('[AUTH] Firebase inicializálva AuthManagerből:', config.projectId);
+            } catch (e) {
+                console.error('[AUTH] Firebase inicializálási hiba:', e);
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
      * Inicializálás és elmentett bejelentkezés betöltése
      */
     init() {
@@ -5263,8 +5300,8 @@ class AuthManager {
             this.currentUser = null;
         }
 
-        // 2. Firebase Auth figyelő (ha elérhető a Firebase Auth SDK)
-        if (typeof firebase !== 'undefined' && firebase.auth) {
+        // 2. Firebase inicializálása és Auth figyelő
+        if (this.ensureFirebase() && typeof firebase.auth === 'function') {
             try {
                 firebase.auth().onAuthStateChanged((fbUser) => {
                     if (fbUser) {
@@ -5332,8 +5369,17 @@ class AuthManager {
      * Bejelentkezés vagy Regisztráció Google fiókkal (Firebase Auth Popup)
      */
     async loginWithGoogle() {
-        if (typeof firebase === 'undefined' || !firebase.auth) {
-            throw new Error('A Google bejelentkezéshez Firebase kapcsolat szükséges. Kérjük, ellenőrizd a beállításokat a felhő ikonra kattintva!');
+        if (typeof firebase === 'undefined') {
+            throw new Error('A Firebase SDK nem töltődött be. Kérjük, ellenőrizd az internetkapcsolatot!');
+        }
+
+        const isReady = this.ensureFirebase();
+        if (!isReady || typeof firebase.auth !== 'function') {
+            throw new Error('A Firebase Auth szolgáltatás nem érhető el.');
+        }
+
+        if (window.location.protocol === 'file:') {
+            throw new Error('A Google bejelentkezés közvetlen fájlmegnyitásból (file://) a Google biztonsági házirendje miatt nem futtatható. Kérjük, nyisd meg az oldalt helyi webszerverről (pl. VS Code Live Server vagy python -m http.server 8000 -> http://localhost:8000)!');
         }
 
         try {
@@ -5363,9 +5409,11 @@ class AuthManager {
             if (err.code === 'auth/popup-closed-by-user') {
                 throw new Error('A Google bejelentkezési ablak be lett zárva a folyamat befejezése előtt.');
             } else if (err.code === 'auth/unauthorized-domain') {
-                throw new Error('Ez a domain nincs engedélyezve a Firebase Console -> Authentication -> Settings -> Authorized domains listában!');
+                throw new Error('Ez a domain (' + (window.location.hostname || 'ismeretlen') + ') nincs engedélyezve a Firebase Console -> Authentication -> Settings -> Authorized domains listában!');
             } else if (err.code === 'auth/operation-not-allowed') {
-                throw new Error('A Google bejelentkezési szolgáltató nincs engedélyezve a Firebase Console-ban!');
+                throw new Error('A Google bejelentkezési szolgáltató nincs bekapcsolva a Firebase Console-ban (Authentication -> Sign-in method -> Google: Engedélyezés)!');
+            } else if (err.code === 'auth/operation-not-supported-in-this-environment') {
+                throw new Error('Ez a környezet nem támogatja a Google felugró ablakos bejelentkezést. Kérjük, nyisd meg http://localhost címen!');
             }
             throw new Error(err.message || 'Sikertelen Google bejelentkezés.');
         }
@@ -5418,7 +5466,7 @@ class AuthManager {
             }
 
             // 2. Ha a szerver offline vagy nem válaszol, próbáljuk Firebase Auth-tal
-            if (typeof firebase !== 'undefined' && firebase.auth) {
+            if (typeof firebase !== 'undefined' && this.ensureFirebase() && typeof firebase.auth === 'function') {
                 try {
                     const cred = await firebase.auth().signInWithEmailAndPassword(email, password);
                     const fbUser = cred.user;
@@ -5498,7 +5546,7 @@ class AuthManager {
             }
         } catch (serverErr) {
             // 2. Ha a szerver offline, próbálkozás Firebase Auth-tal
-            if (typeof firebase !== 'undefined' && firebase.auth) {
+            if (typeof firebase !== 'undefined' && this.ensureFirebase() && typeof firebase.auth === 'function') {
                 try {
                     const cred = await firebase.auth().createUserWithEmailAndPassword(email, password);
                     await cred.user.sendEmailVerification();
@@ -5655,6 +5703,10 @@ if (typeof window !== 'undefined') {
     window.AuthManager = AuthManager;
 }
 
+// Globális elérhetőség
+if (typeof window !== 'undefined') {
+    window.AuthManager = AuthManager;
+}
 
 // --- MODULE: js/catalogManager.js ---
 const DEFAULT_CATALOG_CATEGORIES = [{"id": "cat_kitchen", "name": "Konyhabútor", "icon": "utensils", "color": "#f59e0b"}, {"id": "cat_living", "name": "Nappali & Polcok", "icon": "tv", "color": "#3b82f6"}, {"id": "cat_wardrobe", "name": "Gardrób & Szekrény", "icon": "archive", "color": "#10b981"}, {"id": "cat_office", "name": "Irodabútor & Asztal", "icon": "briefcase", "color": "#8b5cf6"}, {"id": "cat_bathroom", "name": "Fürdőszoba bútor", "icon": "droplet", "color": "#06b6d4"}];
