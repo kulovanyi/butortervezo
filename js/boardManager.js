@@ -285,45 +285,48 @@ export function createCornerCutWorktopGeometry(w, h, d, radius = 3, cornerCut = 
         const hd = d / 2;
 
         if (side === 'right') {
-            // Jobbos végzáró: A nyitott sarok a jobb elülső (+hw, +hd)
+            // Jobbos végzáró:
+            // A bal oldal (-hw) és a hátsó fal felőli él (-hd) merőleges sík 90° (hézagmentes csatlakozás a szomszédos munkalaphoz és falhoz)
+            // Az elülső él (+hd) és a jobb oldali nyitott él (+hw) lekerekített postforming él
             if (cornerType === 'chamfer') {
-                shape.moveTo(-hw, -hd);              // Bal hátsó sarok
-                shape.lineTo(+hw, -hd);              // Jobb hátsó sarok
-                shape.lineTo(+hw, +hd - cutZ);       // Jobb oldal a levágásig
-                shape.lineTo(+hw - cutX, +hd);       // Levágás az elülső oldalra
-                shape.lineTo(-hw, +hd);              // Bal első sarok
-                shape.lineTo(-hw, -hd);              // Zárás
-            } else {
-                // Lekerekített íves sarok (+hw, +hd)
                 shape.moveTo(-hw, -hd);
-                shape.lineTo(+hw, -hd);
-                shape.lineTo(+hw, +hd - cutRadius);
-                shape.absarc(+hw - cutRadius, +hd - cutRadius, cutRadius, 0, Math.PI / 2, false);
-                shape.lineTo(-hw, +hd);
+                shape.lineTo(hw - r, -hd);
+                shape.lineTo(hw - r, hd - r - cutZ);
+                shape.lineTo(hw - r - cutX, hd - r);
+                shape.lineTo(-hw, hd - r);
+                shape.lineTo(-hw, -hd);
+            } else {
+                shape.moveTo(-hw, -hd);
+                shape.lineTo(hw - r, -hd);
+                shape.lineTo(hw - r, hd - r - cutRadius);
+                shape.absarc(hw - r - cutRadius, hd - r - cutRadius, cutRadius, 0, Math.PI / 2, false);
+                shape.lineTo(-hw, hd - r);
                 shape.lineTo(-hw, -hd);
             }
         } else {
-            // Balos végzáró: A nyitott sarok a bal elülső (-hw, +hd)
+            // Balos végzáró:
+            // A jobb oldal (+hw) és a hátsó fal felőli él (-hd) merőleges sík 90° (hézagmentes csatlakozás a szomszédos munkalaphoz és falhoz)
+            // Az elülső él (+hd) és a bal oldali nyitott él (-hw) lekerekített postforming él
             if (cornerType === 'chamfer') {
-                shape.moveTo(+hw, -hd);              // Jobb hátsó sarok
-                shape.lineTo(+hw, +hd);              // Jobb első sarok
-                shape.lineTo(-hw + cutX, +hd);       // Elülső él a levágásig
-                shape.lineTo(-hw, +hd - cutZ);       // Levágás a bal oldalra
-                shape.lineTo(-hw, -hd);              // Bal hátsó sarok
-                shape.lineTo(+hw, -hd);              // Zárás
-            } else {
-                // Lekerekített íves sarok (-hw, +hd)
                 shape.moveTo(+hw, -hd);
-                shape.lineTo(+hw, +hd);
-                shape.lineTo(-hw + cutRadius, +hd);
-                shape.absarc(-hw + cutRadius, +hd - cutRadius, cutRadius, Math.PI / 2, Math.PI, false);
-                shape.lineTo(-hw, -hd);
+                shape.lineTo(+hw, hd - r);
+                shape.lineTo(-hw + r + cutX, hd - r);
+                shape.lineTo(-hw + r, hd - r - cutZ);
+                shape.lineTo(-hw + r, -hd);
+                shape.lineTo(+hw, -hd);
+            } else {
+                shape.moveTo(+hw, -hd);
+                shape.lineTo(+hw, hd - r);
+                shape.lineTo(-hw + r + cutRadius, hd - r);
+                shape.absarc(-hw + r + cutRadius, hd - r - cutRadius, cutRadius, Math.PI / 2, Math.PI, false);
+                shape.lineTo(-hw + r, -hd);
                 shape.lineTo(+hw, -hd);
             }
         }
 
+        const extrudeDepth = Math.max(0.1, h - 2 * r);
         const extrudeSettings = {
-            depth: Math.max(0.1, h - 2 * r),
+            depth: extrudeDepth,
             bevelEnabled: true,
             bevelSegments: 3,
             bevelSize: r,
@@ -333,7 +336,47 @@ export function createCornerCutWorktopGeometry(w, h, d, radius = 3, cornerCut = 
 
         const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
         geometry.rotateX(Math.PI / 2);
-        geometry.center();
+
+        // Y-irányú (magassági) középre igazítás
+        geometry.translate(0, (h / 2) - r, 0);
+
+        // Pontos koordináták korrekciója:
+        // A hátsó él (-hd) és a szomszédos munkalaphoz csatlakozó oldal (-hw jobbosnál, +hw balosnál)
+        // tökéletesen sík 90°-os felület kell legyen (nincs 3mm-es kinyúlás előre/hátra és nincs illesztési hézag).
+        const pos = geometry.attributes.position;
+        for (let i = 0; i < pos.count; i++) {
+            let px = pos.getX(i);
+            let pz = pos.getZ(i);
+
+            // Hátsó él: pontosan -hd síkjában, merőleges sík a fal felé (megszünteti a hátsó kinyúlást)
+            if (pz < -hd) {
+                pos.setZ(i, -hd);
+            }
+            // Első él: pontosan +hd-ig ér (megszünteti az elülső kinyúlást a szomszédos munkalaphoz képest)
+            if (pz > hd) {
+                pos.setZ(i, hd);
+            }
+
+            if (side === 'right') {
+                // Jobbos végzáró: a bal oldal (-hw) síkban csatlakozik a szomszédos munkalaphoz
+                if (px < -hw) {
+                    pos.setX(i, -hw);
+                }
+                if (px > hw) {
+                    pos.setX(i, hw);
+                }
+            } else {
+                // Balos végzáró: a jobb oldal (+hw) síkban csatlakozik a szomszédos munkalaphoz
+                if (px > hw) {
+                    pos.setX(i, hw);
+                }
+                if (px < -hw) {
+                    pos.setX(i, -hw);
+                }
+            }
+        }
+
+        pos.needsUpdate = true;
         geometry.computeVertexNormals();
         applyBoxUVs(geometry, w, h, d, 800);
         geometry.parameters = { width: w, height: h, depth: d, radius: r, cornerCut, isWorktop: true };
