@@ -486,6 +486,11 @@ class FurnitureApp {
                 this.catalogManager.onUserChanged(user);
             }
             this.renderCatalogUI();
+            if (user) {
+                this.closeAuthGate();
+            } else {
+                this.openAuthGate();
+            }
         });
         window.authManager = this.authManager;
 
@@ -504,6 +509,11 @@ class FurnitureApp {
 
         // Tiszta, üres 3D munkatérrel indulunk (nem töltünk be alapmodellt)
         this.renderHierarchyTree();
+
+        // 7. Belépési kapu ellenőrzése induláskor
+        if (!this.authManager.isLoggedIn()) {
+            this.openAuthGate();
+        }
     }
 
     /**
@@ -1733,6 +1743,9 @@ class FurnitureApp {
             overlay.addEventListener('click', (e) => {
                 if (e.target === overlay) {
                     const modalId = overlay.id;
+                    if (modalId === 'modal-auth' && (!this.authManager || !this.authManager.isLoggedIn())) {
+                        return; // Auth gate zárolva: bejelentkezés nélkül nem zárható be kívülre kattintva
+                    }
                     if (modalId === 'modal-kitchen-generator') {
                         if (this.editingCorpusId && this.kitchenBackupConfig) {
                             this.boardManager.updateCorpus(this.editingCorpusId, this.kitchenBackupConfig);
@@ -3415,6 +3428,10 @@ class FurnitureApp {
     }
 
     closeModal(modalId) {
+        if (modalId === 'modal-auth' && (!this.authManager || !this.authManager.isLoggedIn())) {
+            // Auth Gate zárolás: bejelentkezés nélkül nem zárható be!
+            return;
+        }
         const modal = document.getElementById(modalId);
         if (modal) {
             modal.classList.remove('open');
@@ -3426,7 +3443,44 @@ class FurnitureApp {
         }
     }
 
+    openAuthGate(tab = 'login') {
+        const modal = document.getElementById('modal-auth');
+        if (modal) {
+            modal.classList.add('auth-gate-active');
+            const closeBtn = document.getElementById('btn-close-auth-modal');
+            if (closeBtn) closeBtn.style.display = 'none';
+        }
+        this.openAuthModal(tab);
+    }
+
+    closeAuthGate() {
+        const modal = document.getElementById('modal-auth');
+        if (modal) {
+            modal.classList.remove('auth-gate-active');
+            const closeBtn = document.getElementById('btn-close-auth-modal');
+            if (closeBtn && this.authManager && this.authManager.isLoggedIn()) {
+                closeBtn.style.display = 'flex';
+            }
+            modal.classList.remove('open');
+            setTimeout(() => {
+                if (!modal.classList.contains('open')) {
+                    modal.style.display = 'none';
+                }
+            }, 200);
+        }
+    }
+
     openAuthModal(tab = 'login') {
+        const modal = document.getElementById('modal-auth');
+        const closeBtn = document.getElementById('btn-close-auth-modal');
+        if (!this.authManager || !this.authManager.isLoggedIn()) {
+            if (modal) modal.classList.add('auth-gate-active');
+            if (closeBtn) closeBtn.style.display = 'none';
+        } else {
+            if (modal) modal.classList.remove('auth-gate-active');
+            if (closeBtn) closeBtn.style.display = 'flex';
+        }
+
         this.openModal('modal-auth');
         const tabLogin = document.getElementById('auth-tab-login');
         const tabRegister = document.getElementById('auth-tab-register');
@@ -3468,6 +3522,7 @@ class FurnitureApp {
                 if (userMenuPopover) userMenuPopover.style.display = 'none';
                 await this.authManager.logout();
                 this.catalogManager.showToast('Sikeresen kijelentkeztél!', 'info');
+                this.openAuthGate('login');
             });
         }
 
@@ -3479,6 +3534,38 @@ class FurnitureApp {
                 document.querySelectorAll('.btn-catalog-scope').forEach(b => {
                     b.classList.toggle('active', b.getAttribute('data-scope') === 'my');
                 });
+            });
+        }
+
+        // Google Bejelentkezés gomb
+        const btnGoogleLogin = document.getElementById('btn-google-login');
+        if (btnGoogleLogin) {
+            btnGoogleLogin.addEventListener('click', async () => {
+                const alertEl = document.getElementById('auth-alert');
+                if (alertEl) alertEl.style.display = 'none';
+                try {
+                    btnGoogleLogin.disabled = true;
+                    btnGoogleLogin.style.opacity = '0.7';
+                    const user = await this.authManager.loginWithGoogle();
+                    this.closeAuthGate();
+                    if (user && user.isAdmin) {
+                        this.catalogManager.showToast(`👑 Üdvözlünk Adminisztrátorként, ${user.name || user.email}!`, 'success');
+                    } else {
+                        this.catalogManager.showToast(`Üdvözlünk, ${user.name || user.email}! 👋`, 'success');
+                    }
+                } catch (err) {
+                    console.error('[AUTH Google]', err);
+                    if (alertEl) {
+                        alertEl.style.display = 'block';
+                        alertEl.style.background = 'rgba(239, 68, 68, 0.2)';
+                        alertEl.style.color = '#f87171';
+                        alertEl.style.border = '1px solid #ef4444';
+                        alertEl.textContent = err.message || 'Sikertelen Google bejelentkezés!';
+                    }
+                } finally {
+                    btnGoogleLogin.disabled = false;
+                    btnGoogleLogin.style.opacity = '1';
+                }
             });
         }
 
@@ -3535,7 +3622,7 @@ class FurnitureApp {
                     btnSubmit.disabled = true;
                     btnSubmit.textContent = '⏳ Belépés folyamatban...';
                     await this.authManager.login(email, password);
-                    this.closeModal('modal-auth');
+                    this.closeAuthGate();
                     this.catalogManager.showToast(`Üdvözlünk, ${this.authManager.getUser().name || email}! 👋`, 'success');
                 } catch (err) {
                     if (err.unverified) {
@@ -3579,7 +3666,7 @@ class FurnitureApp {
                     btnQuickAdmin.disabled = true;
                     btnQuickAdmin.textContent = '⏳ Belépés adminként...';
                     await this.authManager.login('admin@butortervezo.hu', 'admin123');
-                    this.closeModal('modal-auth');
+                    this.closeAuthGate();
                     this.catalogManager.showToast('👑 Sikeresen beléptél Adminisztrátorként! (Központi katalógus írás aktív)', 'success');
                 } catch (err) {
                     if (authAlert) {

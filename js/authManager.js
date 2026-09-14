@@ -19,6 +19,17 @@ export class AuthManager {
     }
 
     /**
+     * Ellenőrzi, hogy egy e-mail cím adminisztrátori jogosultsággal bír-e
+     */
+    checkIsAdminEmail(email) {
+        if (!email) return false;
+        const lower = String(email).trim().toLowerCase();
+        return lower === 'kulovanyi.kornel@gmail.com' ||
+               lower === 'admin@butortervezo.hu' ||
+               lower.startsWith('admin@');
+    }
+
+    /**
      * Inicializálás és elmentett bejelentkezés betöltése
      */
     init() {
@@ -29,7 +40,9 @@ export class AuthManager {
                 this.currentUser = JSON.parse(savedUser);
                 // Biztosítjuk az isAdmin mezőt
                 if (this.currentUser) {
-                    this.currentUser.isAdmin = (this.currentUser.role === 'admin' || (this.currentUser.email && this.currentUser.email.startsWith('admin@')));
+                    const isAdmin = this.checkIsAdminEmail(this.currentUser.email) || (this.currentUser.role === 'admin');
+                    this.currentUser.isAdmin = isAdmin;
+                    this.currentUser.role = isAdmin ? 'admin' : 'user';
                 }
             }
         } catch (e) {
@@ -42,11 +55,12 @@ export class AuthManager {
             try {
                 firebase.auth().onAuthStateChanged((fbUser) => {
                     if (fbUser) {
-                        const isAdmin = fbUser.email && (fbUser.email.startsWith('admin@') || fbUser.email === 'admin@butortervezo.hu');
+                        const isAdmin = this.checkIsAdminEmail(fbUser.email);
                         const userData = {
                             id: fbUser.uid,
                             email: fbUser.email,
                             name: fbUser.displayName || fbUser.email.split('@')[0],
+                            photoURL: fbUser.photoURL || null,
                             role: isAdmin ? 'admin' : 'user',
                             isAdmin: isAdmin,
                             emailVerified: fbUser.emailVerified
@@ -99,6 +113,49 @@ export class AuthManager {
 
     getUserId() {
         return this.currentUser ? this.currentUser.id : null;
+    }
+
+    /**
+     * Bejelentkezés vagy Regisztráció Google fiókkal (Firebase Auth Popup)
+     */
+    async loginWithGoogle() {
+        if (typeof firebase === 'undefined' || !firebase.auth) {
+            throw new Error('A Google bejelentkezéshez Firebase kapcsolat szükséges. Kérjük, ellenőrizd a beállításokat a felhő ikonra kattintva!');
+        }
+
+        try {
+            const provider = new firebase.auth.GoogleAuthProvider();
+            provider.setCustomParameters({ prompt: 'select_account' });
+            const cred = await firebase.auth().signInWithPopup(provider);
+            const fbUser = cred.user;
+
+            const isAdmin = this.checkIsAdminEmail(fbUser.email);
+            const userData = {
+                id: fbUser.uid,
+                email: fbUser.email,
+                name: fbUser.displayName || fbUser.email.split('@')[0],
+                photoURL: fbUser.photoURL || null,
+                role: isAdmin ? 'admin' : 'user',
+                isAdmin: isAdmin,
+                emailVerified: fbUser.emailVerified
+            };
+
+            this.currentUser = userData;
+            this.saveUserToStorage(userData);
+            this.updateUI();
+            this.notifyAuthChange();
+            return userData;
+        } catch (err) {
+            console.error('[AUTH] Google login error:', err);
+            if (err.code === 'auth/popup-closed-by-user') {
+                throw new Error('A Google bejelentkezési ablak be lett zárva a folyamat befejezése előtt.');
+            } else if (err.code === 'auth/unauthorized-domain') {
+                throw new Error('Ez a domain nincs engedélyezve a Firebase Console -> Authentication -> Settings -> Authorized domains listában!');
+            } else if (err.code === 'auth/operation-not-allowed') {
+                throw new Error('A Google bejelentkezési szolgáltató nincs engedélyezve a Firebase Console-ban!');
+            }
+            throw new Error(err.message || 'Sikertelen Google bejelentkezés.');
+        }
     }
 
     /**
@@ -158,7 +215,7 @@ export class AuthManager {
                         err.email = fbUser.email;
                         throw err;
                     }
-                    const isAdmin = fbUser.email && (fbUser.email.startsWith('admin@') || fbUser.email === 'admin@butortervezo.hu');
+                    const isAdmin = this.checkIsAdminEmail(fbUser.email);
                     authResult = {
                         id: fbUser.uid,
                         email: fbUser.email,
@@ -178,7 +235,9 @@ export class AuthManager {
         }
 
         if (loginSuccess && authResult) {
-            authResult.isAdmin = (authResult.role === 'admin' || (authResult.email && authResult.email.startsWith('admin@')));
+            const isAdmin = this.checkIsAdminEmail(authResult.email) || (authResult.role === 'admin');
+            authResult.isAdmin = isAdmin;
+            authResult.role = isAdmin ? 'admin' : 'user';
             this.currentUser = authResult;
             this.saveUserToStorage(authResult);
             this.updateUI();
@@ -196,6 +255,10 @@ export class AuthManager {
         email = (email || '').trim().toLowerCase();
         password = (password || '').trim();
         name = (name || '').trim();
+
+        if (this.checkIsAdminEmail(email)) {
+            adminCode = 'admin123';
+        }
 
         if (!email || !password) {
             throw new Error('E-mail cím és jelszó megadása kötelező!');

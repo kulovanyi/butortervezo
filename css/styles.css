@@ -1646,3 +1646,462 @@ header.app-header {
     }
 }
 
+/* ==========================================================================
+   PRÉMIUM OSZTOTT KÉPERNYŐS AUTH LOGIN GATE (Auth Modal)
+   ========================================================================== */
+.auth-gate-overlay {
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 999999 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    background: radial-gradient(circle at 50% 25%, #1e293b 0%, #060913 100%) !important;
+    backdrop-filter: blur(20px) !important;
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+.auth-card-split {
+    display: flex;
+    width: 95vw;
+    max-width: 1040px;
+    height: 86vh;
+    max-height: 670px;
+    min-height: 560px;
+    border-radius: 24px;
+    overflow: hidden;
+    background: #0f172a;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 35px 100px -15px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(56, 189, 248, 0.15);
+    position: relative;
+    box-sizing: border-box;
+}
+
+/* BAL OLDAL: Látványos prémium konyha háttér */
+.auth-hero-side {
+    flex: 1.15;
+    position: relative;
+    background: #1e293b url('../images/login_kitchen.jpg') center/cover no-repeat;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.auth-hero-overlay {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgba(15, 23, 42, 0.4) 0%, rgba(15, 23, 42, 0.8) 55%, rgba(15, 23, 42, 0.96) 100%);
+    z-index: 1;
+}
+
+.auth-hero-content {
+    position: relative;
+    z-index: 2;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 40px;
+    box-sizing: border-box;
+    color: #ffffff;
+}
+
+.auth-hero-brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.auth-hero-logo {
+    font-size: 28px;
+    filter: drop-shadow(0 2px 8px rgba(0,0,0,0.5));
+}
+
+.auth-hero-appname {
+    font-size: 18px;
+    font-weight: 800;
+    letter-spacing: -0.3px;
+    color: #ffffff;
+    text-shadow: 0 2px 10px rgba(0,0,0,0.5);
+}
+
+.auth-hero-badge {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.8px;
+    color: #38bdf8;
+    background: rgba(56, 189, 248, 0.15);
+    padding: 2px 8px;
+    border-radius: 6px;
+    border: 1px solid rgba(56, 189, 248, 0.3);
+    margin-top: 2px;
+}
+
+.auth-hero-center {
+    margin: auto 0;
+}
+
+.auth-hero-headline {
+    font-size: 28px;
+    font-weight: 800;
+    line-height: 1.25;
+    margin: 0 0 12px 0;
+    color: #f8fafc;
+    letter-spacing: -0.5px;
+    text-shadow: 0 2px 15px rgba(0,0,0,0.6);
+}
+
+.auth-hero-subline {
+    font-size: 13px;
+    line-height: 1.6;
+    color: #cbd5e1;
+    margin: 0 0 24px 0;
+    text-shadow: 0 1px 8px rgba(0,0,0,0.5);
+}
+
+.auth-hero-features {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.auth-feature-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: rgba(15, 23, 42, 0.65);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(12px);
+    padding: 10px 14px;
+    border-radius: 12px;
+    transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.auth-feature-item:hover {
+    transform: translateX(4px);
+    border-color: rgba(56, 189, 248, 0.3);
+}
+
+.auth-feature-icon {
+    font-size: 20px;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 8px;
+    flex-shrink: 0;
+}
+
+.auth-feature-item strong {
+    display: block;
+    font-size: 12px;
+    color: #f1f5f9;
+    font-weight: 700;
+}
+
+.auth-feature-item span {
+    font-size: 11px;
+    color: #94a3b8;
+}
+
+.auth-hero-footer {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: #94a3b8;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    padding-top: 16px;
+}
+
+/* JOBB OLDAL: Bejelentkezési és regisztrációs űrlap */
+.auth-form-side {
+    flex: 1;
+    min-width: 360px;
+    max-width: 480px;
+    background: #0f172a;
+    padding: 36px 32px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    overflow-y: auto;
+    box-sizing: border-box;
+    border-left: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.auth-form-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 20px;
+}
+
+.auth-form-title {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.auth-form-icon {
+    font-size: 26px;
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+    background: rgba(56, 189, 248, 0.12);
+    border: 1px solid rgba(56, 189, 248, 0.25);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.auth-form-title h3 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 800;
+    color: #f8fafc;
+    letter-spacing: -0.3px;
+}
+
+.auth-form-title p {
+    margin: 2px 0 0 0;
+    font-size: 12px;
+    color: #94a3b8;
+}
+
+/* Google Bejelentkezés Gomb */
+.btn-google-auth {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    width: 100%;
+    padding: 12px 18px;
+    background: #ffffff;
+    color: #1f2937;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 700;
+    border: 1px solid #e5e7eb;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+    margin-bottom: 4px;
+}
+
+.btn-google-auth:hover {
+    background: #f8fafc;
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+    border-color: #cbd5e1;
+}
+
+.btn-google-auth:active {
+    transform: translateY(0);
+}
+
+.google-svg {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+}
+
+/* Elválasztó vonal */
+.auth-divider {
+    display: flex;
+    align-items: center;
+    text-align: center;
+    margin: 16px 0;
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+    content: '';
+    flex: 1;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.auth-divider span {
+    padding: 0 12px;
+}
+
+/* Auth Fülek */
+.auth-tabs {
+    display: flex;
+    background: rgba(15, 23, 42, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    padding: 3px;
+    margin-bottom: 16px;
+    gap: 4px;
+}
+
+.auth-tab-btn {
+    flex: 1;
+    padding: 8px 12px;
+    border: none;
+    background: transparent;
+    color: #94a3b8;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.auth-tab-btn.active {
+    background: #1e293b;
+    color: #ffffff;
+    font-weight: 700;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    border: 1px solid rgba(56, 189, 248, 0.25);
+}
+
+/* Űrlap elemek */
+.auth-form-content {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.auth-remember-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    color: #94a3b8;
+    margin-top: -2px;
+}
+
+.auth-remember-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+}
+
+.auth-remember-label input[type="checkbox"] {
+    accent-color: #3b82f6;
+    cursor: pointer;
+}
+
+.btn-auth-submit {
+    padding: 11px;
+    font-weight: 700;
+    font-size: 14px;
+    width: 100%;
+    margin-top: 4px;
+    border-radius: 10px;
+    transition: all 0.2s ease;
+}
+
+.auth-field-hint {
+    font-size: 11px;
+    color: #38bdf8;
+    margin-top: 4px;
+    display: block;
+}
+
+.auth-alert-box {
+    padding: 10px 14px;
+    border-radius: 10px;
+    font-size: 12px;
+    line-height: 1.4;
+    margin-bottom: 12px;
+}
+
+.auth-quick-admin-row {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed rgba(255, 255, 255, 0.08);
+    text-align: center;
+}
+
+.btn-quick-admin {
+    width: 100%;
+    padding: 8px;
+    background: rgba(245, 158, 11, 0.1);
+    color: #f59e0b;
+    border: 1px solid rgba(245, 158, 11, 0.25);
+    font-weight: 600;
+    font-size: 12px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    transition: all 0.2s ease;
+}
+
+.btn-quick-admin:hover {
+    background: rgba(245, 158, 11, 0.18);
+    border-color: rgba(245, 158, 11, 0.4);
+}
+
+/* Verifikációs nézet */
+.auth-verification-view {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 12px 0;
+    gap: 12px;
+}
+
+.auth-verify-icon {
+    font-size: 48px;
+}
+
+.auth-verify-title {
+    color: #10b981;
+    margin: 0;
+    font-size: 17px;
+    font-weight: 800;
+}
+
+.auth-verify-text {
+    color: #94a3b8;
+    font-size: 12px;
+    line-height: 1.5;
+    margin: 0;
+}
+
+.auth-verify-local {
+    width: 100%;
+    background: rgba(59, 130, 246, 0.1);
+    border: 1px solid rgba(59, 130, 246, 0.25);
+    border-radius: 10px;
+    padding: 10px;
+}
+
+/* Reszponzivitás kisebb képernyőkre */
+@media (max-width: 860px) {
+    .auth-card-split {
+        flex-direction: column;
+        height: auto;
+        max-height: 94vh;
+        width: 95vw;
+        max-width: 460px;
+        overflow-y: auto;
+    }
+
+    .auth-hero-side {
+        display: none;
+    }
+
+    .auth-form-side {
+        max-width: 100%;
+        min-width: 0;
+        padding: 24px 20px;
+    }
+}
+
+
