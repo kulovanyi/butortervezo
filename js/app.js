@@ -1807,8 +1807,41 @@ class FurnitureApp {
                 return;
             }
             if (e.key === 'Delete' || e.key === 'Backspace') {
-                if (this.selectedBoard) {
+                if (this.scene3D && this.scene3D.selectedTargets && this.scene3D.selectedTargets.length > 1) {
+                    const targets = [...this.scene3D.selectedTargets];
+                    targets.forEach(t => {
+                        if (t.userData && t.userData.isCustomGroup) {
+                            this.boardManager.deleteGroup(t.userData.id);
+                        } else if (t.userData && t.userData.isCorpus) {
+                            this.boardManager.deleteCorpus(t.userData.id);
+                        } else {
+                            const b = this.boardManager.boards.find(x => x.mesh === t);
+                            if (b) this.boardManager.deleteBoard(b.id);
+                        }
+                    });
+                    this.scene3D.selectBoard(null);
+                    this.updateDimensionsBadge();
+                    this.renderHierarchyTree();
+                    this.updateSnapTargetDropdown();
+                } else if (this.selectedCorpus) {
+                    const deletedId = this.selectedCorpus.userData.id;
+                    if (this.lastSelectedBaseCorpus && this.lastSelectedBaseCorpus.userData.id === deletedId) {
+                        this.lastSelectedBaseCorpus = null;
+                    }
+                    this.boardManager.deleteCorpus(deletedId);
+                    this.onBoardSelected(null);
+                    this.updateDimensionsBadge();
+                    this.renderHierarchyTree();
+                    this.updateSnapTargetDropdown();
+                } else if (this.selectedCustomGroup) {
+                    this.boardManager.deleteGroup(this.selectedCustomGroup.userData.id);
+                    this.onBoardSelected(null);
+                    this.updateDimensionsBadge();
+                    this.renderHierarchyTree();
+                    this.updateSnapTargetDropdown();
+                } else if (this.selectedBoard) {
                     this.boardManager.deleteBoard(this.selectedBoard.id);
+                    this.onBoardSelected(null);
                     this.updateDimensionsBadge();
                     this.renderHierarchyTree();
                     this.updateSnapTargetDropdown();
@@ -1819,7 +1852,17 @@ class FurnitureApp {
                 document.getElementById('gizmo-rotate-btn').click();
             } else if (e.key === 'd' && (e.ctrlKey || e.metaKey)) {
                 e.preventDefault();
-                if (this.selectedBoard) {
+                if (this.selectedCorpus) {
+                    this.boardManager.duplicateCorpus(this.selectedCorpus.userData.id);
+                    this.updateDimensionsBadge();
+                    this.renderHierarchyTree();
+                    this.updateSnapTargetDropdown();
+                } else if (this.selectedCustomGroup) {
+                    this.boardManager.duplicateGroup(this.selectedCustomGroup.userData.id);
+                    this.updateDimensionsBadge();
+                    this.renderHierarchyTree();
+                    this.updateSnapTargetDropdown();
+                } else if (this.selectedBoard) {
                     this.boardManager.duplicateBoard(this.selectedBoard.id);
                     this.updateDimensionsBadge();
                     this.renderHierarchyTree();
@@ -2043,9 +2086,30 @@ class FurnitureApp {
             if (snappingPanel) snappingPanel.style.display = 'none';
             if (texturesPanel) texturesPanel.style.display = 'block';
 
+            const isModelElem = target.userData.isModelElement;
+            const panelTitle = corpusPanel.querySelector('.panel-section-title span:first-child');
+            const editBtn = document.getElementById('btn-edit-corpus-in-wizard');
+            const noteEl = corpusPanel.querySelector('div[style*="font-size:11px"]');
+
+            if (panelTitle) {
+                panelTitle.innerHTML = isModelElem ? '<span>🧊 3D Modell Elem</span>' : '<span>🍳 Konyha Elem Egység</span>';
+            }
+            if (corpusPanel.querySelector('.panel-section-title')) {
+                corpusPanel.querySelector('.panel-section-title').style.color = isModelElem ? '#c084fc' : '#f59e0b';
+                corpusPanel.style.borderLeftColor = isModelElem ? '#c084fc' : '#f59e0b';
+            }
+            if (editBtn) {
+                editBtn.style.display = isModelElem ? 'none' : 'flex';
+            }
+            if (noteEl) {
+                noteEl.innerHTML = isModelElem
+                    ? 'ℹ️ Külső 3D Modell elem (GLB). Mozgatható és forgatható a 3D térben a Gizmoval vagy billentyűkkel (W/E).'
+                    : 'ℹ️ Egybefüggő konyhabútor elem (korpusz, ajtók, fiókok, munkalap). A Varázslóban szabható testre.';
+            }
+
             const nameEl = document.getElementById('corpus-prop-name');
             const dimsEl = document.getElementById('corpus-prop-dims');
-            if (nameEl) nameEl.textContent = target.userData.name || 'Konyha Korpusz';
+            if (nameEl) nameEl.textContent = target.userData.name || (isModelElem ? '3D Modell Elem' : 'Konyha Korpusz');
             if (dimsEl) dimsEl.textContent = `${target.userData.width} × ${target.userData.height} × ${target.userData.depth} mm`;
 
             const activeBtn = document.querySelector('.context-tab-btn.active');
@@ -3125,6 +3189,212 @@ class FurnitureApp {
             });
         }
 
+        // 0. 3D Modell Elemek (a '3d model/element' mappából)
+        const elementModels = (typeof ModelManager !== 'undefined' && ModelManager.elementModels) || [];
+        this.selectedElementCategory = this.selectedElementCategory || 'all';
+
+        let filteredElements = elementModels.filter(elem => {
+            if (!searchQuery) return true;
+            return (elem.name && elem.name.toLowerCase().includes(searchQuery)) ||
+                   (elem.fileName && elem.fileName.toLowerCase().includes(searchQuery));
+        });
+
+        if (this.selectedElementCategory && this.selectedElementCategory !== 'all') {
+            filteredElements = filteredElements.filter(elem => {
+                const cat = elem.category || (typeof ModelManager !== 'undefined' && ModelManager.guessCategory ? ModelManager.guessCategory(elem.name || elem.fileName) : 'other');
+                return cat === this.selectedElementCategory;
+            });
+        }
+
+        if (searchQuery && filteredElements.length > 0) {
+            this.expandedCategories.add('cat_3d_elements');
+        }
+
+        const isElementsOpen = this.expandedCategories.has('cat_3d_elements');
+        const elemAccordion = document.createElement('div');
+        elemAccordion.className = `category-accordion-item ${isElementsOpen ? 'is-open' : ''}`;
+        elemAccordion.style.borderColor = 'rgba(168, 85, 247, 0.4)';
+
+        const elemHeader = document.createElement('div');
+        elemHeader.className = 'category-accordion-header';
+        elemHeader.style.background = isElementsOpen ? 'rgba(168, 85, 247, 0.15)' : 'rgba(30, 41, 59, 0.7)';
+        elemHeader.title = `3D Modell Elemek ${isElementsOpen ? 'becsukása' : 'lenyitása'}`;
+        elemHeader.innerHTML = `
+            <div class="category-accordion-title-wrap">
+                <span style="font-size:15px; margin-right:4px;">📦</span>
+                <span style="font-weight:700; color:#c084fc;">3D Elemek (GLB)</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:6px;">
+                <label class="btn btn-sm btn-upload-element" style="padding:1px 6px; font-size:11px; background:rgba(168, 85, 247, 0.2); color:#e9d5ff; border:1px solid rgba(168, 85, 247, 0.35); cursor:pointer; display:inline-flex; align-items:center; gap:3px;" title="Új GLB modell tallózása és hozzáadása">
+                    <span>➕ Fájl</span>
+                    <input type="file" class="input-element-file-picker" accept=".glb,.gltf" style="display:none;">
+                </label>
+                <button class="btn btn-sm btn-reload-elements" style="padding:1px 6px; font-size:11px; background:rgba(168, 85, 247, 0.2); color:#e9d5ff; border:1px solid rgba(168, 85, 247, 0.3);" title="3d model/element mappa újraolvasása">🔄</button>
+                <span class="category-accordion-badge" style="background:rgba(168, 85, 247, 0.25); color:#e9d5ff; border:1px solid rgba(168, 85, 247, 0.35);">${filteredElements.length} db</span>
+                <span class="category-accordion-arrow">▶</span>
+            </div>
+        `;
+
+        // Fájl tallózás kezelő
+        const fileInput = elemHeader.querySelector('.input-element-file-picker');
+        if (fileInput) {
+            fileInput.addEventListener('change', async (ev) => {
+                ev.stopPropagation();
+                const file = ev.target.files && ev.target.files[0];
+                if (!file) return;
+                try {
+                    this.showToast(`3D modell feldolgozása: ${file.name}...`, 'info');
+                    if (typeof ModelManager !== 'undefined' && ModelManager.uploadElementModel) {
+                        const newElem = await ModelManager.uploadElementModel(file);
+                        this.expandedCategories.add('cat_3d_elements');
+                        this.renderCatalogUI();
+                        this.showToast(`3D modell hozzáadva: ${newElem.name}`, 'success');
+                    }
+                } catch (err) {
+                    this.showToast(`Hiba a modell betöltésekor: ${err.message}`, 'danger');
+                }
+            });
+        }
+
+        elemHeader.addEventListener('click', (e) => {
+            if (e.target.closest('.btn-upload-element') || e.target.closest('.input-element-file-picker')) {
+                return;
+            }
+            if (e.target.closest('.btn-reload-elements')) {
+                e.stopPropagation();
+                if (typeof ModelManager !== 'undefined' && ModelManager.fetchElementModels) {
+                    ModelManager.fetchElementModels().then(() => {
+                        this.renderCatalogUI();
+                        this.showToast('3d model/element mappa frissítve!', 'info');
+                    });
+                }
+                return;
+            }
+            if (this.expandedCategories.has('cat_3d_elements')) {
+                this.expandedCategories.delete('cat_3d_elements');
+            } else {
+                this.expandedCategories.add('cat_3d_elements');
+            }
+            this.renderCatalogUI();
+        });
+
+        elemAccordion.appendChild(elemHeader);
+
+        if (isElementsOpen) {
+            const elemBody = document.createElement('div');
+            elemBody.className = 'category-accordion-body';
+
+            // Kategória szűrő gombok (Pills)
+            const elementCategories = [
+                { id: 'all', label: 'Mind' },
+                { id: 'base_cabinet', label: 'Alsó' },
+                { id: 'wall_cabinet', label: 'Felső' },
+                { id: 'tall_cabinet', label: 'Magas' },
+                { id: 'table', label: 'Asztal' },
+                { id: 'chair', label: 'Szék' },
+                { id: 'accessory', label: 'Kiegészítő' },
+                { id: 'other', label: 'Egyéb' }
+            ];
+
+            const filterBar = document.createElement('div');
+            filterBar.style.cssText = 'display:flex; flex-wrap:wrap; gap:4px; margin-bottom:10px; padding-bottom:6px; border-bottom:1px solid rgba(168,85,247,0.15);';
+
+            elementCategories.forEach(c => {
+                const isAct = (this.selectedElementCategory || 'all') === c.id;
+                const chip = document.createElement('button');
+                chip.type = 'button';
+                chip.className = `btn btn-sm ${isAct ? 'btn-primary' : 'btn-outline'}`;
+                chip.style.cssText = `padding:2px 7px; font-size:10px; border-radius:12px; cursor:pointer; line-height:1.2; ${isAct ? 'background:#8b5cf6; border-color:#8b5cf6; color:#fff; font-weight:700;' : 'border-color:rgba(168,85,247,0.3); color:#c084fc; background:transparent;'}`;
+                chip.textContent = c.label;
+                chip.addEventListener('click', (ev) => {
+                    ev.stopPropagation();
+                    this.selectedElementCategory = c.id;
+                    this.renderCatalogUI();
+                });
+                filterBar.appendChild(chip);
+            });
+            elemBody.appendChild(filterBar);
+
+            if (filteredElements.length === 0) {
+                const empty = document.createElement('div');
+                empty.className = 'category-empty-text';
+                empty.innerHTML = searchQuery || (this.selectedElementCategory !== 'all')
+                    ? 'Nincs találat a kiválasztott szűrésre.'
+                    : 'Nincs GLB fájl a <code>3d model/element</code> mappában.<br><span style="font-size:10px; color:#94a3b8;">Tallózz be .glb fájlt a fenti ➕ gombbal, vagy másolj ide modelleket!</span>';
+                elemBody.appendChild(empty);
+            } else {
+                filteredElements.forEach(elem => {
+                    const card = document.createElement('div');
+                    card.className = 'catalog-card';
+                    card.style.display = 'flex';
+                    card.style.alignItems = 'center';
+                    card.style.padding = '8px';
+                    card.style.gap = '10px';
+                    card.style.marginBottom = '8px';
+                    card.style.border = '1px solid rgba(168, 85, 247, 0.25)';
+                    card.style.background = 'rgba(15, 23, 42, 0.6)';
+
+                    const sizeKb = elem.size ? `${Math.round(elem.size / 1024)} KB` : '';
+                    const elemCat = elem.category || (typeof ModelManager !== 'undefined' && ModelManager.guessCategory ? ModelManager.guessCategory(elem.name || elem.fileName) : 'other');
+                    const catLabel = (typeof ModelManager !== 'undefined' && ModelManager.getCategoryLabel ? ModelManager.getCategoryLabel(elemCat) : '3D Modell');
+
+                    card.innerHTML = `
+                        <div class="card-img-container" style="width:72px; height:72px; min-width:72px; min-height:72px; border-radius:var(--radius-sm); overflow:hidden; background:linear-gradient(135deg, #1e1b4b, #31104b); border:1px solid rgba(168, 85, 247, 0.35); display:flex; flex-direction:column; align-items:center; justify-content:center; flex-shrink:0;">
+                            <span style="font-size:28px;">🧊</span>
+                            <span style="font-size:9px; color:#c084fc; font-weight:700; margin-top:2px;">GLB 3D</span>
+                        </div>
+                        <div class="card-body" style="flex:1; min-width:0; padding:0; display:flex; flex-direction:column; justify-content:space-between; height:72px;">
+                            <div style="min-width:0;">
+                                <div class="card-title" style="font-size:13px; font-weight:600; color:var(--text-primary); margin-bottom:2px; display:flex; align-items:center; gap:5px;" title="${elem.fileName}">
+                                    <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${elem.name || elem.fileName}</span>
+                                    <span style="font-size:9px; color:#c084fc; background:rgba(168,85,247,0.18); border:1px solid rgba(168,85,247,0.35); padding:1px 4px; border-radius:3px; font-weight:600; flex-shrink:0;">${catLabel}</span>
+                                </div>
+                                <div style="font-size:11px; color:#94a3b8; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                                    📁 ${elem.fileName} ${sizeKb ? `(${sizeKb})` : ''}
+                                </div>
+                            </div>
+                            <div class="card-actions" style="display:flex; gap:6px; align-items:center; justify-content:flex-end; margin-top:auto;">
+                                <button class="btn btn-sm btn-primary btn-add-element-scene" style="padding:4px 10px; font-size:14px; line-height:1; background:linear-gradient(135deg, #8b5cf6, #7c3aed); border-color:#7c3aed;" title="3D Modell elhelyezése a munkatérben">
+                                    ➡️
+                                </button>
+                            </div>
+                        </div>
+                    `;
+
+                    // Hozzáadás a 3D színtérhez
+                    const addBtn = card.querySelector('.btn-add-element-scene');
+                    addBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        addBtn.disabled = true;
+                        addBtn.innerHTML = '⏳';
+                        ModelManager.loadElementToScene(elem, this.boardManager, this.scene3D, (modelGroup) => {
+                            addBtn.disabled = false;
+                            addBtn.innerHTML = '➡️';
+                            this.updateDimensionsBadge();
+                            this.renderHierarchyTree();
+                            this.updateSnapTargetDropdown();
+                            this.showToast(`3D Modell hozzáadva: ${elem.name || elem.fileName}`, 'success');
+                        }, (err) => {
+                            addBtn.disabled = false;
+                            addBtn.innerHTML = '➡️';
+                            const isFile = typeof window !== 'undefined' && window.location.protocol === 'file:';
+                            if (isFile) {
+                                alert(`A böngésző CORS védelme miatt közvetlen fájlmegnyitáskor (file:///) a(z) "${elem.fileName}" modellt a böngésző nem tudja automatikusan beolvasni a merevlemezről.\n\nKét egyszerű megoldás van:\n1. Indítsd el a 'start.bat' fájlt a projekt mappájából (ez megnyitja a http://localhost:8080-at, ahol minden azonnal működik kattintásra)!\n\nVAGY\n\n2. Használd a 3D Elemek fejlécében lévő '➕ Fájl' tallózás gombot, és válaszd ki ezt a fájlt közvetlenül!`);
+                            } else {
+                                this.showToast(`Hiba a 3D modell betöltésekor: ${elem.fileName}`, 'danger');
+                            }
+                        });
+                    });
+
+                    elemBody.appendChild(card);
+                });
+            }
+
+            elemAccordion.appendChild(elemBody);
+        }
+
+        container.appendChild(elemAccordion);
+
         // 2. Kategória panelek renderelése egymás alá sorban (Accordion)
         allCategories.forEach(cat => {
             const isUncategorized = (cat.id === 'uncategorized');
@@ -3279,22 +3549,28 @@ class FurnitureApp {
 
         container.innerHTML = '';
 
-        // 1. Konyha Korpusz egységek (egyben kezelve)
+        // 1. Konyha Korpusz és 3D Modell Elemek (egyben kezelve)
         this.boardManager.corpora.forEach(c => {
+            const isModelElem = c.userData.isModelElement;
+            const itemColor = isModelElem ? '#c084fc' : '#f59e0b';
+            const itemIcon = isModelElem ? '🧊' : '🍳';
+            const itemTypeLabel = isModelElem ? '(3D Modell)' : '(Korpusz)';
+            const editBtnHtml = isModelElem ? '' : `<button class="btn btn-sm btn-icon btn-tree-edit" title="Módosítás a Varázslóban" style="color:#f59e0b;">✏️</button>`;
+
             const item = document.createElement('div');
             item.className = 'hierarchy-item';
-            item.style.borderLeft = '3px solid #f59e0b';
+            item.style.borderLeft = `3px solid ${itemColor}`;
             if (this.selectedCorpus && this.selectedCorpus.userData.id === c.userData.id) {
                 item.classList.add('active');
             }
 
             item.innerHTML = `
                 <div>
-                    <div class="hierarchy-title" style="color:#f59e0b; font-weight:700;">🍳 ${c.userData.name}</div>
-                    <div class="hierarchy-sub">${c.userData.width} × ${c.userData.height} × ${c.userData.depth} mm (Korpusz)</div>
+                    <div class="hierarchy-title" style="color:${itemColor}; font-weight:700;">${itemIcon} ${c.userData.name}</div>
+                    <div class="hierarchy-sub">${c.userData.width} × ${c.userData.height} × ${c.userData.depth} mm ${itemTypeLabel}</div>
                 </div>
                 <div style="display:flex; gap:4px;">
-                    <button class="btn btn-sm btn-icon btn-tree-edit" title="Módosítás a Varázslóban" style="color:#f59e0b;">✏️</button>
+                    ${editBtnHtml}
                     <button class="btn btn-sm btn-icon btn-tree-delete" title="Törlés" style="color:#ef4444;">✕</button>
                 </div>
             `;
@@ -3485,6 +3761,20 @@ class FurnitureApp {
         if (this.catalogManager && this.catalogManager.showToast) {
             this.catalogManager.showToast('📸 Látványterv sikeresen lementve (.jpg)!', 'success');
         }
+    }
+
+    showToast(message, type = 'info') {
+        if (this.catalogManager && this.catalogManager.showToast) {
+            this.catalogManager.showToast(message, type);
+            return;
+        }
+        const container = document.getElementById('toast-container');
+        if (!container) return;
+        const toast = document.createElement('div');
+        toast.className = `toast toast-${type}`;
+        toast.textContent = message;
+        container.appendChild(toast);
+        setTimeout(() => toast.remove(), 3500);
     }
 
     // ==========================================

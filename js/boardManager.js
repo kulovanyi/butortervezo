@@ -955,6 +955,46 @@ export class BoardManager {
         const source = this.corpora.find(c => c.userData.id === corpusId);
         if (!source) return null;
 
+        // Ha 3D modell elem (GLB)
+        if (source.userData && source.userData.isModelElement) {
+            const newGroup = source.clone(true);
+            const elementId = 'model_elem_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
+
+            const toRemove = [];
+            newGroup.traverse(child => {
+                if (child.name === '__selection_outline__' || child.name === '__selection_highlight__') {
+                    toRemove.push(child);
+                } else if (child.isMesh) {
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+                    child.userData = Object.assign({}, child.userData);
+                    child.userData.parentGroup = newGroup;
+                    child.userData.corpusId = elementId;
+                    delete child.userData.outlineMesh;
+                    delete child.userData.highlightMesh;
+                    if (this.scene3D.boardMeshes && !this.scene3D.boardMeshes.includes(child)) {
+                        this.scene3D.boardMeshes.push(child);
+                    }
+                }
+            });
+            toRemove.forEach(m => {
+                if (m.parent) m.parent.remove(m);
+            });
+
+            newGroup.userData = Object.assign({}, source.userData, {
+                id: elementId,
+                name: (source.userData.name || '3D Modell') + ' (Másolat)'
+            });
+
+            const offsetX = source.position.x + (source.userData.width || 600) + 50;
+            newGroup.position.set(offsetX, source.position.y, source.position.z);
+
+            this.scene3D.scene.add(newGroup);
+            this.corpora.push(newGroup);
+            this.scene3D.selectBoard(newGroup);
+            return newGroup;
+        }
+
         const config = JSON.parse(JSON.stringify(source.userData.config));
         const offsetX = source.position.x + (config.width || 600) + 20;
         const newCorpus = this.createCorpus(config, offsetX, source.position.y, source.position.z);
@@ -1728,6 +1768,42 @@ export class BoardManager {
         this.scene3D.updateDimensionVisualizer();
     }
 
+    deleteCorpus(corpusId) {
+        const cIdx = this.corpora.findIndex(c => c.userData.id === corpusId);
+        if (cIdx !== -1) {
+            const corpus = this.corpora[cIdx];
+            this.scene3D.scene.remove(corpus);
+            corpus.traverse(child => {
+                if (child.isMesh) {
+                    if (child.geometry) child.geometry.dispose();
+                    if (child.material) {
+                        if (Array.isArray(child.material)) {
+                            child.material.forEach(m => {
+                                if (m.map) m.map.dispose();
+                                m.dispose();
+                            });
+                        } else {
+                            if (child.material.map) child.material.map.dispose();
+                            child.material.dispose();
+                        }
+                    }
+                }
+            });
+            this.corpora.splice(cIdx, 1);
+        }
+
+        // Kapcsolódó lapok és mesh-ek törlése
+        this.boards = this.boards.filter(b => b.corpusId !== corpusId);
+        this.scene3D.boardMeshes = this.scene3D.boardMeshes.filter(m => m.userData?.corpusId !== corpusId && m.userData?.id !== corpusId);
+
+        if (this.scene3D.selectedTarget && (this.scene3D.selectedTarget.userData?.id === corpusId || this.scene3D.selectedTarget.userData?.corpusId === corpusId)) {
+            this.scene3D.selectBoard(null);
+        }
+
+        this.scene3D.updateDimensionVisualizer();
+        this.updateKitchenContinuity();
+    }
+
     setExplodedView(factor) {
         if (this.boards.length === 0) return;
 
@@ -1762,13 +1838,17 @@ export class BoardManager {
     }
 
     getFurnitureBoundingBox() {
-        if (this.boards.length === 0) {
+        const modelElements = this.corpora.filter(c => c.userData && c.userData.isModelElement);
+        if (this.boards.length === 0 && modelElements.length === 0) {
             return { width: 0, height: 0, depth: 0, count: 0 };
         }
 
         const box = new THREE.Box3();
         this.boards.forEach(b => {
             if (b.mesh) box.expandByObject(b.mesh);
+        });
+        modelElements.forEach(c => {
+            box.expandByObject(c);
         });
 
         const size = new THREE.Vector3();
@@ -1778,7 +1858,7 @@ export class BoardManager {
             width: Math.round(size.x),
             height: Math.round(size.y),
             depth: Math.round(size.z),
-            count: this.boards.length,
+            count: this.boards.length + modelElements.length,
             box: box
         };
     }

@@ -16,6 +16,7 @@ import subprocess
 import threading
 import hashlib
 import uuid
+import base64
 from datetime import datetime
 from urllib.parse import urlparse, parse_qs
 
@@ -171,8 +172,65 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.handle_get_git_status()
         elif path == '/api/auth/verify':
             self.handle_verify_email(query)
+        elif path == '/api/elements' or path == '/api/model-elements':
+            self.handle_get_elements()
         else:
             super().do_GET()
+
+    def guess_category(self, name):
+        n = name.lower()
+        if n.startswith('s_asz') or 'also' in n or 'base' in n or 'pult' in n or 'counter' in n or 'sink' in n:
+            return 'base_cabinet'
+        if n.startswith('s_a') or n.startswith('ef_'):
+            return 'base_cabinet'
+        if n.startswith('s_f') or n.startswith('s_fs') or n.startswith('f_') or n.startswith('fsz') or 'felso' in n or 'wall' in n:
+            return 'wall_cabinet'
+        if n.startswith('s_pec') or n.startswith('pec_') or n.startswith('s_m') or n.startswith('m_') or n.startswith('msz') or 'magas' in n or 'tall' in n or 'kamra' in n:
+            return 'tall_cabinet'
+        if 'asztal' in n or 'table' in n or 'desk' in n:
+            return 'table'
+        if 'szek' in n or 'chair' in n or 'fotel' in n:
+            return 'chair'
+        if 'fogo' in n or 'lab' in n or 'handle' in n or 'leg' in n or 'pant' in n:
+            return 'accessory'
+        return 'other'
+
+    def handle_get_elements(self):
+        """A '3d model/element' mappában található GLB/GLTF modellek listázása"""
+        element_dir = os.path.join(DIRECTORY, "3d model", "element")
+        os.makedirs(element_dir, exist_ok=True)
+        items = []
+        try:
+            for fname in sorted(os.listdir(element_dir)):
+                if fname.lower().endswith(('.glb', '.gltf')):
+                    fpath = os.path.join(element_dir, fname)
+                    stat = os.stat(fpath)
+                    name_without_ext = os.path.splitext(fname)[0]
+                    items.append({
+                        "id": f"elem_{name_without_ext}",
+                        "fileName": fname,
+                        "name": name_without_ext,
+                        "path": f"3d model/element/{fname}",
+                        "size": stat.st_size,
+                        "category": self.guess_category(name_without_ext),
+                        "modified": datetime.fromtimestamp(stat.st_mtime).isoformat()
+                    })
+            # Frissítjük a data/elements.json fájlt is
+            os.makedirs(DATA_DIR, exist_ok=True)
+            with open(os.path.join(DATA_DIR, "elements.json"), "w", encoding="utf-8") as f:
+                json.dump(items, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"[API ELEMENTS] Hiba a 3d model/element mappa olvasásakor: {e}")
+
+        response = {
+            "success": True,
+            "count": len(items),
+            "elements": items
+        }
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json; charset=utf-8')
+        self.end_headers()
+        self.wfile.write(json.dumps(response, ensure_ascii=False).encode('utf-8'))
 
     def do_POST(self):
         parsed = urlparse(self.path)
@@ -188,8 +246,63 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.handle_auth_login()
         elif path == '/api/auth/resend-verification':
             self.handle_auth_resend_verification()
+        elif path == '/api/elements/upload':
+            self.handle_upload_element()
         else:
             self.send_error(404, "Not Found")
+
+    def handle_upload_element(self):
+        """GLB/GLTF 3D modell feltöltése és mentése a 3d model/element mappába"""
+        try:
+            content_length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(content_length).decode('utf-8')
+            payload = json.loads(body)
+
+            file_name = payload.get('fileName', '').strip()
+            base64_data = payload.get('data', '')
+
+            if not file_name or not base64_data:
+                self.send_response(400)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "error": "Hiányzó fileName vagy data mező"}).encode('utf-8'))
+                return
+
+            safe_name = os.path.basename(file_name)
+            if not safe_name.lower().endswith(('.glb', '.gltf')):
+                safe_name += '.glb'
+
+            element_dir = os.path.join(DIRECTORY, "3d model", "element")
+            os.makedirs(element_dir, exist_ok=True)
+            target_path = os.path.join(element_dir, safe_name)
+
+            if ',' in base64_data:
+                base64_data = base64_data.split(',', 1)[1]
+
+            raw_bytes = base64.b64decode(base64_data)
+            with open(target_path, 'wb') as f:
+                f.write(raw_bytes)
+
+            name_without_ext = os.path.splitext(safe_name)[0]
+            new_item = {
+                "id": f"elem_{name_without_ext}",
+                "fileName": safe_name,
+                "name": name_without_ext,
+                "path": f"3d model/element/{safe_name}",
+                "size": len(raw_bytes),
+                "modified": datetime.now().isoformat()
+            }
+
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.end_headers()
+            self.wfile.write(json.dumps({"success": True, "element": new_item}, ensure_ascii=False).encode('utf-8'))
+        except Exception as e:
+            print(f"[API ELEMENTS] Hiba a modell feltöltésekor: {e}")
+            self.send_response(500)
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.end_headers()
+            self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode('utf-8'))
 
     def handle_get_catalog(self):
         """Központi katalógus adatok visszaadása JSON formátumban"""

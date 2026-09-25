@@ -165,6 +165,9 @@ export class CatalogManager {
      * Katalógus adatok lekérése a helyi backend szervertől (data/catalog.json)
      */
     async fetchServerCatalog() {
+        if (typeof window !== 'undefined' && window.location.protocol !== 'http:' && window.location.protocol !== 'https:') {
+            return;
+        }
         try {
             let res = await fetch('/api/catalog');
             if (!res || !res.ok) {
@@ -260,21 +263,23 @@ export class CatalogManager {
             }
 
             // 2. Saját bútorok lekérése a Python szervertől a háttérben
-            try {
-                const res = await fetch(`/api/user-catalog?userId=${encodeURIComponent(user.id)}`);
-                if (res.ok) {
-                    const data = await res.json();
-                    if (data && data.success && Array.isArray(data.items)) {
-                        data.items.forEach(srvItem => {
-                            if (!this.userItems.some(i => i.id === srvItem.id)) {
-                                this.userItems.push(srvItem);
-                            }
-                        });
-                        this.saveUserItemsToStorage();
+            if (typeof window !== 'undefined' && (window.location.protocol === 'http:' || window.location.protocol === 'https:')) {
+                try {
+                    const res = await fetch(`/api/user-catalog?userId=${encodeURIComponent(user.id)}`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data && data.success && Array.isArray(data.items)) {
+                            data.items.forEach(srvItem => {
+                                if (!this.userItems.some(i => i.id === srvItem.id)) {
+                                    this.userItems.push(srvItem);
+                                }
+                            });
+                            this.saveUserItemsToStorage();
+                        }
                     }
+                } catch (e) {
+                    // Offline mód
                 }
-            } catch (e) {
-                // Offline mód
             }
         } else {
             this.userItems = [];
@@ -287,7 +292,7 @@ export class CatalogManager {
      * Felhasználói privát katalógus mentése a szerverre
      */
     async syncUserCatalogToServer(userId) {
-        if (!userId) return;
+        if (!userId || (typeof window !== 'undefined' && window.location.protocol !== 'http:' && window.location.protocol !== 'https:')) return;
         try {
             await fetch('/api/user-catalog', {
                 method: 'POST',
