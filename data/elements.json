@@ -5,7 +5,8 @@
     "name": "ef_50",
     "path": "3d model/element/ef_50.glb",
     "size": 309624,
-    "category": "base_cabinet",
+    "category": "hood_cabinet",
+    "thumbnail": "thumbnails/ef_50.png",
     "modified": "2026-09-18T09:10:23.124990"
   },
   {
@@ -14,7 +15,8 @@
     "name": "ef_60",
     "path": "3d model/element/ef_60.glb",
     "size": 309636,
-    "category": "base_cabinet",
+    "category": "hood_cabinet",
+    "thumbnail": "thumbnails/ef_60.png",
     "modified": "2026-09-18T09:10:24.086560"
   },
   {
@@ -23,7 +25,8 @@
     "name": "pec_50_60",
     "path": "3d model/element/pec_50_60.glb",
     "size": 813752,
-    "category": "tall_cabinet",
+    "category": "hood_cabinet",
+    "thumbnail": "thumbnails/pec_50_60.png",
     "modified": "2026-09-18T09:10:23.953679"
   },
   {
@@ -33,6 +36,7 @@
     "path": "3d model/element/s_a1a1f_40.glb",
     "size": 556556,
     "category": "base_cabinet",
+    "thumbnail": "thumbnails/s_a1a1f_40.png",
     "modified": "2026-09-18T09:10:23.573874"
   },
   {
@@ -42,6 +46,7 @@
     "path": "3d model/element/s_a1a1fs_100.glb",
     "size": 559100,
     "category": "base_cabinet",
+    "thumbnail": "thumbnails/s_a1a1fs_100.png",
     "modified": "2026-09-18T09:10:23.217961"
   },
   {
@@ -51,6 +56,7 @@
     "path": "3d model/element/s_a1a1vfs_100.glb",
     "size": 532916,
     "category": "base_cabinet",
+    "thumbnail": "thumbnails/s_a1a1vfs_100.png",
     "modified": "2026-09-18T09:10:22.868343"
   },
   {
@@ -60,6 +66,7 @@
     "path": "3d model/element/s_a2a1f_60.glb",
     "size": 784032,
     "category": "base_cabinet",
+    "thumbnail": "thumbnails/s_a2a1f_60.png",
     "modified": "2026-09-18T09:10:24.311651"
   },
   {
@@ -69,6 +76,7 @@
     "path": "3d model/element/s_a2a1vf_60.glb",
     "size": 758544,
     "category": "base_cabinet",
+    "thumbnail": "thumbnails/s_a2a1vf_60.png",
     "modified": "2026-09-18T09:10:23.851029"
   },
   {
@@ -78,6 +86,7 @@
     "path": "3d model/element/s_a2a2f_80.glb",
     "size": 607548,
     "category": "base_cabinet",
+    "thumbnail": "thumbnails/s_a2a2f_80.png",
     "modified": "2026-09-18T09:10:23.420395"
   },
   {
@@ -87,6 +96,7 @@
     "path": "3d model/element/s_a2a2vfmo_80.glb",
     "size": 556352,
     "category": "base_cabinet",
+    "thumbnail": "thumbnails/s_a2a2vfmo_80.png",
     "modified": "2026-09-18T09:10:23.046311"
   },
   {
@@ -96,6 +106,7 @@
     "path": "3d model/element/s_a3f_40.glb",
     "size": 611956,
     "category": "base_cabinet",
+    "thumbnail": "thumbnails/s_a3f_40.png",
     "modified": "2026-09-18T09:10:24.490728"
   },
   {
@@ -105,6 +116,7 @@
     "path": "3d model/element/s_a3f_60.glb",
     "size": 801072,
     "category": "base_cabinet",
+    "thumbnail": "thumbnails/s_a3f_60.png",
     "modified": "2026-09-18T09:10:24.061446"
   },
   {
@@ -114,6 +126,7 @@
     "path": "3d model/element/s_akm_15.glb",
     "size": 802752,
     "category": "base_cabinet",
+    "thumbnail": "thumbnails/s_akm_15.png",
     "modified": "2026-09-18T09:10:23.645254"
   },
   {
@@ -123,6 +136,7 @@
     "path": "3d model/element/s_any_15.glb",
     "size": 401736,
     "category": "base_cabinet",
+    "thumbnail": "thumbnails/s_any_15.png",
     "modified": "2026-09-18T09:10:23.258557"
   },
   {
@@ -132,6 +146,7 @@
     "path": "3d model/element/s_any_20.glb",
     "size": 401740,
     "category": "base_cabinet",
+    "thumbnail": "thumbnails/s_any_20.png",
     "modified": "2026-09-18T09:10:22.916673"
   },
   {
@@ -141,6 +156,7 @@
     "path": "3d model/element/s_any_25.glb",
     "size": 716728,
     "category": "base_cabinet",
+    "thumbnail": "thumbnails/s_any_25.png",
     "modified": "2026-09-18T09:10:24.359268"
   },
   {
@@ -150,6 +166,7 @@
     "path": "3d model/element/s_any_30.glb",
     "size": 716760,
     "category": "base_cabinet",
+    "thumbnail": "thumbnails/s_any_30.png",
     "modified": "2026-09-18T09:10:23.892202"
   },
   {
@@ -159,6 +176,7 @@
     "path": "3d model/element/s_any_35.glb",
     "size": 716024,
     "category": "base_cabinet",
+    "thumbnail": "thumbnails/s_any_35.png",
     "modified": "2026-09-18T09:10:23.470513"
   },
   {
@@ -168,6 +186,7 @@
     "path": "3d model/element/s_any_40.glb",
     "size": 527440,
     "category": "base_cabinet",
+    "thumbnail": "thumbnails/s_any_40.png",
     "modified": "2026-09-18T09:10:23.104437"
   },
   {
@@ -176,7 +195,8 @@
     "name": "s_asz3a1f_40",
     "path": "3d model/element/s_asz3a1f_40.glb",
     "size": 604892,
-    "category": "base_cabinet",
+    "category": "tall_cabinet",
+    "thumbnail": "thumbnails/s_asz3a1f_40.png",
     "modified": "2026-09-18T09:10:22.785610"
   },
   {
@@ -185,7 +205,8 @@
     "name": "s_asz4a1f_60_60",
     "path": "3d model/element/s_asz4a1f_60_60.glb",
     "size": 16743308,
-    "category": "base_cabinet",
+    "category": "tall_cabinet",
+    "thumbnail": "thumbnails/s_asz4a1f_60_60.png",
     "modified": "2026-09-23T08:25:19.427146"
   },
   {
@@ -194,7 +215,8 @@
     "name": "s_asztm_60",
     "path": "3d model/element/s_asztm_60.glb",
     "size": 22854760,
-    "category": "base_cabinet",
+    "category": "tall_cabinet",
+    "thumbnail": "thumbnails/s_asztm_60.png",
     "modified": "2026-09-23T08:25:14.163258"
   },
   {
@@ -204,6 +226,7 @@
     "path": "3d model/element/s_at_60.glb",
     "size": 16413840,
     "category": "base_cabinet",
+    "thumbnail": "thumbnails/s_at_60.png",
     "modified": "2026-09-18T09:10:23.315710"
   },
   {
@@ -213,6 +236,7 @@
     "path": "3d model/element/s_avz_15.glb",
     "size": 399988,
     "category": "base_cabinet",
+    "thumbnail": "thumbnails/s_avz_15.png",
     "modified": "2026-09-23T09:35:22.492063"
   },
   {
@@ -222,6 +246,7 @@
     "path": "3d model/element/s_avz_30.glb",
     "size": 715376,
     "category": "base_cabinet",
+    "thumbnail": "thumbnails/s_avz_30.png",
     "modified": "2026-09-18T09:10:24.179522"
   },
   {
@@ -230,7 +255,8 @@
     "name": "s_ef_60",
     "path": "3d model/element/s_ef_60.glb",
     "size": 300204,
-    "category": "other",
+    "category": "hood_cabinet",
+    "thumbnail": "thumbnails/s_ef_60.png",
     "modified": "2026-09-18T09:10:23.664789"
   },
   {
@@ -240,6 +266,7 @@
     "path": "3d model/element/s_f1a_60_40.glb",
     "size": 301064,
     "category": "wall_cabinet",
+    "thumbnail": "thumbnails/s_f1a_60_40.png",
     "modified": "2026-09-18T09:10:23.338913"
   },
   {
@@ -249,6 +276,7 @@
     "path": "3d model/element/s_f1a_72_30.glb",
     "size": 301924,
     "category": "wall_cabinet",
+    "thumbnail": "thumbnails/s_f1a_72_30.png",
     "modified": "2026-09-18T09:10:22.939757"
   },
   {
@@ -258,6 +286,7 @@
     "path": "3d model/element/s_f1a_72_40.glb",
     "size": 301904,
     "category": "wall_cabinet",
+    "thumbnail": "thumbnails/s_f1a_72_40.png",
     "modified": "2026-09-18T09:10:24.385028"
   },
   {
@@ -267,6 +296,7 @@
     "path": "3d model/element/s_f2a60_80.glb",
     "size": 325492,
     "category": "wall_cabinet",
+    "thumbnail": "thumbnails/s_f2a60_80.png",
     "modified": "2026-09-18T09:10:23.922219"
   },
   {
@@ -276,6 +306,7 @@
     "path": "3d model/element/s_f2a_60_60.glb",
     "size": 325536,
     "category": "wall_cabinet",
+    "thumbnail": "thumbnails/s_f2a_60_60.png",
     "modified": "2026-09-18T09:10:23.496112"
   },
   {
@@ -285,6 +316,7 @@
     "path": "3d model/element/s_f2a_72_60.glb",
     "size": 326380,
     "category": "wall_cabinet",
+    "thumbnail": "thumbnails/s_f2a_72_60.png",
     "modified": "2026-09-18T09:10:23.150858"
   },
   {
@@ -294,6 +326,7 @@
     "path": "3d model/element/s_f2a_72_80.glb",
     "size": 326340,
     "category": "wall_cabinet",
+    "thumbnail": "thumbnails/s_f2a_72_80.png",
     "modified": "2026-09-18T09:10:22.809794"
   },
   {
@@ -303,6 +336,7 @@
     "path": "3d model/element/s_f2f_60_60.glb",
     "size": 325880,
     "category": "wall_cabinet",
+    "thumbnail": "thumbnails/s_f2f_60_60.png",
     "modified": "2026-09-18T09:10:24.218143"
   },
   {
@@ -312,6 +346,7 @@
     "path": "3d model/element/s_f2f_72_60.glb",
     "size": 339164,
     "category": "wall_cabinet",
+    "thumbnail": "thumbnails/s_f2f_72_60.png",
     "modified": "2026-09-18T09:10:23.778910"
   },
   {
@@ -321,6 +356,7 @@
     "path": "3d model/element/s_f2f_72_80.glb",
     "size": 339128,
     "category": "wall_cabinet",
+    "thumbnail": "thumbnails/s_f2f_72_80.png",
     "modified": "2026-09-18T09:10:23.367159"
   },
   {
@@ -330,6 +366,7 @@
     "path": "3d model/element/s_f2fau60_80.glb",
     "size": 330328,
     "category": "wall_cabinet",
+    "thumbnail": "thumbnails/s_f2fau60_80.png",
     "modified": "2026-09-18T09:10:22.997913"
   },
   {
@@ -339,6 +376,7 @@
     "path": "3d model/element/s_f2fau_72_60.glb",
     "size": 343540,
     "category": "wall_cabinet",
+    "thumbnail": "thumbnails/s_f2fau_72_60.png",
     "modified": "2026-09-18T09:10:24.426150"
   },
   {
@@ -348,6 +386,7 @@
     "path": "3d model/element/s_f2fau_72_80.glb",
     "size": 343492,
     "category": "wall_cabinet",
+    "thumbnail": "thumbnails/s_f2fau_72_80.png",
     "modified": "2026-09-18T09:10:23.984760"
   },
   {
@@ -357,6 +396,7 @@
     "path": "3d model/element/s_fny_15.glb",
     "size": 271812,
     "category": "wall_cabinet",
+    "thumbnail": "thumbnails/s_fny_15.png",
     "modified": "2026-09-18T09:10:23.589075"
   },
   {
@@ -366,6 +406,7 @@
     "path": "3d model/element/s_fny_20.glb",
     "size": 271812,
     "category": "wall_cabinet",
+    "thumbnail": "thumbnails/s_fny_20.png",
     "modified": "2026-09-18T09:10:23.169974"
   },
   {
@@ -375,6 +416,7 @@
     "path": "3d model/element/s_fny_25.glb",
     "size": 271816,
     "category": "wall_cabinet",
+    "thumbnail": "thumbnails/s_fny_25.png",
     "modified": "2026-09-18T09:10:22.826339"
   },
   {
@@ -384,6 +426,7 @@
     "path": "3d model/element/s_fny_30.glb",
     "size": 271812,
     "category": "wall_cabinet",
+    "thumbnail": "thumbnails/s_fny_30.png",
     "modified": "2026-09-18T09:10:24.241068"
   },
   {
@@ -393,6 +436,7 @@
     "path": "3d model/element/s_fny_35.glb",
     "size": 271816,
     "category": "wall_cabinet",
+    "thumbnail": "thumbnails/s_fny_35.png",
     "modified": "2026-09-18T09:10:23.797123"
   },
   {
@@ -402,6 +446,7 @@
     "path": "3d model/element/s_fny_40.glb",
     "size": 271816,
     "category": "wall_cabinet",
+    "thumbnail": "thumbnails/s_fny_40.png",
     "modified": "2026-09-18T09:10:23.436420"
   },
   {
@@ -411,6 +456,7 @@
     "path": "3d model/element/s_fs2a_60_60.glb",
     "size": 328648,
     "category": "wall_cabinet",
+    "thumbnail": "thumbnails/s_fs2a_60_60.png",
     "modified": "2026-09-18T09:10:23.070889"
   },
   {
@@ -420,6 +466,7 @@
     "path": "3d model/element/s_fs_60_60.glb",
     "size": 304092,
     "category": "wall_cabinet",
+    "thumbnail": "thumbnails/s_fs_60_60.png",
     "modified": "2026-09-18T09:10:22.736448"
   },
   {
@@ -429,6 +476,7 @@
     "path": "3d model/element/s_fs_72_60.glb",
     "size": 305364,
     "category": "wall_cabinet",
+    "thumbnail": "thumbnails/s_fs_72_60.png",
     "modified": "2026-09-18T09:10:24.009963"
   },
   {
@@ -438,6 +486,7 @@
     "path": "3d model/element/s_fvz_15.glb",
     "size": 270688,
     "category": "wall_cabinet",
+    "thumbnail": "thumbnails/s_fvz_15.png",
     "modified": "2026-09-18T09:10:23.603315"
   },
   {
@@ -447,6 +496,7 @@
     "path": "3d model/element/s_fvz_30.glb",
     "size": 270688,
     "category": "wall_cabinet",
+    "thumbnail": "thumbnails/s_fvz_30.png",
     "modified": "2026-09-18T09:10:23.232016"
   },
   {
@@ -455,7 +505,8 @@
     "name": "s_pec_36_60",
     "path": "3d model/element/s_pec_36_60.glb",
     "size": 788460,
-    "category": "tall_cabinet",
+    "category": "hood_cabinet",
+    "thumbnail": "thumbnails/s_pec_36_60.png",
     "modified": "2026-09-18T09:10:22.892690"
   }
 ]

@@ -7,7 +7,7 @@ Egy korszerű, böngészőben futó 3D bútortervező alkalmazás, ahol valós m
 ## 🚀 Indítás
 
 ### 1. Dupla kattintással:
-Csak indítsd el a **`start.bat`** fájlt, és a böngésződ automatikusan megnyitja az alkalmazást: `http://localhost:8080/`.
+Csak indítsd el a **`start.bat`** fájlt, és a böngésződ automatikusan megnyitja az alkalmazást: `http://localhost:8585/`.
 
 ### 2. Parancssorból:
 ```bash

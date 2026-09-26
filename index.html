@@ -328,16 +328,99 @@
 
                 <div class="toolbar-divider"></div>
 
-                <!-- Ajtók nyitása / csukása -->
-                <button id="btn-toggle-doors" class="floating-btn" title="Ajtók és fiókok kinyitása / becsukása">
+                <!-- Ajtók interaktív nyitása / Ajtó Mód -->
+                <button id="btn-toggle-doors" class="floating-btn" title="Ajtó Mód: kattints közvetlenül az ajtókra a nyitáshoz/csukáshoz (bútor kijelölés tiltva). Újra kattintva kilép a módból.">
                     <span id="btn-toggle-doors-icon" class="floating-btn-icon" style="display:inline-flex; align-items:center;">
                         <svg class="tool-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M3 21h18M6 21V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v17M14 12v.01"/>
                         </svg>
                     </span>
-                    <span id="btn-toggle-doors-text">Ajtók Nyitása</span>
+                    <span id="btn-toggle-doors-text">🚪 Ajtók Nyitása</span>
+                </button>
+
+                <!-- Összes ajtó kinyitása / becsukása -->
+                <button id="btn-toggle-all-doors" class="floating-btn" title="Összes ajtó és fiók kinyitása / becsukása egyszerre">
+                    <span id="btn-toggle-all-doors-icon" class="floating-btn-icon" style="display:inline-flex; align-items:center;">
+                        <svg class="tool-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                        </svg>
+                    </span>
+                    <span id="btn-toggle-all-doors-text">📂 Összes Nyitása</span>
+                </button>
+
+                <div class="toolbar-divider"></div>
+
+                <!-- Alap Szoba (Falak, Padló, Snappelés) gomb -->
+                <button id="btn-toggle-room" class="floating-btn" title="Alap Szoba be/kikapcsolása (padló, falak és fali snappelés)">
+                    <span class="floating-btn-icon" style="display:inline-flex; align-items:center; font-size:15px;">🏠</span>
+                    <span id="btn-toggle-room-text">Szoba</span>
                 </button>
             </div>
+
+            <!-- Lebegő Szoba Méretező Panel (Felső nézetben és szerkesztéskor) -->
+            <div id="room-editor-hud" class="floating-hud-panel" style="display:none; position:absolute; top:64px; left:16px; background:rgba(15,23,42,0.92); border:1px solid #38bdf8; border-radius:10px; padding:10px 14px; box-shadow:0 12px 30px rgba(0,0,0,0.6); z-index:900; backdrop-filter:blur(8px); min-width:270px; color:#f8fafc; font-family:inherit;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; border-bottom:1px solid rgba(56,189,248,0.3); padding-bottom:6px;">
+                    <div style="font-weight:700; font-size:12px; display:flex; align-items:center; gap:6px; color:#38bdf8;">
+                        <span>🏠</span> <span>Szoba Méretei</span>
+                    </div>
+                    <button id="btn-close-room-hud" style="background:none; border:none; color:#94a3b8; cursor:pointer; font-size:14px; padding:0 4px;" title="Panel elrejtése">✕</button>
+                </div>
+                
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:8px;">
+                    <div>
+                        <label style="font-size:10px; color:#94a3b8; display:block; margin-bottom:2px;">Szélesség (X)</label>
+                        <div style="position:relative;">
+                            <input type="number" id="room-input-width" value="4000" min="1000" max="20000" step="50" style="width:100%; background:#1e293b; border:1px solid #334155; border-radius:6px; color:#f8fafc; padding:4px 22px 4px 6px; font-size:12px; font-weight:600;">
+                            <span style="position:absolute; right:6px; top:4px; font-size:10px; color:#64748b;">mm</span>
+                        </div>
+                    </div>
+                    <div>
+                        <label style="font-size:10px; color:#94a3b8; display:block; margin-bottom:2px;">Mélység (Z)</label>
+                        <div style="position:relative;">
+                            <input type="number" id="room-input-depth" value="3000" min="1000" max="20000" step="50" style="width:100%; background:#1e293b; border:1px solid #334155; border-radius:6px; color:#f8fafc; padding:4px 22px 4px 6px; font-size:12px; font-weight:600;">
+                            <span style="position:absolute; right:6px; top:4px; font-size:10px; color:#64748b;">mm</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="margin-bottom:10px;">
+                    <label style="font-size:10px; color:#94a3b8; display:block; margin-bottom:2px;">Belmagasság (Y)</label>
+                    <div style="position:relative;">
+                        <input type="number" id="room-input-height" value="2700" min="1800" max="5000" step="50" style="width:100%; background:#1e293b; border:1px solid #334155; border-radius:6px; color:#f8fafc; padding:4px 22px 4px 6px; font-size:12px; font-weight:600;">
+                        <span style="position:absolute; right:6px; top:4px; font-size:10px; color:#64748b;">mm</span>
+                    </div>
+                </div>
+
+                <div style="display:flex; gap:6px; margin-bottom:8px;">
+                    <button id="btn-room-top-view" class="btn btn-sm btn-primary" style="flex:1; font-size:11px; padding:5px 8px; justify-content:center; background:linear-gradient(135deg, #0284c7, #0369a1);" title="Váltás 2D felülnézetbe a szabad sarok- és falméretezéshez (árnyékmentes CAD)">
+                        <span>📐 2D Alaprajz</span>
+                    </button>
+                    <button id="btn-room-apply-dims" class="btn btn-sm" style="font-size:11px; padding:5px 8px; justify-content:center; background:rgba(56,189,248,0.15); color:#38bdf8; border:1px solid rgba(56,189,248,0.4);" title="Méretek azonnali alkalmazása">
+                        <span>✓ Alkalmaz</span>
+                    </button>
+                </div>
+
+                <!-- L-alak és Téglalap gyorsgombok -->
+                <div style="display:flex; flex-direction:column; gap:6px; border-top:1px solid rgba(56,189,248,0.2); padding-top:8px;">
+                    <div style="display:flex; gap:6px;">
+                        <button id="btn-room-l-shape" class="btn btn-sm" style="flex:1; font-size:11px; padding:6px; justify-content:center; background:rgba(16,185,129,0.2); color:#34d399; border:1px solid rgba(16,185,129,0.4);" title="Szoba átalakítása L-alakúvá">
+                            <span>➕ L-Alakú Szoba</span>
+                        </button>
+                        <button id="btn-room-reset-rect" class="btn btn-sm" style="flex:1; font-size:11px; padding:6px; justify-content:center; background:rgba(148,163,184,0.15); color:#cbd5e1; border:1px solid rgba(148,163,184,0.3);" title="Visszaállítás egyszerű téglalapra">
+                            <span>🔄 Téglalap</span>
+                        </button>
+                    </div>
+                    <button id="btn-room-hud-return-3d" class="btn btn-sm btn-primary" style="width:100%; font-size:12px; font-weight:700; padding:7px; justify-content:center; background:linear-gradient(135deg, #2563eb, #1d4ed8);" title="Kész, visszatérés a 3D térbe">
+                        <span>🧊 Kész / Vissza a 3D-be</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Kiemelt lebegő gomb felül: Vissza a 3D nézetbe (felülnézetben / szobatervezéskor) -->
+            <button id="btn-return-3d" class="floating-btn btn-primary" style="display:none; position:absolute; top:16px; left:50%; transform:translateX(-50%); z-index:950; padding:8px 18px; font-weight:700; font-size:13px; background:linear-gradient(135deg, #2563eb, #1d4ed8); border:1px solid #60a5fa; box-shadow:0 8px 24px rgba(37,99,235,0.5); gap:8px;" title="Visszatérés a 3D perspektivikus nézetbe, árnyékok és bútorok megjelenítése">
+                <span style="font-size:16px;">🧊</span>
+                <span>Vissza a 3D Nézetbe</span>
+            </button>
 
             <!-- Jobb Felső Lebegő Nézet & Megjelenítés Menü (Egyetlen gomb alatt) -->
             <div class="viewport-view-modes">
@@ -2210,6 +2293,6 @@
     </div>
 
     <!-- Betöltjük a fő alkalmazás scriptet (Működik közvetlen fájlmegnyitással és webszerverrel is) -->
-    <script src="js/bundle.js?v=4.7"></script>
+    <script src="js/bundle.js?v=5.6"></script>
 </body>
 </html>

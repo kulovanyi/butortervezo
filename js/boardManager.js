@@ -862,8 +862,22 @@ export class BoardManager {
         const corpusGroup = typeof corpusGroupOrId === 'string'
             ? this.corpora.find(c => c.userData.id === corpusGroupOrId)
             : corpusGroupOrId;
-        if (!corpusGroup || !corpusGroup.userData || !corpusGroup.userData.config) return;
+        if (!corpusGroup || !corpusGroup.userData) return;
 
+        // Ha 3D Modell elem (GLB)
+        if (corpusGroup.userData.isModelElement) {
+            corpusGroup.userData.worktopTextureKey = textureKey;
+            corpusGroup.traverse(child => {
+                if (child.isMesh && (child.userData.isModelWorktop || (child.name && (child.name.toLowerCase().includes('munka') || child.name.toLowerCase().includes('worktop'))))) {
+                    child.userData.isModelWorktop = true;
+                    child.userData.textureKey = textureKey;
+                }
+            });
+            this.updateKitchenContinuity();
+            return;
+        }
+
+        if (!corpusGroup.userData.config) return;
         const config = corpusGroup.userData.config;
         if (!config.worktop) config.worktop = {};
         config.worktop.textureKey = textureKey;
@@ -1243,6 +1257,7 @@ export class BoardManager {
         const worktopItems = [];
         const tileSize = 800; // Pontosan megegyezik az applyBoxUVs tileSize-szal (800 mm)
 
+        // 1. Generált Konyha Korpusz lapok
         this.boards.forEach(b => {
             if (!b.mesh) return;
             const isWorktop = b.isWorktop || b.type === 'worktop' || (b.name && b.name.includes('Munkalap'));
@@ -1267,6 +1282,36 @@ export class BoardManager {
                 textureKey: b.textureKey || 'wt_3025'
             });
         });
+
+        // 2. GLB 3D Modell Elemek munkalapjai
+        if (this.corpora && Array.isArray(this.corpora)) {
+            this.corpora.forEach(corpus => {
+                if (!corpus || !corpus.userData || !corpus.userData.isModelElement) return;
+                corpus.traverse(child => {
+                    if (child.isMesh && (child.userData.isModelWorktop || (child.name && (child.name.toLowerCase().includes('munka') || child.name.toLowerCase().includes('worktop'))))) {
+                        child.updateWorldMatrix(true, true);
+                        const bBox = new THREE.Box3().setFromObject(child);
+                        const size = new THREE.Vector3();
+                        bBox.getSize(size);
+                        const center = new THREE.Vector3();
+                        bBox.getCenter(center);
+
+                        worktopItems.push({
+                            isModel: true,
+                            mesh: child,
+                            worldX: center.x,
+                            worldY: center.y,
+                            worldZ: center.z,
+                            width: size.x,
+                            height: size.y,
+                            depth: size.z,
+                            minX: bBox.min.x,
+                            textureKey: child.userData.textureKey || corpus.userData.worktopTextureKey || 'wt_3025'
+                        });
+                    }
+                });
+            });
+        }
 
         if (worktopItems.length === 0) return;
 

@@ -20,7 +20,7 @@ import base64
 from datetime import datetime
 from urllib.parse import urlparse, parse_qs
 
-DEFAULT_PORTS = [8080, 8081, 8082, 8083, 8084, 8085, 3000, 8000]
+DEFAULT_PORTS = [8585, 8888, 8090, 8181, 8085, 8080]
 DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(DIRECTORY, "data")
 CATALOG_FILE = os.path.join(DATA_DIR, "catalog.json")
@@ -179,13 +179,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def guess_category(self, name):
         n = name.lower()
-        if n.startswith('s_asz') or 'also' in n or 'base' in n or 'pult' in n or 'counter' in n or 'sink' in n:
-            return 'base_cabinet'
-        if n.startswith('s_a') or n.startswith('ef_'):
-            return 'base_cabinet'
+        if n.startswith('s_asz'):
+            return 'tall_cabinet'
+        if n.startswith('s_pec') or n.startswith('pec_') or n.startswith('s_ef') or n.startswith('ef_') or 'elszivo' in n or 'hood' in n:
+            return 'hood_cabinet'
         if n.startswith('s_f') or n.startswith('s_fs') or n.startswith('f_') or n.startswith('fsz') or 'felso' in n or 'wall' in n:
             return 'wall_cabinet'
-        if n.startswith('s_pec') or n.startswith('pec_') or n.startswith('s_m') or n.startswith('m_') or n.startswith('msz') or 'magas' in n or 'tall' in n or 'kamra' in n:
+        if n.startswith('s_a') or 'also' in n or 'base' in n or 'pult' in n or 'counter' in n or 'sink' in n:
+            return 'base_cabinet'
+        if n.startswith('s_m') or n.startswith('m_') or n.startswith('msz') or 'magas' in n or 'tall' in n or 'kamra' in n:
             return 'tall_cabinet'
         if 'asztal' in n or 'table' in n or 'desk' in n:
             return 'table'
@@ -198,7 +200,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def handle_get_elements(self):
         """A '3d model/element' mappában található GLB/GLTF modellek listázása"""
         element_dir = os.path.join(DIRECTORY, "3d model", "element")
+        thumbnails_dir = os.path.join(DIRECTORY, "thumbnails")
         os.makedirs(element_dir, exist_ok=True)
+        os.makedirs(thumbnails_dir, exist_ok=True)
         items = []
         try:
             for fname in sorted(os.listdir(element_dir)):
@@ -206,6 +210,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     fpath = os.path.join(element_dir, fname)
                     stat = os.stat(fpath)
                     name_without_ext = os.path.splitext(fname)[0]
+                    thumb_rel = f"thumbnails/{name_without_ext}.png"
+                    thumb_full = os.path.join(DIRECTORY, "thumbnails", f"{name_without_ext}.png")
+                    has_thumb = os.path.exists(thumb_full)
                     items.append({
                         "id": f"elem_{name_without_ext}",
                         "fileName": fname,
@@ -213,6 +220,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                         "path": f"3d model/element/{fname}",
                         "size": stat.st_size,
                         "category": self.guess_category(name_without_ext),
+                        "thumbnail": thumb_rel if has_thumb else None,
                         "modified": datetime.fromtimestamp(stat.st_mtime).isoformat()
                     })
             # Frissítjük a data/elements.json fájlt is
@@ -248,8 +256,50 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.handle_auth_resend_verification()
         elif path == '/api/elements/upload':
             self.handle_upload_element()
+        elif path == '/api/elements/thumbnail':
+            self.handle_upload_thumbnail()
         else:
             self.send_error(404, "Not Found")
+
+    def handle_upload_thumbnail(self):
+        """Kiskép (thumbnail) mentése a thumbnails mappába"""
+        try:
+            content_length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(content_length).decode('utf-8')
+            payload = json.loads(body)
+
+            name = payload.get('name', '').strip()
+            data_url = payload.get('data', '')
+
+            if not name or not data_url:
+                self.send_response(400)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "error": "Hiányzó név vagy képadat"}).encode('utf-8'))
+                return
+
+            safe_name = os.path.basename(name).replace('.glb', '').replace('.gltf', '')
+            thumbnails_dir = os.path.join(DIRECTORY, "thumbnails")
+            os.makedirs(thumbnails_dir, exist_ok=True)
+
+            if ',' in data_url:
+                data_url = data_url.split(',', 1)[1]
+
+            import base64
+            img_bytes = base64.b64decode(data_url)
+            out_path = os.path.join(thumbnails_dir, f"{safe_name}.png")
+            with open(out_path, "wb") as f:
+                f.write(img_bytes)
+
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({"success": True, "thumbnail": f"thumbnails/{safe_name}.png"}).encode('utf-8'))
+        except Exception as e:
+            self.send_response(500)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode('utf-8'))
 
     def handle_upload_element(self):
         """GLB/GLTF 3D modell feltöltése és mentése a 3d model/element mappába"""
@@ -783,9 +833,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(html_err.encode('utf-8'))
 
 
-def find_available_server():
+def find_available_server(preferred_port=None):
     socketserver.TCPServer.allow_reuse_address = True
-    for port in DEFAULT_PORTS:
+    ports_to_try = [preferred_port] if preferred_port else []
+    ports_to_try.extend([p for p in DEFAULT_PORTS if p != preferred_port])
+    for port in ports_to_try:
         try:
             httpd = socketserver.TCPServer(("", port), Handler)
             return httpd, port
@@ -798,7 +850,13 @@ def find_available_server():
 def main():
     os.chdir(DIRECTORY)
     os.makedirs(DATA_DIR, exist_ok=True)
-    httpd, port = find_available_server()
+    preferred_port = None
+    if len(sys.argv) > 1:
+        try:
+            preferred_port = int(sys.argv[1])
+        except ValueError:
+            pass
+    httpd, port = find_available_server(preferred_port)
     url = f"http://localhost:{port}"
 
     print("=" * 60)

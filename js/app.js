@@ -562,18 +562,142 @@ class FurnitureApp {
             }
         });
 
+        // 1. Ajtó Mód (Kattintásra egyedi ajtó/fiók nyitás & bútor kijelölés tiltása)
         const btnToggleDoors = document.getElementById('btn-toggle-doors');
         if (btnToggleDoors) {
             btnToggleDoors.addEventListener('click', () => {
                 if (!this.scene3D) return;
-                const isOpen = this.scene3D.toggleDoors();
+                const isDoorMode = this.scene3D.toggleDoorInteractionMode();
                 const text = document.getElementById('btn-toggle-doors-text');
-                if (isOpen) {
-                    if (text) text.textContent = 'Ajtók Becsukása';
+                if (isDoorMode) {
+                    if (text) text.textContent = '🚪 Ajtó Mód: BE';
+                    btnToggleDoors.classList.add('active');
                     btnToggleDoors.classList.add('btn-primary');
+                    btnToggleDoors.setAttribute('title', 'Ajtó mód aktív: kattints bármelyik ajtóra vagy fiókra a nyitáshoz/csukáshoz. Újra kattintva kilép a módból.');
+                    this.showToast('🚪 Ajtó Mód bekapcsolva: Kattints bármelyik ajtóra vagy fiókra a nyitáshoz!', 'info');
                 } else {
-                    if (text) text.textContent = 'Ajtók Nyitása';
+                    if (text) text.textContent = '🚪 Ajtók Nyitása';
+                    btnToggleDoors.classList.remove('active');
                     btnToggleDoors.classList.remove('btn-primary');
+                    btnToggleDoors.setAttribute('title', 'Ajtó Mód: kattints közvetlenül az ajtókra a nyitáshoz/csukáshoz (bútor kijelölés tiltva).');
+                    this.showToast('Ajtó Mód kikapcsolva: Bútorok újra kijelölhetők.', 'info');
+                }
+            });
+
+            // Callback szinkronizáció ha a scene3D-ből változik az állapot
+            if (this.scene3D) {
+                this.scene3D.onDoorModeChanged = (isMode) => {
+                    const text = document.getElementById('btn-toggle-doors-text');
+                    if (isMode) {
+                        if (text) text.textContent = '🚪 Ajtó Mód: BE';
+                        btnToggleDoors.classList.add('active');
+                        btnToggleDoors.classList.add('btn-primary');
+                    } else {
+                        if (text) text.textContent = '🚪 Ajtók Nyitása';
+                        btnToggleDoors.classList.remove('active');
+                        btnToggleDoors.classList.remove('btn-primary');
+                    }
+                };
+            }
+        }
+
+        // 2. Összes ajtó kinyitása / becsukása egyszerre
+        const btnToggleAllDoors = document.getElementById('btn-toggle-all-doors');
+        if (btnToggleAllDoors) {
+            btnToggleAllDoors.addEventListener('click', () => {
+                if (!this.scene3D) return;
+                const allOpen = this.scene3D.toggleAllDoors();
+                const text = document.getElementById('btn-toggle-all-doors-text');
+                if (allOpen) {
+                    if (text) text.textContent = '📁 Összes Becsukása';
+                    btnToggleAllDoors.classList.add('active');
+                    btnToggleAllDoors.classList.add('btn-primary');
+                    this.showToast('📂 Összes ajtó és fiók kinyitva', 'success');
+                } else {
+                    if (text) text.textContent = '📂 Összes Nyitása';
+                    btnToggleAllDoors.classList.remove('active');
+                    btnToggleAllDoors.classList.remove('btn-primary');
+                    this.showToast('📁 Összes ajtó és fiók becsukva', 'info');
+                }
+            });
+        }
+
+        // 3. Alap Szoba (Falak, Padló, Méretezés) kezelése
+        const btnToggleRoom = document.getElementById('btn-toggle-room');
+        const roomHud = document.getElementById('room-editor-hud');
+        const roomInputW = document.getElementById('room-input-width');
+        const roomInputD = document.getElementById('room-input-depth');
+        const roomInputH = document.getElementById('room-input-height');
+        const btnRoomTopView = document.getElementById('btn-room-top-view');
+        const btnRoomApplyDims = document.getElementById('btn-room-apply-dims');
+        const btnCloseRoomHud = document.getElementById('btn-close-room-hud');
+
+        if (window.roomManager) {
+            window.roomManager.onDimensionsChanged = (w, d, h) => {
+                if (roomInputW) roomInputW.value = Math.round(w);
+                if (roomInputD) roomInputD.value = Math.round(d);
+                if (roomInputH) roomInputH.value = Math.round(h);
+            };
+        }
+
+        if (btnToggleRoom) {
+            btnToggleRoom.addEventListener('click', () => {
+                if (!window.roomManager) return;
+                const isEnabled = !window.roomManager.isEnabled();
+                window.roomManager.setEnabled(isEnabled);
+
+                if (isEnabled) {
+                    btnToggleRoom.classList.add('active');
+                    btnToggleRoom.classList.add('btn-primary');
+                    if (roomHud) roomHud.style.display = 'block';
+                    if (roomInputW) roomInputW.value = window.roomManager.width;
+                    if (roomInputD) roomInputD.value = window.roomManager.depth;
+                    if (roomInputH) roomInputH.value = window.roomManager.height;
+                    this.showToast('🏠 Alap szoba bekapcsolva: a közeli falak átlátszóak, a bútorok a falhoz tapadnak!', 'success');
+                } else {
+                    btnToggleRoom.classList.remove('active');
+                    btnToggleRoom.classList.remove('btn-primary');
+                    if (roomHud) roomHud.style.display = 'none';
+                    this.showToast('🏠 Szoba kikapcsolva.', 'info');
+                }
+            });
+        }
+
+        if (btnCloseRoomHud) {
+            btnCloseRoomHud.addEventListener('click', () => {
+                if (roomHud) roomHud.style.display = 'none';
+            });
+        }
+
+        const applyRoomDims = () => {
+            if (!window.roomManager) return;
+            const w = parseInt(roomInputW?.value, 10);
+            const d = parseInt(roomInputD?.value, 10);
+            const h = parseInt(roomInputH?.value, 10);
+            window.roomManager.setDimensions(w, d, h);
+            this.showToast(`📐 Szoba méretei beállítva: ${window.roomManager.width} × ${window.roomManager.depth} × ${window.roomManager.height} mm`, 'info');
+        };
+
+        if (btnRoomApplyDims) {
+            btnRoomApplyDims.addEventListener('click', applyRoomDims);
+        }
+
+        [roomInputW, roomInputD, roomInputH].forEach(inp => {
+            if (inp) {
+                inp.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') applyRoomDims();
+                });
+            }
+        });
+
+        if (btnRoomTopView) {
+            btnRoomTopView.addEventListener('click', () => {
+                if (this.scene3D) {
+                    this.scene3D.setCameraView('top');
+                    const label = document.getElementById('current-view-mode-label');
+                    if (label) label.textContent = '👁️ Nézet: ⬜ Felülnézet';
+                    if (roomHud) roomHud.style.display = 'block';
+                    this.showToast('📐 Felülnézet aktív: a sarokpontok és falak egérrel szabadon méretezhetők!', 'info');
                 }
             });
         }
@@ -3287,12 +3411,10 @@ class FurnitureApp {
             // Kategória szűrő gombok (Pills)
             const elementCategories = [
                 { id: 'all', label: 'Mind' },
-                { id: 'base_cabinet', label: 'Alsó' },
-                { id: 'wall_cabinet', label: 'Felső' },
-                { id: 'tall_cabinet', label: 'Magas' },
-                { id: 'table', label: 'Asztal' },
-                { id: 'chair', label: 'Szék' },
-                { id: 'accessory', label: 'Kiegészítő' },
+                { id: 'base_cabinet', label: 'Alsó elemek' },
+                { id: 'tall_cabinet', label: 'Álló szekrények' },
+                { id: 'wall_cabinet', label: 'Felső elemek' },
+                { id: 'hood_cabinet', label: 'Páraelszívós' },
                 { id: 'other', label: 'Egyéb' }
             ];
 
@@ -3333,15 +3455,22 @@ class FurnitureApp {
                     card.style.marginBottom = '8px';
                     card.style.border = '1px solid rgba(168, 85, 247, 0.25)';
                     card.style.background = 'rgba(15, 23, 42, 0.6)';
+                    card.style.cursor = 'pointer';
+                    card.title = `Kattints a(z) ${elem.name || elem.fileName} elhelyezéséhez a 3D munkatérben`;
 
                     const sizeKb = elem.size ? `${Math.round(elem.size / 1024)} KB` : '';
                     const elemCat = elem.category || (typeof ModelManager !== 'undefined' && ModelManager.guessCategory ? ModelManager.guessCategory(elem.name || elem.fileName) : 'other');
                     const catLabel = (typeof ModelManager !== 'undefined' && ModelManager.getCategoryLabel ? ModelManager.getCategoryLabel(elemCat) : '3D Modell');
+                    const safeName = (elem.name || (elem.fileName ? elem.fileName.replace(/\.(glb|gltf)$/i, '') : '')).trim();
+                    const thumbUrl = elem.thumbnail || `thumbnails/${safeName}.png`;
 
                     card.innerHTML = `
-                        <div class="card-img-container" style="width:72px; height:72px; min-width:72px; min-height:72px; border-radius:var(--radius-sm); overflow:hidden; background:linear-gradient(135deg, #1e1b4b, #31104b); border:1px solid rgba(168, 85, 247, 0.35); display:flex; flex-direction:column; align-items:center; justify-content:center; flex-shrink:0;">
-                            <span style="font-size:28px;">🧊</span>
-                            <span style="font-size:9px; color:#c084fc; font-weight:700; margin-top:2px;">GLB 3D</span>
+                        <div class="card-img-container" style="width:72px; height:72px; min-width:72px; min-height:72px; border-radius:var(--radius-sm); overflow:hidden; background:radial-gradient(circle, #2e1065 0%, #0f172a 100%); border:1px solid rgba(168, 85, 247, 0.35); display:flex; align-items:center; justify-content:center; flex-shrink:0; position:relative;">
+                            <img src="${thumbUrl}" alt="${elem.name || elem.fileName}" style="width:100%; height:100%; object-fit:contain;" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                            <div style="display:none; width:100%; height:100%; flex-direction:column; align-items:center; justify-content:center;">
+                                <span style="font-size:26px;">🧊</span>
+                                <span style="font-size:9px; color:#c084fc; font-weight:700;">GLB 3D</span>
+                            </div>
                         </div>
                         <div class="card-body" style="flex:1; min-width:0; padding:0; display:flex; flex-direction:column; justify-content:space-between; height:72px;">
                             <div style="min-width:0;">
@@ -3361,10 +3490,10 @@ class FurnitureApp {
                         </div>
                     `;
 
-                    // Hozzáadás a 3D színtérhez
+                    // Hozzáadás a 3D színtérhez kattintásra
                     const addBtn = card.querySelector('.btn-add-element-scene');
-                    addBtn.addEventListener('click', (e) => {
-                        e.stopPropagation();
+                    const handleAddElement = () => {
+                        if (addBtn.disabled) return;
                         addBtn.disabled = true;
                         addBtn.innerHTML = '⏳';
                         ModelManager.loadElementToScene(elem, this.boardManager, this.scene3D, (modelGroup) => {
@@ -3377,13 +3506,23 @@ class FurnitureApp {
                         }, (err) => {
                             addBtn.disabled = false;
                             addBtn.innerHTML = '➡️';
+                            console.error("Hiba a modell hozzáadásakor:", err);
                             const isFile = typeof window !== 'undefined' && window.location.protocol === 'file:';
                             if (isFile) {
-                                alert(`A böngésző CORS védelme miatt közvetlen fájlmegnyitáskor (file:///) a(z) "${elem.fileName}" modellt a böngésző nem tudja automatikusan beolvasni a merevlemezről.\n\nKét egyszerű megoldás van:\n1. Indítsd el a 'start.bat' fájlt a projekt mappájából (ez megnyitja a http://localhost:8080-at, ahol minden azonnal működik kattintásra)!\n\nVAGY\n\n2. Használd a 3D Elemek fejlécében lévő '➕ Fájl' tallózás gombot, és válaszd ki ezt a fájlt közvetlenül!`);
+                                alert(`A böngésző CORS védelme miatt közvetlen fájlmegnyitáskor (file:///) a(z) "${elem.fileName}" modellt a böngésző nem tudja automatikusan beolvasni a merevlemezről.\n\nKét egyszerű megoldás van:\n1. Indítsd el a 'start.bat' fájlt a projekt mappájából (ez megnyitja a http://localhost:8585-öt, ahol minden azonnal működik kattintásra)!\n\nVAGY\n\n2. Használd a 3D Elemek fejlécében lévő '➕ Fájl' tallózás gombot, és válaszd ki ezt a fájlt közvetlenül!`);
                             } else {
                                 this.showToast(`Hiba a 3D modell betöltésekor: ${elem.fileName}`, 'danger');
                             }
                         });
+                    };
+
+                    card.addEventListener('click', () => {
+                        handleAddElement();
+                    });
+
+                    addBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        handleAddElement();
                     });
 
                     elemBody.appendChild(card);
@@ -3505,13 +3644,25 @@ class FurnitureApp {
                             </div>
                         `;
 
+                        card.style.cursor = 'pointer';
+                        card.title = `Kattints a(z) ${item.name} hozzáadásához a jelenethez`;
+
                         // Hozzáadás a jelenethez
-                        card.querySelector('.btn-add-scene').addEventListener('click', (e) => {
-                            e.stopPropagation();
+                        const handleAddFurniture = () => {
                             this.catalogManager.loadFurnitureToScene(item.id, false);
                             this.updateDimensionsBadge();
                             this.renderHierarchyTree();
                             this.updateSnapTargetDropdown();
+                        };
+
+                        card.addEventListener('click', (e) => {
+                            if (e.target.closest('.btn-delete-item')) return;
+                            handleAddFurniture();
+                        });
+
+                        card.querySelector('.btn-add-scene').addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            handleAddFurniture();
                         });
 
                         // Törlés a katalógusból

@@ -471,9 +471,11 @@ export const ModelManager = {
      */
     guessCategory(name) {
         const n = (name || '').toLowerCase();
-        if (n.startsWith('s_asz') || n.includes('also') || n.includes('base') || n.includes('pult') || n.includes('counter') || n.includes('sink')) return 'base_cabinet';
-        if (n.startsWith('f_') || n.startsWith('fsz') || n.includes('felso') || n.includes('wall')) return 'wall_cabinet';
-        if (n.startsWith('m_') || n.startsWith('msz') || n.includes('magas') || n.includes('tall') || n.includes('kamra')) return 'tall_cabinet';
+        if (n.startsWith('s_asz')) return 'tall_cabinet';
+        if (n.startsWith('s_pec') || n.startsWith('pec_') || n.startsWith('s_ef') || n.startsWith('ef_') || n.includes('elszivo') || n.includes('hood')) return 'hood_cabinet';
+        if (n.startsWith('s_f') || n.startsWith('s_fs') || n.startsWith('f_') || n.startsWith('fsz') || n.includes('felso') || n.includes('wall')) return 'wall_cabinet';
+        if (n.startsWith('s_a') || n.includes('also') || n.includes('base') || n.includes('pult') || n.includes('counter') || n.includes('sink')) return 'base_cabinet';
+        if (n.startsWith('s_m') || n.startsWith('m_') || n.startsWith('msz') || n.includes('magas') || n.includes('tall') || n.includes('kamra')) return 'tall_cabinet';
         if (n.includes('asztal') || n.includes('table') || n.includes('desk')) return 'table';
         if (n.includes('szek') || n.includes('chair') || n.includes('fotel') || n.includes('stool')) return 'chair';
         if (n.includes('fogo') || n.includes('lab') || n.includes('handle') || n.includes('leg') || n.includes('pant') || n.includes('hinge') || n.includes('kiegeszito')) return 'accessory';
@@ -483,9 +485,10 @@ export const ModelManager = {
     getCategoryLabel(cat) {
         const labels = {
             'all': 'Összes',
-            'base_cabinet': 'Alsó szekrény',
-            'wall_cabinet': 'Felső szekrény',
-            'tall_cabinet': 'Magas szekrény',
+            'base_cabinet': 'Alsó elem',
+            'tall_cabinet': 'Álló szekrény',
+            'wall_cabinet': 'Felső elem',
+            'hood_cabinet': 'Páraelszívós elem',
             'table': 'Asztal',
             'chair': 'Szék / Ülőbútor',
             'accessory': 'Kiegészítő',
@@ -573,89 +576,248 @@ export const ModelManager = {
             }
         }
 
+        if (modelUrl && !modelUrl.startsWith('data:') && !modelUrl.startsWith('blob:')) {
+            modelUrl = encodeURI(modelUrl);
+        }
+
         this.gltfLoader.load(modelUrl, (gltf) => {
-            const rawScene = gltf.scene;
+            try {
+                const rawScene = gltf.scene;
 
-            // 1. Bounding box mérés
-            const initialBox = new THREE.Box3().setFromObject(rawScene);
-            const initialSize = new THREE.Vector3();
-            initialBox.getSize(initialSize);
+                // 1. Bounding box mérés
+                const initialBox = new THREE.Box3().setFromObject(rawScene);
+                const initialSize = new THREE.Vector3();
+                initialBox.getSize(initialSize);
 
-            // 2. Automatikus skálázás: ha méterben van (< 15 egység), átváltás mm-re (×1000)
-            let scaleFactor = 1;
-            if (Math.max(initialSize.x, initialSize.y, initialSize.z) < 15) {
-                scaleFactor = 1000;
-            }
-            rawScene.scale.set(scaleFactor, scaleFactor, scaleFactor);
+                // 2. Automatikus skálázás: ha méterben van (< 15 egység), átváltás mm-re (×1000)
+                let scaleFactor = 1;
+                if (Math.max(initialSize.x, initialSize.y, initialSize.z) < 15) {
+                    scaleFactor = 1000;
+                }
+                rawScene.scale.set(scaleFactor, scaleFactor, scaleFactor);
 
-            // Újramérés a skálázott méretekkel
-            const scaledBox = new THREE.Box3().setFromObject(rawScene);
-            const scaledSize = new THREE.Vector3();
-            scaledBox.getSize(scaledSize);
+                // Újramérés a skálázott méretekkel
+                const scaledBox = new THREE.Box3().setFromObject(rawScene);
+                const scaledSize = new THREE.Vector3();
+                scaledBox.getSize(scaledSize);
 
-            // 3. Lokális eltolás: talaj Y = 0 síkhoz, és X, Z középponthoz igazítás
-            const offX = -(scaledBox.min.x + scaledBox.max.x) / 2;
-            const offY = -scaledBox.min.y;
-            const offZ = -(scaledBox.min.z + scaledBox.max.z) / 2;
-            rawScene.position.set(offX, offY, offZ);
+                // 3. Lokális eltolás: talaj Y = 0 síkhoz, és X, Z középponthoz igazítás
+                const offX = -(scaledBox.min.x + scaledBox.max.x) / 2;
+                const offY = -scaledBox.min.y;
+                const offZ = -(scaledBox.min.z + scaledBox.max.z) / 2;
+                rawScene.position.set(offX, offY, offZ);
 
-            // 4. Szülő THREE.Group létrehozása
-            const modelGroup = new THREE.Group();
-            modelGroup.add(rawScene);
+                // 4. Szülő THREE.Group létrehozása
+                const modelGroup = new THREE.Group();
+                modelGroup.add(rawScene);
 
-            // 5. Melléhelyezés (X pozíció kiszámítása az eddigi bútorok alapján)
-            const currentBounds = boardManager.getFurnitureBoundingBox();
-            const itemW = Math.round(scaledSize.x) || 600;
-            const posX = currentBounds.width > 0 ? (currentBounds.width / 2 + itemW / 2 + 50) : 0;
-            modelGroup.position.set(posX, 0, 0);
+                // 5. Melléhelyezés (X, Y, Z pozíció intelligens kiszámítása az eddigi bútorok és a kategória alapján)
+                const elName = element.name || (element.fileName ? element.fileName.replace(/\.(glb|gltf)$/i, '') : '3D Modell Elem');
+                const category = element.category || this.guessCategory(elName) || 'base_cabinet';
+                const itemW = Math.round(scaledSize.x) || 600;
+                const itemH = Math.round(scaledSize.y) || 720;
+                const itemD = Math.round(scaledSize.z) || 600;
 
-            // 6. Azonosító és gyermek mesh-ek beállítása
-            const elementId = 'model_elem_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
-            const elName = element.name || (element.fileName ? element.fileName.replace(/\.glb$/i, '') : '3D Modell Elem');
+                let posX = 0;
+                let posY = 0;
+                let posZ = 0;
 
-            rawScene.traverse((child) => {
-                if (child.isMesh) {
-                    child.castShadow = true;
-                    child.receiveShadow = true;
-                    child.userData = child.userData || {};
-                    child.userData.parentGroup = modelGroup;
-                    child.userData.corpusId = elementId;
-                    if (scene3D.boardMeshes && !scene3D.boardMeshes.includes(child)) {
-                        scene3D.boardMeshes.push(child);
+                const existingCorpora = (boardManager && boardManager.corpora ? boardManager.corpora : []).filter(c => c !== modelGroup);
+
+                // Bútorok csoportosítása típus és térbeli elhelyezkedés szerint
+                const floorCorpora = [];
+                const baseCorpora = [];
+                const wallCorpora = [];
+
+                existingCorpora.forEach(c => {
+                    try {
+                        const b = new THREE.Box3().setFromObject(c);
+                        if (b.isEmpty() || !isFinite(b.min.x) || !isFinite(b.max.x)) return;
+                        const cat = c.userData?.category || c.userData?.config?.type || '';
+                        const isWall = (cat === 'wall_cabinet' || cat === 'hood_cabinet' || cat === 'wall' || b.min.y >= 900);
+                        const isTall = (cat === 'tall_cabinet' || cat === 'tall' || (b.max.y - b.min.y > 1400));
+
+                        if (isWall) {
+                            wallCorpora.push({ corpus: c, box: b });
+                        } else {
+                            floorCorpora.push({ corpus: c, box: b });
+                            if (!isTall && b.min.y <= 100) {
+                                baseCorpora.push({ corpus: c, box: b });
+                            }
+                        }
+                    } catch (e) {
+                        console.warn("Hiba meglévő bútor méretének kiszámításakor:", e);
+                    }
+                });
+
+                if (category === 'base_cabinet' || category === 'tall_cabinet') {
+                    // Alsó elem és állószekrény: mindig közvetlenül a meglévő alsó konyhasor mellé kerül (rés nélkül, 0 mm hézag)
+                    if (floorCorpora.length > 0) {
+                        let maxFloorRightX = -Infinity;
+                        let alignBackZ = null;
+                        floorCorpora.forEach(item => {
+                            if (item.box.max.x > maxFloorRightX) maxFloorRightX = item.box.max.x;
+                            if (alignBackZ === null || item.box.min.z < alignBackZ) alignBackZ = item.box.min.z;
+                        });
+                        posX = (maxFloorRightX !== -Infinity && isFinite(maxFloorRightX)) ? (maxFloorRightX + itemW / 2) : 0;
+                        posZ = (alignBackZ !== null && isFinite(alignBackZ)) ? (alignBackZ + itemD / 2) : 0;
+                    } else {
+                        if (window.roomManager && window.roomManager.isEnabled()) {
+                            const rBounds = window.roomManager.getInnerBounds();
+                            posX = rBounds.leftX + itemW / 2;
+                            posZ = rBounds.backZ + itemD / 2;
+                        } else {
+                            posX = 0;
+                            posZ = 0;
+                        }
+                    }
+                    posY = (window.roomManager && window.roomManager.isEnabled()) ? window.roomManager.getInnerBounds().floorY : 0;
+                } else if (category === 'wall_cabinet' || category === 'hood_cabinet') {
+                    // Felső elem és páraelszívós elem: mindig a munkalap felett 60 cm-rel (600 mm) helyezkedik el!
+                    let worktopTopY = 860; // Alapértelmezett standard munkalap magasság (mm)
+                    let minBaseX = Infinity;
+                    let baseBackZ = null;
+
+                    if (baseCorpora.length > 0) {
+                        let maxBaseY = -Infinity;
+                        baseCorpora.forEach(item => {
+                            if (item.box.max.y > maxBaseY) maxBaseY = item.box.max.y;
+                            if (item.box.min.x < minBaseX) minBaseX = item.box.min.x;
+                            if (baseBackZ === null || item.box.min.z < baseBackZ) baseBackZ = item.box.min.z;
+                        });
+                        if (maxBaseY > 0 && isFinite(maxBaseY)) worktopTopY = maxBaseY;
+                    } else if (floorCorpora.length > 0) {
+                        floorCorpora.forEach(item => {
+                            if (item.box.min.x < minBaseX) minBaseX = item.box.min.x;
+                            if (baseBackZ === null || item.box.min.z < baseBackZ) baseBackZ = item.box.min.z;
+                        });
+                    }
+
+                    // Magasság: munkalap teteje + 600 mm (60 cm)
+                    posY = worktopTopY + 600;
+
+                    // X pozíció: ha van már felső szekrény, mellé rakja rés nélkül; ha nincs, az alsó szekrénysor elejéhez vagy szobafalhoz igazítja
+                    if (wallCorpora.length > 0) {
+                        let maxWallRightX = -Infinity;
+                        wallCorpora.forEach(item => {
+                            if (item.box.max.x > maxWallRightX) maxWallRightX = item.box.max.x;
+                        });
+                        posX = (maxWallRightX !== -Infinity && isFinite(maxWallRightX)) ? (maxWallRightX + itemW / 2) : 0;
+                    } else if (minBaseX !== Infinity && isFinite(minBaseX)) {
+                        posX = minBaseX + itemW / 2;
+                    } else {
+                        posX = (window.roomManager && window.roomManager.isEnabled()) ? (window.roomManager.getInnerBounds().leftX + itemW / 2) : 0;
+                    }
+
+                    // Z pozíció: a falhoz (az alsó szekrények hátfal síkjához vagy a szoba falához) igazítva
+                    const wallBackZ = (baseBackZ !== null && isFinite(baseBackZ))
+                        ? baseBackZ
+                        : ((window.roomManager && window.roomManager.isEnabled()) ? window.roomManager.getInnerBounds().backZ : -300);
+                    posZ = wallBackZ + itemD / 2;
+                } else {
+                    // Egyéb elemek (asztal, szék, kiegészítő)
+                    let currentBounds = null;
+                    try {
+                        currentBounds = (boardManager && boardManager.getFurnitureBoundingBox) ? boardManager.getFurnitureBoundingBox() : null;
+                    } catch (e) {}
+                    posX = (currentBounds && currentBounds.width > 0 && currentBounds.box && isFinite(currentBounds.box.max.x)) ? (currentBounds.box.max.x + itemW / 2 + 50) : 0;
+                    posY = 0;
+                    posZ = 0;
+                }
+
+                posX = Number.isFinite(posX) ? posX : 0;
+                posY = Number.isFinite(posY) ? posY : 0;
+                posZ = Number.isFinite(posZ) ? posZ : 0;
+
+                modelGroup.position.set(posX, posY, posZ);
+
+                // 6. Azonosító és gyermek mesh-ek beállítása
+                const elementId = 'model_elem_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
+
+                rawScene.traverse((child) => {
+                    if (child.isMesh) {
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+                        child.userData = child.userData || {};
+                        child.userData.parentGroup = modelGroup;
+                        child.userData.corpusId = elementId;
+                        if (scene3D && scene3D.boardMeshes && !scene3D.boardMeshes.includes(child)) {
+                            scene3D.boardMeshes.push(child);
+                        }
+                    }
+                });
+
+                // 7. Kijelölési kiemelés és körvonal csatolása
+                try {
+                    attachHardwareHighlights(modelGroup);
+                } catch (e) {
+                    console.warn("attachHardwareHighlights error:", e);
+                }
+
+                // 8. userData metaadatok előkészítése
+                modelGroup.userData = {
+                    id: elementId,
+                    name: elName,
+                    isModelElement: true,
+                    isCorpus: true,
+                    category: category,
+                    width: Math.round(scaledSize.x),
+                    height: Math.round(scaledSize.y),
+                    depth: Math.round(scaledSize.z),
+                    x: posX,
+                    y: posY,
+                    z: posZ,
+                    rotX: 0,
+                    rotY: 0,
+                    rotZ: 0,
+                    glbFile: element.fileName,
+                    glbPath: modelUrl,
+                    movableParts: []
+                };
+
+                // 9. Ajtók, fiókok és munkalapok beazonosítása és előkészítése
+                try {
+                    this.setupModelElementInteractivity(modelGroup, rawScene, scaleFactor, elName, category);
+                } catch (e) {
+                    console.warn("setupModelElementInteractivity error:", e);
+                }
+
+                // 10. Hozzáadás a 3D színtérhez és a korpuszokhoz
+                if (scene3D && scene3D.scene) {
+                    scene3D.scene.add(modelGroup);
+                }
+                if (boardManager && boardManager.corpora) {
+                    boardManager.corpora.push(modelGroup);
+                }
+
+                // 11. Munkalap textúra folytonosság frissítése
+                if (boardManager && boardManager.updateKitchenContinuity) {
+                    try {
+                        boardManager.updateKitchenContinuity();
+                    } catch (e) {
+                        console.warn("updateKitchenContinuity error:", e);
                     }
                 }
-            });
 
-            // 7. Kijelölési kiemelés és körvonal csatolása
-            attachHardwareHighlights(modelGroup);
+                // Ha az ajtók jelenleg nyitva vannak a jelenetben, erre az elemre is alkalmazzuk
+                try {
+                    if (scene3D && scene3D.areDoorsOpen && scene3D.areDoorsOpen()) {
+                        scene3D.updateDoorTransforms(scene3D.doorAnimationProgress || 1);
+                    }
+                } catch (e) {}
 
-            // 8. userData metaadatok
-            modelGroup.userData = {
-                id: elementId,
-                name: elName,
-                isModelElement: true,
-                isCorpus: true,
-                width: Math.round(scaledSize.x),
-                height: Math.round(scaledSize.y),
-                depth: Math.round(scaledSize.z),
-                x: posX,
-                y: 0,
-                z: 0,
-                rotX: 0,
-                rotY: 0,
-                rotZ: 0,
-                glbFile: element.fileName,
-                glbPath: modelUrl
-            };
+                // 12. Automatikus kijelölés
+                try {
+                    if (scene3D && scene3D.selectBoard) {
+                        scene3D.selectBoard(modelGroup);
+                    }
+                } catch (e) {}
 
-            // 9. Hozzáadás a 3D színtérhez és a korpuszokhoz
-            scene3D.scene.add(modelGroup);
-            boardManager.corpora.push(modelGroup);
-
-            // 10. Automatikus kijelölés
-            scene3D.selectBoard(modelGroup);
-
-            if (onComplete) onComplete(modelGroup);
+                if (onComplete) onComplete(modelGroup);
+            } catch (err) {
+                console.error('ModelManager: Hiba a GLB modell feldolgozásakor:', modelUrl, err);
+                if (onError) onError(err);
+            }
         }, undefined, (err) => {
             console.error('ModelManager: Hiba a GLB modell betöltésekor:', modelUrl, err);
             const isFileProto = typeof window !== 'undefined' && window.location.protocol === 'file:';
@@ -665,6 +827,261 @@ export const ModelManager = {
             }
             if (onError) onError(new Error(errMsg));
         });
+    },
+
+    /**
+     * GLB Modell elemek ajtóinak, fiókjainak és munkalapjainak automatikus előkészítése
+     */
+    setupModelElementInteractivity(modelGroup, rawScene, scaleFactor, elName, category = '') {
+        const movableParts = [];
+        const doorNodes = [];
+        const drawerNodes = [];
+        const worktopMeshes = [];
+
+        rawScene.traverse(child => {
+            const n = (child.name || '').toLowerCase();
+            if (n.includes('fiok') || n.includes('drawer')) {
+                if (!drawerNodes.includes(child)) drawerNodes.push(child);
+            } else if (n.includes('ajto') || n.includes('door')) {
+                if (!doorNodes.includes(child)) doorNodes.push(child);
+            }
+            if (child.isMesh && (n.includes('munka') || n.includes('worktop'))) {
+                worktopMeshes.push(child);
+            }
+        });
+
+        // Csak a legfelső fiók/ajtó node-okat mozgatjuk (hogy a fogantyú ami gyermek, ne mozogjon kétszer)
+        const topDrawers = drawerNodes.filter(d => !drawerNodes.some(other => other !== d && other.getObjectById(d.id)));
+        const topDoors = doorNodes.filter(d => !doorNodes.some(other => other !== d && other.getObjectById(d.id)));
+
+        // 1. Fiókok előkészítése (Kihúzás előre +Z irányba)
+        const lowerName = (elName || '').toLowerCase();
+        topDrawers.forEach(d => {
+            const nodeName = (d.name || '').toLowerCase();
+            // Ellenőrizzük, hogy vakfiók-e (fix előlap/takarólap belső fiók nélkül, pl. vf, vfs, vfmo, vak)
+            const isVakfiok = lowerName.includes('vf') ||
+                              lowerName.includes('vak') ||
+                              nodeName.includes('vf') ||
+                              nodeName.includes('vak');
+
+            if (isVakfiok) {
+                // A vakfiók rögzített előlap, nem mozgatható és nem jön ki
+                d.userData = d.userData || {};
+                d.userData.isBlindFront = true;
+                d.userData.isVakfiok = true;
+                return;
+            }
+
+            const slideDist = (scaleFactor >= 100 ? 0.35 : 350); // 350mm
+            movableParts.push({
+                type: 'drawer',
+                object: d,
+                origPosition: d.position.clone(),
+                origRotation: d.rotation.clone(),
+                slideDist: slideDist,
+                currentProgress: 0,
+                targetProgress: 0
+            });
+        });
+
+        // 2. Ajtók előkészítése PIVOT GROUP segítségével
+        const isLiftUpElement = (category === 'hood_cabinet') ||
+                                lowerName.includes('fau') ||
+                                lowerName.includes('s_f2f') ||
+                                lowerName.includes('f2f_') ||
+                                lowerName.startsWith('ef_') ||
+                                lowerName.startsWith('s_ef') ||
+                                lowerName.includes('pec_') ||
+                                lowerName.includes('s_pec') ||
+                                lowerName.includes('elszivo');
+
+        rawScene.updateMatrixWorld(true);
+        const invRaw = rawScene.matrixWorld.clone().invert();
+
+        // Ajtók bounding boxának és fogantyújának előmérése rawScene koordinátákban
+        const doorInfos = topDoors.map(d => {
+            d.updateMatrixWorld(true);
+            const doorBox = new THREE.Box3();
+
+            d.traverse(ch => {
+                if (ch.isMesh && !(ch.name || '').toLowerCase().includes('fogo')) {
+                    ch.updateMatrixWorld(true);
+                    if (ch.geometry) {
+                        try {
+                            ch.geometry.computeBoundingBox();
+                            if (ch.geometry.boundingBox) {
+                                const gb = ch.geometry.boundingBox.clone();
+                                const m = ch.matrixWorld.clone().premultiply(invRaw);
+                                gb.applyMatrix4(m);
+                                doorBox.union(gb);
+                            }
+                        } catch (e) {}
+                    }
+                }
+            });
+
+            if (doorBox.isEmpty()) {
+                try {
+                    const fb = new THREE.Box3().setFromObject(d);
+                    fb.applyMatrix4(invRaw);
+                    doorBox.copy(fb);
+                } catch (e) {}
+            }
+
+            let handleCenter = null;
+            d.traverse(ch => {
+                const chName = (ch.name || '').toLowerCase();
+                if (chName.includes('fogo') || chName.includes('handle')) {
+                    ch.updateMatrixWorld(true);
+                    if (ch.geometry) {
+                        try {
+                            ch.geometry.computeBoundingBox();
+                            if (ch.geometry.boundingBox) {
+                                const hb = ch.geometry.boundingBox.clone();
+                                const m = ch.matrixWorld.clone().premultiply(invRaw);
+                                hb.applyMatrix4(m);
+                                handleCenter = new THREE.Vector3();
+                                hb.getCenter(handleCenter);
+                            }
+                        } catch (e) {}
+                    }
+                }
+            });
+
+            const centerX = (doorBox.min.x + doorBox.max.x) / 2;
+            return { doorNode: d, doorBox, handleCenter, centerX };
+        });
+
+        // X koordináta szerint balról jobbra rendezzük
+        doorInfos.sort((a, b) => a.centerX - b.centerX);
+
+        doorInfos.forEach((info) => {
+            const d = info.doorNode;
+            const box = info.doorBox;
+            const isLiftUp = isLiftUpElement;
+            let pivotPos, openAxis, openAngle;
+            let isRight = false;
+
+            if (isLiftUp) {
+                // Felnyíló ajtó: a felső vízszintes él a forgáspont, X tengely körül fordul fel (-87 fok)
+                pivotPos = new THREE.Vector3(info.centerX, box.max.y, box.min.z);
+                openAxis = 'x';
+                openAngle = -1.52;
+                isRight = false;
+            } else {
+                // Oldalra nyíló ajtó: függőleges pánt Y tengely körül
+                // Ellenőrizzük, van-e mellette másik ajtó ugyanazon a magassági szinten (vízszintes fedés)
+                const height = Math.max(0.01, box.max.y - box.min.y);
+                const siblings = doorInfos.filter(other => {
+                    if (other === info) return false;
+                    const yOverlap = Math.min(box.max.y, other.doorBox.max.y) - Math.max(box.min.y, other.doorBox.min.y);
+                    return yOverlap > height * 0.4;
+                });
+
+                isRight = false;
+                if (siblings.length > 0) {
+                    // Kétajtós szint (ajtók egymás mellett):
+                    // A bal oldali ajtó nyíljon BALRA (pánt bal oldalon),
+                    // a jobb oldali ajtó nyíljon JOBBRA (pánt jobb oldalon) -> kétfele nyílás!
+                    const levelDoors = [info, ...siblings].sort((a, b) => a.centerX - b.centerX);
+                    const myIdx = levelDoors.indexOf(info);
+                    isRight = myIdx > 0;
+                } else if (info.handleCenter) {
+                    // Egyetlen ajtó az adott szinten: fogantyú pozíciója alapján
+                    if (info.handleCenter.x > info.centerX + 0.02) {
+                        isRight = false; // fogantyú jobbra -> pánt balra
+                    } else if (info.handleCenter.x < info.centerX - 0.02) {
+                        isRight = true;  // fogantyú balra -> pánt jobbra
+                    } else {
+                        isRight = false;
+                    }
+                } else {
+                    isRight = false;
+                }
+
+                // Valós kivetőpánt mechanika: a forgáspont a front hátoldalán (box.min.z, a korpusz frontján) és a pánt felőli élen van.
+                // A scene3d kinematikája a forgás közben a pántot befelé mozgatja, így az ajtó a nyitás során és nyitva is
+                // közvetlenül a korpusz frontja mellett és a szélén marad, de nem nyílik túl a korpuszon.
+                const pivotX = isRight ? box.max.x : box.min.x;
+                const pivotY = (box.min.y + box.max.y) / 2;
+                const pivotZ = box.min.z;
+                pivotPos = new THREE.Vector3(pivotX, pivotY, pivotZ);
+                openAxis = 'y';
+                openAngle = isRight ? 1.52 : -1.52;
+            }
+
+            // Pivot Group létrehozása és a pánt helyére illesztése
+            const pivotGroup = new THREE.Group();
+            pivotGroup.name = d.name + '_pivot';
+            pivotGroup.position.copy(pivotPos);
+            rawScene.add(pivotGroup);
+            pivotGroup.updateMatrixWorld(true);
+
+            // Ajtó hozzáadása a pivot grouphoz a világtranszformáció tökéletes megőrzésével
+            pivotGroup.attach(d);
+
+            const doorThickness = Math.max(0.001, box.max.z - box.min.z);
+            const gapZ = (doorThickness < 1 ? 0.002 : 2.0);
+
+            movableParts.push({
+                type: 'door',
+                isLiftUp: isLiftUp,
+                object: d,
+                pivotGroup: pivotGroup,
+                origPivotPosition: pivotGroup.position.clone(),
+                doorThickness: doorThickness,
+                gapZ: gapZ,
+                openAxis: openAxis,
+                openAngle: openAngle,
+                isRight: isRight,
+                currentProgress: 0,
+                targetProgress: 0
+            });
+        });
+
+        // 3. Munkalapok előkészítése a folytonos textúrázáshoz
+        worktopMeshes.forEach(mesh => {
+            mesh.userData.isModelWorktop = true;
+            mesh.userData.isWorktop = true;
+            mesh.userData.textureKey = 'wt_3025';
+
+            // Box / Triplanar UV leképezés mm egységben
+            if (mesh.geometry && mesh.geometry.attributes && mesh.geometry.attributes.position) {
+                try {
+                    mesh.geometry.computeBoundingBox();
+                    const gBox = mesh.geometry.boundingBox;
+                    if (!gBox) return;
+                    const pos = mesh.geometry.attributes.position;
+                    const norm = mesh.geometry.attributes.normal;
+                    const count = pos.count;
+                    const uvs = new Float32Array(count * 2);
+                    const tileSize = 800 / scaleFactor; // 800mm a geometriai lokális skálában
+
+                    for (let i = 0; i < count; i++) {
+                        const x = pos.getX(i);
+                        const y = pos.getY(i);
+                        const z = pos.getZ(i);
+                        const ny = norm ? Math.abs(norm.getY(i)) : 1;
+
+                        if (ny >= 0.5) {
+                            // Felső és alsó munkalap sík (X-Z sík)
+                            uvs[i * 2] = (x - gBox.min.x) / tileSize;
+                            uvs[i * 2 + 1] = (z - gBox.min.z) / tileSize;
+                        } else {
+                            // Munkalap élek és oldalak
+                            uvs[i * 2] = (x - gBox.min.x) / tileSize;
+                            uvs[i * 2 + 1] = (y - gBox.min.y) / tileSize;
+                        }
+                    }
+                    mesh.geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+                    mesh.geometry.attributes.uv.needsUpdate = true;
+                } catch (e) {
+                    console.warn("Worktop UV warning:", e);
+                }
+            }
+        });
+
+        modelGroup.userData.movableParts = movableParts;
     },
 
     /**
@@ -1002,33 +1419,37 @@ export const ModelManager = {
 function attachHardwareHighlights(group) {
     if (!group) return;
     group.traverse(child => {
-        if (child.isMesh && child.geometry && child.name !== '__selection_outline__' && child.name !== '__selection_highlight__') {
-            const edges = new THREE.EdgesGeometry(child.geometry, 25);
-            const lineMat = new THREE.LineBasicMaterial({ color: '#38bdf8', linewidth: 2 });
-            const outlineMesh = new THREE.LineSegments(edges, lineMat);
-            outlineMesh.name = '__selection_outline__';
-            outlineMesh.visible = false;
-            outlineMesh.renderOrder = 9998;
-            child.add(outlineMesh);
-            child.userData.outlineMesh = outlineMesh;
+        try {
+            if (child.isMesh && child.geometry && child.name !== '__selection_outline__' && child.name !== '__selection_highlight__') {
+                const edges = new THREE.EdgesGeometry(child.geometry, 25);
+                const lineMat = new THREE.LineBasicMaterial({ color: '#38bdf8', linewidth: 2 });
+                const outlineMesh = new THREE.LineSegments(edges, lineMat);
+                outlineMesh.name = '__selection_outline__';
+                outlineMesh.visible = false;
+                outlineMesh.renderOrder = 9998;
+                child.add(outlineMesh);
+                child.userData.outlineMesh = outlineMesh;
 
-            const highlightMat = new THREE.MeshBasicMaterial({
-                color: 0xf59e0b,
-                transparent: true,
-                opacity: 0.35,
-                depthWrite: false,
-                depthTest: true,
-                polygonOffset: true,
-                polygonOffsetFactor: -2,
-                polygonOffsetUnits: -4,
-                side: THREE.DoubleSide
-            });
-            const highlightMesh = new THREE.Mesh(child.geometry, highlightMat);
-            highlightMesh.name = '__selection_highlight__';
-            highlightMesh.visible = false;
-            highlightMesh.renderOrder = 9999;
-            child.add(highlightMesh);
-            child.userData.highlightMesh = highlightMesh;
+                const highlightMat = new THREE.MeshBasicMaterial({
+                    color: 0xf59e0b,
+                    transparent: true,
+                    opacity: 0.35,
+                    depthWrite: false,
+                    depthTest: true,
+                    polygonOffset: true,
+                    polygonOffsetFactor: -2,
+                    polygonOffsetUnits: -4,
+                    side: THREE.DoubleSide
+                });
+                const highlightMesh = new THREE.Mesh(child.geometry, highlightMat);
+                highlightMesh.name = '__selection_highlight__';
+                highlightMesh.visible = false;
+                highlightMesh.renderOrder = 9999;
+                child.add(highlightMesh);
+                child.userData.highlightMesh = highlightMesh;
+            }
+        } catch (e) {
+            console.warn("attachHardwareHighlights mesh warning:", e);
         }
     });
 }
