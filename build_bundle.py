@@ -4,6 +4,8 @@ modules = [
     'js/textures.js',
     'js/modelManager.js',
     'js/roomManager.js',
+    'js/priceManager.js',
+    'js/partsManager.js',
     'js/scene3d.js',
     'js/boardManager.js',
     'js/snapEngine.js',

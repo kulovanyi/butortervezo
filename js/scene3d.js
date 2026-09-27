@@ -824,14 +824,19 @@ export class Scene3D {
                 this.orthoCamera.up.set(0, 1, 0);
             } else if (viewName === 'top') {
                 if (window.roomManager && window.roomManager.isEnabled()) {
-                    maxDimH = Math.max(size.x, window.roomManager.width + 800);
-                    maxDimV = Math.max(size.z, window.roomManager.depth + 800);
+                    const rbb = window.roomManager.getBoundingBox();
+                    const rCenter = window.roomManager.getCenter();
+                    center.x = rCenter.x;
+                    center.z = rCenter.z;
+                    maxDimH = Math.max(size.x, (rbb.width || 4000) + 1200);
+                    maxDimV = Math.max(size.z, (rbb.depth || 3000) + 1200);
                 } else {
                     maxDimH = Math.max(size.x, 500);
                     maxDimV = Math.max(size.z, 500);
                 }
                 // Felülnézetben a képernyő teteje a bútor hátulja felé mutat (-Z)
                 this.orthoCamera.up.set(0, 0, -1);
+                this.controls.mouseButtons.RIGHT = THREE.MOUSE.PAN;
             } else if (viewName === 'right' || viewName === 'left') {
                 maxDimH = Math.max(size.z, 500);
                 maxDimV = Math.max(size.y, 500);
@@ -853,6 +858,7 @@ export class Scene3D {
             this.orthoCamera.right = orthoHalfW;
             this.orthoCamera.top = orthoHalfH;
             this.orthoCamera.bottom = -orthoHalfH;
+            this.orthoCamera.zoom = 1;
             this.orthoCamera.updateProjectionMatrix();
 
             const dist = 3000;
@@ -864,8 +870,9 @@ export class Scene3D {
                     this.orthoCamera.position.set(center.x, center.y, center.z - dist);
                     break;
                 case 'top':
-                    const topTargetY = (window.roomManager && window.roomManager.isEnabled()) ? window.roomManager.height : center.y;
-                    this.orthoCamera.position.set(center.x, topTargetY + dist, center.z);
+                    this.orthoCamera.position.set(center.x, 8000, center.z);
+                    this.orthoCamera.up.set(0, 0, -1);
+                    this.controls.target.set(center.x, 0, center.z);
                     break;
                 case 'right':
                     this.orthoCamera.position.set(center.x + dist, center.y, center.z);
@@ -875,9 +882,13 @@ export class Scene3D {
                     break;
             }
 
-            this.controls.target.copy(center);
-            this.orthoCamera.lookAt(center);
-            this.controls.update();
+            if (viewName === 'top') {
+                this.orthoCamera.lookAt(center.x, 0, center.z);
+            } else {
+                this.controls.target.copy(center);
+                this.orthoCamera.lookAt(center);
+                this.controls.update();
+            }
 
         } else {
             // SZABAD 3D PERSPEKTIVIKUS NÉZET
@@ -885,6 +896,7 @@ export class Scene3D {
             this.controls.object = this.perspCamera;
             this.transformControls.camera = this.perspCamera;
             this.controls.enableRotate = true;
+            this.controls.mouseButtons.RIGHT = null;
             this.perspCamera.up.set(0, 1, 0);
 
             const maxDim = Math.max(size.x, size.y, size.z, 600);
@@ -1937,10 +1949,17 @@ export class Scene3D {
         requestAnimationFrame(this.animate);
         const delta = Math.min(0.1, this.clock.getDelta());
 
-        if (this.isRMBDown) {
-            this.updateUnrealFly(delta);
+        if (this.currentViewMode === 'top' || (window.roomManager && window.roomManager.is2DMode)) {
+            // Szigorú 2D felülnézet: kamera pontosan a célpont felett áll függőlegesen lefelé nézve (0 torzítás)
+            this.orthoCamera.position.set(this.controls.target.x, 8000, this.controls.target.z);
+            this.orthoCamera.up.set(0, 0, -1);
+            this.orthoCamera.lookAt(this.controls.target.x, 0, this.controls.target.z);
         } else {
-            this.controls.update();
+            if (this.isRMBDown) {
+                this.updateUnrealFly(delta);
+            } else {
+                this.controls.update();
+            }
         }
 
         // Ajtók és fiókok folytonos, sima animációjának frissítése (egyedi és globális nyitás)

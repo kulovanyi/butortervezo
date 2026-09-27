@@ -115,6 +115,12 @@
                 <span>Konyha Varázsló</span>
             </button>
 
+            <!-- Központi Árlista & Színek Kezelő Gomb -->
+            <button id="btn-open-price-manager" class="btn" style="padding: 6px 14px; font-weight: 700; display:flex; align-items:center; gap:6px; background: linear-gradient(135deg, #10b981, #059669); border: 1px solid #059669; color:#fff;" title="Központi Árlista és Bútorlapszín Kategóriák Kezelése">
+                <span>💰</span>
+                <span>Árlista & Színek</span>
+            </button>
+
             <!-- Egységes Export Gomb & Lenyíló Menü -->
             <div class="dropdown-export-wrapper" id="wrapper-export-dropdown" style="position:relative; display:inline-block;">
                 <button id="btn-main-export" class="btn btn-primary" style="padding: 6px 14px; font-weight: 700; display:flex; align-items:center; gap:6px; background: linear-gradient(135deg, #2563eb, #1d4ed8); border: 1px solid rgba(59,130,246,0.5);" title="Terv exportálása (OBJ, JSON, Kép)">
@@ -354,6 +360,12 @@
                 <button id="btn-toggle-room" class="floating-btn" title="Alap Szoba be/kikapcsolása (padló, falak és fali snappelés)">
                     <span class="floating-btn-icon" style="display:inline-flex; align-items:center; font-size:15px;">🏠</span>
                     <span id="btn-toggle-room-text">Szoba</span>
+                </button>
+
+                <!-- 2D Alaprajz & Szobatervező gomb -->
+                <button id="btn-toolbar-2d-floorplan" class="floating-btn" title="2D Alaprajz: Váltás felülnézetbe szerkesztőmódba (falak, sarkok méretezése)">
+                    <span class="floating-btn-icon" style="display:inline-flex; align-items:center; font-size:15px;">📐</span>
+                    <span id="btn-toolbar-2d-floorplan-text">2D Alaprajz</span>
                 </button>
             </div>
 
@@ -2066,6 +2078,475 @@
         </div>
     </div>
 
+    <!-- Alkatrész- és Vasalatlista Modális Ablak (Parts & Hardware List) -->
+    <div id="modal-element-parts" class="modal-overlay">
+        <div class="modal-dialog" style="max-width: 980px; width: 96%;">
+            <div class="modal-header">
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="font-size:20px;">🔩</span>
+                    <div>
+                        <div class="modal-title" style="margin:0;">Alkatrész- és Bútorlap Lista</div>
+                        <div style="font-size:11px; color:var(--text-muted);">Vasalatok, csavarok, bútorlapok, munkalap és kalkulált gyártási árak</div>
+                    </div>
+                </div>
+                <button class="modal-close-btn btn-close-modal" data-modal="modal-element-parts">✕</button>
+            </div>
+
+            <!-- Fülváltó sáv: Vasalatok vs. Bútorlapok & Munkalap -->
+            <div class="parts-tabs-bar" style="display:flex; gap:8px; border-bottom:1px solid var(--border-color); padding:10px 16px 0 16px; background:rgba(0,0,0,0.15);">
+                <button type="button" class="btn btn-sm btn-parts-tab active" data-parts-tab="hardware" style="padding:6px 16px; font-weight:700; border-radius:6px 6px 0 0; display:flex; align-items:center; gap:6px; border-bottom:none;">
+                    <span>🔩</span>
+                    <span>Vasalatok & Alkatrészek</span>
+                </button>
+                <button type="button" class="btn btn-sm btn-parts-tab" data-parts-tab="boards" style="padding:6px 16px; font-weight:700; border-radius:6px 6px 0 0; display:flex; align-items:center; gap:6px; border-bottom:none; opacity:0.8;">
+                    <span>🪵</span>
+                    <span>Bútorlapok & Munkalap</span>
+                </button>
+            </div>
+
+            <div class="modal-body" style="padding:16px; max-height:72vh; overflow-y:auto; display:flex; flex-direction:column; gap:14px;">
+                
+                <!-- Bútor elem infókártya -->
+                <div id="parts-element-card" style="display:flex; align-items:center; gap:14px; background:rgba(255,255,255,0.03); border:1px solid var(--border-color); border-radius:var(--radius-md); padding:10px 14px;">
+                    <div id="parts-elem-thumb" style="width:56px; height:56px; min-width:56px; border-radius:var(--radius-sm); overflow:hidden; background:#0b1120; border:1px solid rgba(168,85,247,0.3); display:flex; align-items:center; justify-content:center;">
+                        <span style="font-size:26px;">🧊</span>
+                    </div>
+                    <div style="flex:1; min-width:0;">
+                        <div style="display:flex; align-items:center; gap:8px; margin-bottom:2px;">
+                            <h3 id="parts-elem-name" style="margin:0; font-size:14px; font-weight:700; color:var(--text-primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Elem Neve</h3>
+                            <span id="parts-elem-category" style="font-size:10px; color:#c084fc; background:rgba(168,85,247,0.18); border:1px solid rgba(168,85,247,0.35); padding:1px 6px; border-radius:4px; font-weight:600;">Alsószekrény</span>
+                        </div>
+                        <div id="parts-elem-details" style="font-size:11px; color:#94a3b8;">
+                            📁 Fájl: ef_60.glb | 📐 Szélesség: 600 mm
+                        </div>
+                    </div>
+                    <!-- Költség összesítő kártya a fejlécben -->
+                    <div style="background:rgba(16, 185, 129, 0.1); border:1px solid rgba(16, 185, 129, 0.3); border-radius:var(--radius-sm); padding:6px 12px; text-align:right;">
+                        <div style="font-size:10px; color:#6ee7b7; font-weight:600; text-transform:uppercase;">Becsült Összköltség</div>
+                        <div id="header-total-element-price" style="font-size:16px; font-weight:800; color:#10b981;">0 Ft</div>
+                    </div>
+                </div>
+
+                <!-- 1. FÜL: VASALATOK ÉS ALKATRÉSZEK -->
+                <div id="pane-parts-hardware" class="parts-pane active" style="display:flex; flex-direction:column; gap:12px;">
+                    <!-- Összeépítési mód gyorsváltó (Csavaros vs Tiplis vs Excenteres) -->
+                    <div style="background:rgba(56, 189, 248, 0.05); border:1px solid rgba(56, 189, 248, 0.25); border-radius:var(--radius-md); padding:10px 14px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                            <span style="font-size:12px; font-weight:700; color:#38bdf8;">🔨 Összeépítési Mód (Kötéstípus váltó):</span>
+                            <span style="font-size:11px; color:var(--text-muted);">Egy kattintással kicseréli a korpusz összeépítő elemeket</span>
+                        </div>
+                        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                            <button type="button" class="btn btn-sm btn-joint-preset" data-joint="screw" style="padding:5px 12px; font-size:11px; font-weight:600;">
+                                <span>🔩 Konfirmátor csavaros (Alap)</span>
+                            </button>
+                            <button type="button" class="btn btn-sm btn-joint-preset" data-joint="dowel" style="padding:5px 12px; font-size:11px; font-weight:600;">
+                                <span>🪵 Tiplis (Fa köldökcsap + ragasztó)</span>
+                            </button>
+                            <button type="button" class="btn btn-sm btn-joint-preset" data-joint="minifix" style="padding:5px 12px; font-size:11px; font-weight:600;">
+                                <span>⚙️ Excenteres (Minifix + tipli)</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Alkatrészlista Táblázat (Árakkal, a fejlécből szedve) -->
+                    <div style="border:1px solid var(--border-color); border-radius:var(--radius-md); overflow:hidden; background:rgba(0,0,0,0.2);">
+                        <div style="max-height:330px; overflow-y:auto;">
+                            <table class="parts-table" style="width:100%; border-collapse:collapse; text-align:left; font-size:12px;">
+                                <thead>
+                                    <tr style="background:rgba(255,255,255,0.05); border-bottom:1px solid var(--border-color); color:var(--text-secondary); font-size:10px; text-transform:uppercase; letter-spacing:0.5px;">
+                                        <th style="padding:8px 10px; width:26%;">Tétel / Megnevezés</th>
+                                        <th style="padding:8px 6px; width:15%;">Kategória</th>
+                                        <th style="padding:8px 6px; width:14%; text-align:center;">Mennyiség</th>
+                                        <th style="padding:8px 6px; width:7%;">Egység</th>
+                                        <th style="padding:8px 6px; width:11%; text-align:right;">Egységár</th>
+                                        <th style="padding:8px 6px; width:11%; text-align:right;">Tételár</th>
+                                        <th style="padding:8px 6px; width:11%;">Megjegyzés</th>
+                                        <th style="padding:8px 6px; width:5%; text-align:center;">Művelet</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="parts-table-body">
+                                    <!-- Dinamikusan generálva -->
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Alsó eszköztár a táblázat alatt -->
+                        <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; background:rgba(255,255,255,0.02); border-top:1px solid var(--border-color);">
+                            <button type="button" id="btn-add-part-row" class="btn btn-sm" style="background:rgba(16, 185, 129, 0.15); color:#10b981; border:1px solid rgba(16, 185, 129, 0.35); font-weight:600; padding:4px 10px; font-size:11px;">
+                                <span>➕ Új tétel hozzáadása</span>
+                            </button>
+                            <div id="parts-summary-badge" style="font-size:12px; font-weight:600; color:#38bdf8;">
+                                Összesen: 0 tétel, 0 db alkatrész (0 Ft)
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2. FÜL: BÚTORLAPOK ÉS MUNKALAP -->
+                <div id="pane-parts-boards" class="parts-pane" style="display:none; flex-direction:column; gap:12px;">
+                    <div style="background:rgba(245, 158, 11, 0.06); border:1px solid rgba(245, 158, 11, 0.25); border-radius:var(--radius-md); padding:10px 14px; font-size:11px; color:#f8fafc;">
+                        ℹ️ A bútorlapok m² ára és a munkalap fm ára a fejlécben található <strong>Árlistából</strong> származik, a kiválasztott színkategória (1., 2. vagy 3. kategória) alapján.
+                    </div>
+
+                    <!-- Bútorlapok Táblázata -->
+                    <div style="border:1px solid var(--border-color); border-radius:var(--radius-md); overflow:hidden; background:rgba(0,0,0,0.2);">
+                        <div style="max-height:350px; overflow-y:auto;">
+                            <table class="parts-table" style="width:100%; border-collapse:collapse; text-align:left; font-size:12px;">
+                                <thead>
+                                    <tr style="background:rgba(255,255,255,0.05); border-bottom:1px solid var(--border-color); color:var(--text-secondary); font-size:10px; text-transform:uppercase; letter-spacing:0.5px;">
+                                        <th style="padding:8px 10px; width:25%;">Tétel / Lap megnevezése</th>
+                                        <th style="padding:8px 6px; width:18%;">Méretek (mm)</th>
+                                        <th style="padding:8px 6px; width:17%;">Szín / Anyag</th>
+                                        <th style="padding:8px 6px; width:8%; text-align:center;">Darab</th>
+                                        <th style="padding:8px 6px; width:10%; text-align:right;">Felület / fm</th>
+                                        <th style="padding:8px 6px; width:11%; text-align:right;">Egységár</th>
+                                        <th style="padding:8px 6px; width:11%; text-align:right;">Tételár</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="parts-boards-table-body">
+                                    <!-- Dinamikusan generálva -->
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Lapok összegezve -->
+                        <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; background:rgba(255,255,255,0.02); border-top:1px solid var(--border-color);">
+                            <span style="font-size:11px; color:var(--text-muted);">Minden élzárás 0.4 - 2mm ABS gépileg számolva</span>
+                            <div id="boards-summary-badge" style="font-size:12px; font-weight:600; color:#f59e0b;">
+                                Összesen: 0 db lap, 0.00 m² (0 Ft)
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Lábléc: Összesített árak & Gombok -->
+            <div class="modal-footer" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+                <button type="button" id="btn-reset-parts" class="btn btn-sm" style="color:#f59e0b; border-color:rgba(245, 158, 11, 0.4);" title="Alapértelmezett kalkuláció visszaállítása">
+                    <span>🔄 Alaphelyzetbe állítás</span>
+                </button>
+
+                <!-- Részletes árösszesítő -->
+                <div style="display:flex; align-items:center; gap:12px; font-size:12px; background:rgba(0,0,0,0.3); padding:6px 14px; border-radius:var(--radius-sm); border:1px solid var(--border-color);">
+                    <span>🔩 Vasalatok: <strong id="footer-hw-price" style="color:#38bdf8;">0 Ft</strong></span>
+                    <span style="color:var(--text-muted);">+</span>
+                    <span>🪵 Lapok: <strong id="footer-boards-price" style="color:#f59e0b;">0 Ft</strong></span>
+                    <span style="color:var(--text-muted);">=</span>
+                    <span style="font-size:13px;">💰 ÖSSZESEN: <strong id="footer-total-price" style="color:#10b981; font-size:15px;">0 Ft</strong></span>
+                </div>
+
+                <div style="display:flex; gap:8px;">
+                    <button class="btn btn-close-modal" data-modal="modal-element-parts">Mégse</button>
+                    <button type="button" id="btn-save-parts" class="btn btn-primary">
+                        <span>💾 Mentés & Alkalmazás</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- KÖZPONTI ÁRLISTA & SZÍNKATEGÓRIA KEZELŐ MODÁLIS ABLAK -->
+    <div id="modal-price-manager" class="modal-overlay">
+        <div class="modal-dialog" style="max-width: 960px; width: 95%;">
+            <div class="modal-header">
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="font-size:22px;">💰</span>
+                    <div>
+                        <div class="modal-title" style="margin:0;">Központi Árlista & Színek Kezelése</div>
+                        <div style="font-size:11px; color:var(--text-muted);">1-es, 2-es, 3-as színkategória m² árak, színek besorolása és vasalat egységárak</div>
+                    </div>
+                </div>
+                <button class="modal-close-btn btn-close-modal" data-modal="modal-price-manager">✕</button>
+            </div>
+
+            <!-- Fülváltó sáv az Árlistában -->
+            <div class="price-tabs-bar" style="display:flex; gap:8px; border-bottom:1px solid var(--border-color); padding:10px 16px 0 16px; background:rgba(0,0,0,0.15);">
+                <button type="button" class="btn btn-sm btn-price-tab active" data-price-tab="categories" style="padding:6px 14px; font-weight:700; border-radius:6px 6px 0 0; display:flex; align-items:center; gap:6px; border-bottom:none;">
+                    <span>🎨</span>
+                    <span>Színkategóriák & M² Árak</span>
+                </button>
+                <button type="button" class="btn btn-sm btn-price-tab" data-price-tab="colors" style="padding:6px 14px; font-weight:700; border-radius:6px 6px 0 0; display:flex; align-items:center; gap:6px; border-bottom:none; opacity:0.8;">
+                    <span>🌈</span>
+                    <span>Színek Besorolása</span>
+                </button>
+                <button type="button" class="btn btn-sm btn-price-tab" data-price-tab="hardware" style="padding:6px 14px; font-weight:700; border-radius:6px 6px 0 0; display:flex; align-items:center; gap:6px; border-bottom:none; opacity:0.8;">
+                    <span>🔩</span>
+                    <span>Alkatrész Egységárak</span>
+                </button>
+                <button type="button" class="btn btn-sm btn-price-tab" data-price-tab="exportimport" style="padding:6px 14px; font-weight:700; border-radius:6px 6px 0 0; display:flex; align-items:center; gap:6px; border-bottom:none; opacity:0.8;">
+                    <span>📊</span>
+                    <span>Export / Import (Excel)</span>
+                </button>
+            </div>
+
+            <div class="modal-body" style="padding:16px; max-height:72vh; overflow-y:auto; display:flex; flex-direction:column; gap:16px;">
+                
+                <!-- 1. SZEKCIÓ: KATEGÓRIÁK & M² ÁRAK -->
+                <div id="pane-price-categories" class="price-pane active" style="display:flex; flex-direction:column; gap:14px;">
+                    <div style="font-size:12px; color:var(--text-secondary);">
+                        Állítsd be az 1-es, 2-es és 3-as kategóriájú bútorlapok, valamint a munkalap és hátfal egységárait. Minden bútor ezen díjszabás alapján kalkulálódik.
+                    </div>
+
+                    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:14px;">
+                        <!-- 1. Kategória -->
+                        <div style="background:rgba(59, 130, 246, 0.08); border:1px solid rgba(59, 130, 246, 0.3); border-radius:var(--radius-md); padding:14px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                                <span style="font-size:14px; font-weight:700; color:#60a5fa;">1. Kategória (Alap / Uni)</span>
+                                <span style="font-size:10px; background:#1e3a8a; color:#93c5fd; padding:2px 6px; border-radius:4px; font-weight:600;">Uni színek</span>
+                            </div>
+                            <div style="font-size:11px; color:#94a3b8; margin-bottom:12px;">Fehér, fekete, szürke és alap egyszínű laminált bútorlapok.</div>
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <input type="number" id="price-input-cat1" class="form-control" value="6500" min="0" step="100" style="font-size:15px; font-weight:700; color:#60a5fa;">
+                                <span style="font-size:13px; font-weight:600; color:var(--text-muted); white-space:nowrap;">Ft / m²</span>
+                            </div>
+                        </div>
+
+                        <!-- 2. Kategória -->
+                        <div style="background:rgba(245, 158, 11, 0.08); border:1px solid rgba(245, 158, 11, 0.3); border-radius:var(--radius-md); padding:14px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                                <span style="font-size:14px; font-weight:700; color:#fbbf24;">2. Kategória (Standard Fa)</span>
+                                <span style="font-size:10px; background:#78350f; color:#fde68a; padding:2px 6px; border-radius:4px; font-weight:600;">Faerezetek</span>
+                            </div>
+                            <div style="font-size:11px; color:#94a3b8; margin-bottom:12px;">Standard tölgy, bükk, dió, kőris és fenyő faerezetes bútorlapok.</div>
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <input type="number" id="price-input-cat2" class="form-control" value="9800" min="0" step="100" style="font-size:15px; font-weight:700; color:#fbbf24;">
+                                <span style="font-size:13px; font-weight:600; color:var(--text-muted); white-space:nowrap;">Ft / m²</span>
+                            </div>
+                        </div>
+
+                        <!-- 3. Kategória -->
+                        <div style="background:rgba(168, 85, 247, 0.08); border:1px solid rgba(168, 85, 247, 0.3); border-radius:var(--radius-md); padding:14px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                                <span style="font-size:14px; font-weight:700; color:#c084fc;">3. Kategória (Prémium)</span>
+                                <span style="font-size:10px; background:#581c87; color:#e9d5ff; padding:2px 6px; border-radius:4px; font-weight:600;">Prémium / Akril</span>
+                            </div>
+                            <div style="font-size:11px; color:#94a3b8; margin-bottom:12px;">Szinkronpórusos, szupermatt, ujjlenyomatmentes és akril lapok.</div>
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <input type="number" id="price-input-cat3" class="form-control" value="14500" min="0" step="100" style="font-size:15px; font-weight:700; color:#c084fc;">
+                                <span style="font-size:13px; font-weight:600; color:var(--text-muted); white-space:nowrap;">Ft / m²</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Munkalap és Hátfal Árak -->
+                    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:14px; margin-top:4px;">
+                        <div style="background:rgba(255, 255, 255, 0.03); border:1px solid var(--border-color); border-radius:var(--radius-md); padding:14px;">
+                            <div style="font-size:13px; font-weight:700; color:var(--text-primary); margin-bottom:4px;">🪵 Konyhai Munkalap (38 mm)</div>
+                            <div style="font-size:11px; color:#94a3b8; margin-bottom:10px;">Postforming vagy egyenes élű munkalap folyóméter ára (600 mm mélységben).</div>
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <input type="number" id="price-input-worktop" class="form-control" value="18000" min="0" step="500" style="font-size:14px; font-weight:700;">
+                                <span style="font-size:12px; font-weight:600; color:var(--text-muted); white-space:nowrap;">Ft / fm</span>
+                            </div>
+                        </div>
+
+                        <div style="background:rgba(255, 255, 255, 0.03); border:1px solid var(--border-color); border-radius:var(--radius-md); padding:14px;">
+                            <div style="font-size:13px; font-weight:700; color:var(--text-primary); margin-bottom:4px;">📄 HDF Hátfal Lemez (3 mm)</div>
+                            <div style="font-size:11px; color:#94a3b8; margin-bottom:10px;">Egyoldalt fehér vagy szürke lakkozott 3 mm vastag HDF hátlap m² ára.</div>
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <input type="number" id="price-input-backpanel" class="form-control" value="2800" min="0" step="100" style="font-size:14px; font-weight:700;">
+                                <span style="font-size:12px; font-weight:600; color:var(--text-muted); white-space:nowrap;">Ft / m²</span>
+                            </div>
+                        </div>
+
+                        <div style="background:rgba(255, 255, 255, 0.03); border:1px solid var(--border-color); border-radius:var(--radius-md); padding:14px;">
+                            <div style="font-size:13px; font-weight:700; color:var(--text-primary); margin-bottom:4px;">📏 ABS Élzárás Gépi Munkadíj</div>
+                            <div style="font-size:11px; color:#94a3b8; margin-bottom:10px;">0.4 mm - 2.0 mm vastag ABS élzárás anyag- és munkadíja.</div>
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <input type="number" id="price-input-edge" class="form-control" value="450" min="0" step="50" style="font-size:14px; font-weight:700;">
+                                <span style="font-size:12px; font-weight:600; color:var(--text-muted); white-space:nowrap;">Ft / fm</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2. SZEKCIÓ: SZÍNEK BESOROLÁSA -->
+                <div id="pane-price-colors" class="price-pane" style="display:none; flex-direction:column; gap:12px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                        <div style="font-size:12px; color:var(--text-secondary);">
+                            Rendeld hozzá a rendszerben lévő színeket az <strong>1-es</strong>, <strong>2-es</strong> vagy <strong>3-as</strong> kategóriához!
+                        </div>
+                        <button type="button" id="btn-toggle-add-color-form" class="btn btn-sm" style="background:rgba(56, 189, 248, 0.15); border:1px solid #38bdf8; color:#38bdf8; font-weight:600; display:flex; align-items:center; gap:6px;">
+                            <span>➕</span> Új Szín Hozzáadása
+                        </button>
+                    </div>
+
+                    <!-- Lenyíló új szín felvételi panel -->
+                    <div id="box-add-price-color" style="display:none; background:rgba(0,0,0,0.3); border:1px solid rgba(56, 189, 248, 0.3); border-radius:var(--radius-md); padding:12px; gap:10px; flex-direction:column;">
+                        <div style="font-size:12px; font-weight:700; color:#38bdf8;">✨ Új Szín / Bútorlap Anyag Felvétele</div>
+                        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap:10px; align-items:end;">
+                            <div>
+                                <label class="form-label" style="font-size:11px;">Megnevezés *</label>
+                                <input type="text" id="new-color-name" class="form-control form-control-sm" placeholder="pl. Kasmír Szürke">
+                            </div>
+                            <div>
+                                <label class="form-label" style="font-size:11px;">Azonosító kód</label>
+                                <input type="text" id="new-color-id" class="form-control form-control-sm" placeholder="pl. front_kasmir">
+                            </div>
+                            <div>
+                                <label class="form-label" style="font-size:11px;">Kategória</label>
+                                <select id="new-color-cat" class="form-control form-control-sm">
+                                    <option value="1">1. Kategória (Alap / Uni)</option>
+                                    <option value="2" selected>2. Kategória (Standard fa)</option>
+                                    <option value="3">3. Kategória (Prémium)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="form-label" style="font-size:11px;">Típus</label>
+                                <select id="new-color-type" class="form-control form-control-sm">
+                                    <option value="front">🚪 Front / Bútorlap</option>
+                                    <option value="worktop">🪵 Munkalap</option>
+                                </select>
+                            </div>
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <div>
+                                    <label class="form-label" style="font-size:11px;">Szín</label>
+                                    <input type="color" id="new-color-hex" value="#c5b9a8" style="width:36px; height:28px; border:none; cursor:pointer; background:transparent; padding:0;">
+                                </div>
+                                <button type="button" id="btn-submit-add-color" class="btn btn-sm btn-primary" style="flex:1; height:30px; font-weight:700;">
+                                    💾 Mentés
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="border:1px solid var(--border-color); border-radius:var(--radius-md); overflow:hidden; background:rgba(0,0,0,0.2);">
+                        <div style="max-height:400px; overflow-y:auto;">
+                            <table style="width:100%; border-collapse:collapse; text-align:left; font-size:12px;">
+                                <thead>
+                                    <tr style="background:rgba(255,255,255,0.05); border-bottom:1px solid var(--border-color); color:var(--text-secondary); font-size:11px; text-transform:uppercase;">
+                                        <th style="padding:8px 12px; width:34%;">Szín / Textúra Neve</th>
+                                        <th style="padding:8px 12px; width:15%;">Típus</th>
+                                        <th style="padding:8px 12px; width:30%; text-align:center;">Kategória Kiválasztása</th>
+                                        <th style="padding:8px 12px; width:13%; text-align:right;">Alkalmazott Ár</th>
+                                        <th style="padding:8px 12px; width:8%; text-align:center;">Törlés</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="price-colors-table-body">
+                                    <!-- Dinamikusan renderelve -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3. SZEKCIÓ: ALKATRÉSZ & VASALAT EGYSÉGÁRAK -->
+                <div id="pane-price-hardware" class="price-pane" style="display:none; flex-direction:column; gap:12px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                        <div style="font-size:12px; color:var(--text-secondary);">
+                            Itt adhatod meg az összes vasalat, láb, csavar, pánt és fióksín egységárát (Ft).
+                        </div>
+                        <button type="button" id="btn-toggle-add-hw-form" class="btn btn-sm" style="background:rgba(245, 158, 11, 0.15); border:1px solid #f59e0b; color:#fbbf24; font-weight:600; display:flex; align-items:center; gap:6px;">
+                            <span>➕</span> Új Vasalat Hozzáadása
+                        </button>
+                    </div>
+
+                    <!-- Lenyíló új vasalat felvételi panel -->
+                    <div id="box-add-price-hw" style="display:none; background:rgba(0,0,0,0.3); border:1px solid rgba(245, 158, 11, 0.3); border-radius:var(--radius-md); padding:12px; gap:10px; flex-direction:column;">
+                        <div style="font-size:12px; font-weight:700; color:#fbbf24;">🔩 Új Vasalat vagy Alkatrész Felvétele</div>
+                        <div style="display:grid; grid-template-columns: 2fr 1fr 1fr auto; gap:10px; align-items:end;">
+                            <div>
+                                <label class="form-label" style="font-size:11px;">Megnevezés *</label>
+                                <input type="text" id="new-hw-name" class="form-control form-control-sm" placeholder="pl. Tip-On nyomógombos kilökő">
+                            </div>
+                            <div>
+                                <label class="form-label" style="font-size:11px;">Egység</label>
+                                <input type="text" id="new-hw-unit" class="form-control form-control-sm" placeholder="db / pár / szett" value="db">
+                            </div>
+                            <div>
+                                <label class="form-label" style="font-size:11px;">Egységár (Ft) *</label>
+                                <input type="number" id="new-hw-price" class="form-control form-control-sm" placeholder="pl. 1500" min="0" step="10">
+                            </div>
+                            <button type="button" id="btn-submit-add-hw" class="btn btn-sm btn-primary" style="height:30px; font-weight:700;">
+                                💾 Hozzáadás
+                            </button>
+                        </div>
+                    </div>
+
+                    <div style="border:1px solid var(--border-color); border-radius:var(--radius-md); overflow:hidden; background:rgba(0,0,0,0.2);">
+                        <div style="max-height:400px; overflow-y:auto;">
+                            <table style="width:100%; border-collapse:collapse; text-align:left; font-size:12px;">
+                                <thead>
+                                    <tr style="background:rgba(255,255,255,0.05); border-bottom:1px solid var(--border-color); color:var(--text-secondary); font-size:11px; text-transform:uppercase;">
+                                        <th style="padding:8px 12px; width:48%;">Vasalat / Alkatrész Megnevezése</th>
+                                        <th style="padding:8px 12px; width:18%;">Egység</th>
+                                        <th style="padding:8px 12px; width:24%; text-align:right;">Egységár (Ft)</th>
+                                        <th style="padding:8px 12px; width:10%; text-align:center;">Törlés</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="price-hardware-table-body">
+                                    <!-- Dinamikusan renderelve -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 4. SZEKCIÓ: EXPORT / IMPORT (EXCEL CSV) -->
+                <div id="pane-price-exportimport" class="price-pane" style="display:none; flex-direction:column; gap:16px;">
+                    <div style="background:rgba(59, 130, 246, 0.08); border:1px solid rgba(59, 130, 246, 0.25); border-radius:var(--radius-md); padding:14px; font-size:12px; line-height:1.6; color:var(--text-secondary);">
+                        <strong style="color:#60a5fa; font-size:13px; display:block; margin-bottom:4px;">📊 Excel és Táblázatkezelő Integráció</strong>
+                        Exportáld a teljes árlistát Excel-kompatibilis CSV fájlba, ahol kényelmesen áttekintheted és módosíthatod az összes árat, vagy új sorokat vehetsz fel.
+                        A módosított fájl visszatöltésekor a rendszer <strong>automatikusan frissíti a meglévő árakat, és hozzáadja az újonnan talált színeket és vasalatokat!</strong>
+                    </div>
+
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:16px;">
+                        <!-- EXPORT KÁRTYA -->
+                        <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-color); border-radius:var(--radius-md); padding:16px; display:flex; flex-direction:column; gap:12px;">
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <span style="font-size:20px;">📥</span>
+                                <div>
+                                    <div style="font-size:14px; font-weight:700; color:var(--text-primary);">Árlista Exportálása</div>
+                                    <div style="font-size:11px; color:var(--text-muted);">Letöltés pontosvesszős (.csv) formátumban</div>
+                                </div>
+                            </div>
+                            <p style="font-size:12px; color:var(--text-muted); margin:0;">
+                                Tartalmazza a kategória m² árakat, a munkalapot, az összes betöltött színt és a teljes vasalatlistát. Közvetlenül megnyitható Microsoft Excelben vagy Google Táblázatokban.
+                            </p>
+                            <button type="button" id="btn-export-price-csv" class="btn btn-primary" style="margin-top:auto; font-weight:700; background:linear-gradient(135deg, #0284c7, #0369a1); border-color:#0284c7; display:flex; align-items:center; justify-content:center; gap:8px;">
+                                <span>📥</span> Árlista Letöltése Excelbe (.CSV)
+                            </button>
+                        </div>
+
+                        <!-- IMPORT KÁRTYA -->
+                        <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-color); border-radius:var(--radius-md); padding:16px; display:flex; flex-direction:column; gap:12px;">
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <span style="font-size:20px;">📤</span>
+                                <div>
+                                    <div style="font-size:14px; font-weight:700; color:var(--text-primary);">Módosított Árlista Visszatöltése</div>
+                                    <div style="font-size:11px; color:var(--text-muted);">Automatikus árazás és új elemek felvétele</div>
+                                </div>
+                            </div>
+                            <p style="font-size:12px; color:var(--text-muted); margin:0;">
+                                Válaszd ki a szerkesztett CSV fájlt. Ha új sorokat adtál meg a táblázatban, a rendszer automatikusan felveszi őket új színként vagy új alkatrészként!
+                            </p>
+                            <input type="file" id="input-import-price-csv" accept=".csv,text/csv" style="display:none;">
+                            <button type="button" id="btn-trigger-import-csv" class="btn btn-primary" style="margin-top:auto; font-weight:700; background:linear-gradient(135deg, #10b981, #059669); border-color:#059669; display:flex; align-items:center; justify-content:center; gap:8px;">
+                                <span>📤</span> Módosított CSV Kiválasztása & Importálás
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Státusz visszajelzés -->
+                    <div id="price-import-status" style="display:none; padding:12px; border-radius:var(--radius-md); font-size:12px; background:rgba(16, 185, 129, 0.1); border:1px solid #10b981; color:#34d399;"></div>
+                </div>
+
+            </div>
+
+            <div class="modal-footer" style="display:flex; justify-content:space-between; align-items:center;">
+                <button type="button" id="btn-reset-prices" class="btn btn-sm" style="color:#f59e0b; border-color:rgba(245, 158, 11, 0.4);" title="Eredeti gyári árak visszaállítása">
+                    <span>🔄 Alapértelmezett Árak</span>
+                </button>
+                <div style="display:flex; gap:8px;">
+                    <button class="btn btn-close-modal" data-modal="modal-price-manager">Mégse</button>
+                    <button type="button" id="btn-save-prices" class="btn btn-primary" style="background:linear-gradient(135deg, #10b981, #059669); border-color:#059669;">
+                        <span>💾 Árlista Mentése</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- PBR Anyagszerkesztő Modális Ablak (PBR Material Editor Studio) -->
     <div id="modal-pbr-editor" class="modal-overlay">
         <div class="modal-dialog" style="max-width: 980px; width: 95%;">
@@ -2293,6 +2774,6 @@
     </div>
 
     <!-- Betöltjük a fő alkalmazás scriptet (Működik közvetlen fájlmegnyitással és webszerverrel is) -->
-    <script src="js/bundle.js?v=5.6"></script>
+    <script src="js/bundle.js?v=6.3"></script>
 </body>
 </html>

@@ -160,12 +160,14 @@ class RoomManager {
     }
 
     /**
-     * Váltás 2D Szobatervező módba (nincs árnyék, tiszta 2D CAD)
+     * Váltás 2D Szobatervező módba (nincs árnyék, tiszta 2D CAD, szabadon méretezhető falak)
      */
     enter2DDesignMode() {
         this.enabled = true;
         this.is2DMode = true;
         this.roomGroup.visible = true;
+
+        this.buildRoom();
 
         if (window.scene3D) {
             // Árnyékok és árnyéksík kikapcsolása a tiszta 2D tervezőhöz
@@ -173,11 +175,11 @@ class RoomManager {
             if (window.scene3D.shadowPlane) window.scene3D.shadowPlane.visible = false;
             if (window.scene3D.gridHelper) window.scene3D.gridHelper.visible = true;
 
-            // Felülnézet beállítása
+            // Felülnézet beállítása és pontos szobára fókuszálás
             window.scene3D.setCameraView('top');
         }
 
-        this.buildRoom();
+        this.handlesGroup.visible = true;
         this.updateUIState();
     }
 
@@ -245,8 +247,52 @@ class RoomManager {
     }
 
     /**
+     * Pont sokszög belsejében van-e (2D X-Z sík)
+     */
+    isPointInsidePolygon(px, pz, vertices = this.vertices) {
+        if (!vertices || vertices.length < 3) return false;
+        let inside = false;
+        const n = vertices.length;
+        for (let i = 0, j = n - 1; i < n; j = i++) {
+            const xi = vertices[i].x, zi = vertices[i].z;
+            const xj = vertices[j].x, zj = vertices[j].z;
+            const intersect = ((zi > pz) !== (zj > pz))
+                && (px < (xj - xi) * (pz - zi) / (zj - zi) + xi);
+            if (intersect) inside = !inside;
+        }
+        return inside;
+    }
+
+    /**
+     * Kifelé mutató egység-normálvektor számítása egy falszakaszhoz
+     */
+    getOutwardNormalForSegment(p1, p2) {
+        const dx = p2.x - p1.x;
+        const dz = p2.z - p1.z;
+        const len = Math.hypot(dx, dz);
+        if (len < 0.001) return new THREE.Vector3(0, 0, 1);
+
+        const nx1 = -dz / len;
+        const nz1 = dx / len;
+        const nx2 = dz / len;
+        const nz2 = -dx / len;
+
+        const midX = (p1.x + p2.x) / 2;
+        const midZ = (p1.z + p2.z) / 2;
+
+        const testX1 = midX + nx1 * 20;
+        const testZ1 = midZ + nz1 * 20;
+
+        if (!this.isPointInsidePolygon(testX1, testZ1)) {
+            return new THREE.Vector3(nx1, 0, nz1);
+        } else {
+            return new THREE.Vector3(nx2, 0, nz2);
+        }
+    }
+
+    /**
      * Új fal kihúzása (Extrude) egy adott falszakaszból
-     * A falszakaszt megtöri és 1000 mm-es merőleges kiugrást (L-alakot) hoz létre!
+     * A falszakaszt megtöri és 800 mm-es merőleges kiugrást (L-alakot) hoz létre!
      */
     extrudeWallSegment(segmentIndex) {
         const n = this.vertices.length;
@@ -260,9 +306,10 @@ class RoomManager {
         const len = Math.hypot(dx, dz);
         if (len < 600) return; // Túl rövid szakasz
 
-        // Merőleges normálvektor kifelé
-        const nx = -dz / len;
-        const nz = dx / len;
+        // Pontos merőleges normálvektor kifelé
+        const outNorm = this.getOutwardNormalForSegment(p1, p2);
+        const nx = outNorm.x;
+        const nz = outNorm.z;
         const extrudeDist = 800; // 800 mm-es kiugrás
 
         // A szakasz 1/3-ánál és 2/3-ánál illesztünk be 2 új pontot
@@ -288,6 +335,10 @@ class RoomManager {
         this.vertices.splice(segmentIndex + 1, 0, v1_3, v_ext1, v_ext2, v2_3);
 
         this.buildRoom();
+        this.updateUIState();
+        if (window.scene3D && this.is2DMode) {
+            window.scene3D.setCameraView('top');
+        }
     }
 
     /**
@@ -345,17 +396,20 @@ class RoomManager {
             const midX = (p1.x + p2.x) / 2;
             const midZ = (p1.z + p2.z) / 2;
 
-            // Merőleges normálvektor
-            const normX = -Math.sin(angle);
-            const normZ = Math.cos(angle);
+            // KIFELÉ mutató normálvektor
+            const outNorm = this.getOutwardNormalForSegment(p1, p2);
 
             // Fal doboz geometria
             const wallGeo = new THREE.BoxGeometry(wallLen, H, T);
             const wallMat = this.is2DMode ? this.wall2DMaterial.clone() : this.wallMaterial.clone();
             const wallMesh = new THREE.Mesh(wallGeo, wallMat);
 
-            // Pozíció: fal közepe Y = FT + H / 2
-            wallMesh.position.set(midX + normX * (T / 2), FT + H / 2, midZ + normZ * (T / 2));
+            // Pozíció: a fal belső síkja a sokszög belső vonalán van, kifelé terjed T vastagságban
+            wallMesh.position.set(
+                midX + outNorm.x * (T / 2),
+                FT + H / 2,
+                midZ + outNorm.z * (T / 2)
+            );
             wallMesh.rotation.y = -angle;
 
             wallMesh.receiveShadow = !this.is2DMode;
@@ -366,7 +420,8 @@ class RoomManager {
                 p1: p1,
                 p2: p2,
                 wallLength: wallLen,
-                outwardNormal: new THREE.Vector3(normX, 0, normZ)
+                outwardNormal: outNorm,
+                midPoint: new THREE.Vector3(midX, FT + H / 2, midZ)
             };
 
             this.wallsGroup.add(wallMesh);
@@ -451,15 +506,14 @@ class RoomManager {
 
             // ➕ ZÖLD GOMB: ÚJ FAL KIHÚZÁSA / L-ALAKÍTÁS
             const plusSprite = this.createPlusButtonSprite(i);
-            // Kicsivel a fal mellett kívülre pozicionálva
-            const normX = -Math.sin(angle);
-            const normZ = Math.cos(angle);
-            plusSprite.position.set(midX + normX * 160, gizmoY + 5, midZ + normZ * 160);
-            plusSprite.renderOrder = 1002;
+            // Kicsivel a fal mellett pontosan KÍVÜLRE pozicionálva
+            const outNorm = this.getOutwardNormalForSegment(p1, p2);
+            plusSprite.position.set(midX + outNorm.x * 120, gizmoY + 15, midZ + outNorm.z * 120);
+            plusSprite.renderOrder = 2000;
             this.handlesGroup.add(plusSprite);
 
-            // MÉRETVONALAK (KÓTÁZÁS)
-            this.addWallDimensionLine(p1, p2, wallLen, angle, normX, normZ, gizmoY, i);
+            // MÉRETVONALAK (KÓTÁZÁS KÍVÜL - távolabb, hogy ne fedje a plusz gombot)
+            this.addWallDimensionLine(p1, p2, wallLen, angle, outNorm.x, outNorm.z, gizmoY, i);
         }
 
         // Csak felső nézetben és 2D módban láthatóak a gizmók
@@ -494,19 +548,19 @@ class RoomManager {
         const texture = new THREE.CanvasTexture(canvas);
         const mat = new THREE.SpriteMaterial({ map: texture, depthTest: false });
         const sprite = new THREE.Sprite(mat);
-        sprite.scale.set(160, 160, 1);
+        sprite.scale.set(130, 130, 1);
         sprite.userData = {
             isRoomHandle: true,
             handleType: 'add_wall',
             wallIndex: wallIndex,
             cursor: 'pointer',
-            desc: '➕ Új fal kihúzása (L-alakítás)'
+            desc: '➕ Új falrész kihúzása'
         };
         return sprite;
     }
 
     addWallDimensionLine(p1, p2, len, angle, normX, normZ, gizmoY, wallIndex) {
-        const offset = 260; // 260 mm-re a faltól kívül
+        const offset = 340; // 340 mm-re a faltól kívül, hogy elkerülje a plusz gombot
         const start = new THREE.Vector3(p1.x + normX * offset, gizmoY, p1.z + normZ * offset);
         const end = new THREE.Vector3(p2.x + normX * offset, gizmoY, p2.z + normZ * offset);
 
@@ -532,7 +586,7 @@ class RoomManager {
         const sprite = this.createDimensionSprite(text, wallIndex);
         sprite.position.copy(midPoint);
         sprite.position.y += 10;
-        sprite.renderOrder = 1001;
+        sprite.renderOrder = 999;
         this.handlesGroup.add(sprite);
     }
 
@@ -560,18 +614,18 @@ class RoomManager {
         const texture = new THREE.CanvasTexture(canvas);
         const mat = new THREE.SpriteMaterial({ map: texture, depthTest: false });
         const sprite = new THREE.Sprite(mat);
-        sprite.scale.set(380, 107, 1);
+        sprite.scale.set(300, 84, 1);
         sprite.userData = {
-            isRoomDimensionBadge: true,
-            wallIndex: wallIndex,
-            cursor: 'pointer'
+            isRoomDimensionBadge: false, // Csak tájékoztató jellegű felirat, nem nyit promptot
+            cursor: 'default'
         };
         return sprite;
     }
 
     /**
-     * DINAMIKUS KAMERA-KÖVETŐ FAL-ÁTLÁTSZÓSÁG
-     * 3D nézetben a belső teret kitakaró falak áttetszővé válnak
+     * DINAMIKUS KAMERA-KÖVETŐ FAL-ELTŰNÉS
+     * 3D nézetben a szobába való belátást akadályozó (kamera felé eső) falak
+     * automatikusan eltűnnek, hogy a felhasználó mindig tökéletesen belásson a szobába!
      */
     updateWallVisibilities(camera) {
         if (!this.enabled || !camera) return;
@@ -580,36 +634,54 @@ class RoomManager {
         this.handlesGroup.visible = isTop;
 
         if (this.is2DMode) {
-            // 2D nézetben minden fal tömör sötét CAD stílusú
+            // 2D felülnézeti CAD módban minden fal tömör és látható
             this.wallMeshes.forEach(mesh => {
+                mesh.visible = true;
                 mesh.material.opacity = 1.0;
                 mesh.material.transparent = false;
+                mesh.material.depthWrite = true;
             });
             return;
         }
 
-        // 3D Perspektivikus nézetben: kamera-követő dinamikus átlátszóság
+        // 3D Perspektivikus / Izometrikus nézetben:
+        // A kamera felé néző, szobabelsőt kitakaró elülső falak TELJESEN ELTŰNNEK,
+        // így a felhasználó bármilyen szögből szabadon belát a szobába!
         const camPos = camera.position;
-        const center = this.getCenter();
+
+        // Ellenőrizzük, hogy a kamera a szoba belsejében tartózkodik-e
+        const isCamInside = this.isPointInsidePolygon(camPos.x, camPos.z) && camPos.y >= 0 && camPos.y <= this.height;
 
         this.wallMeshes.forEach(mesh => {
             if (!mesh || !mesh.userData) return;
             const norm = mesh.userData.outwardNormal;
             if (!norm) return;
 
-            // Vektor a fal közepétől a kamerához
-            const toCam = new THREE.Vector3().subVectors(camPos, mesh.position);
-            const dot = toCam.x * norm.x + toCam.z * norm.z;
+            if (isCamInside) {
+                // Ha a kamera a szobán belül van, minden fal látható körben
+                mesh.visible = true;
+                mesh.material.opacity = 1.0;
+                mesh.material.transparent = false;
+                mesh.material.depthWrite = true;
+                return;
+            }
 
-            // Ha a kamera a fal külső oldalán van, és a fal a szoba közepe felé nézve a kamera előtt áll:
-            const isOccluding = dot > 0 && camPos.distanceTo(center) > mesh.position.distanceTo(center);
+            // Távolság a fal külső síkjától a kamera felé a normálvektor mentén
+            const toCamX = camPos.x - mesh.position.x;
+            const toCamZ = camPos.z - mesh.position.z;
+            const distFromPlane = toCamX * norm.x + toCamZ * norm.z;
 
-            const targetOpacity = isOccluding ? 0.08 : 1.0;
-            const cur = mesh.material.opacity;
-            mesh.material.opacity = THREE.MathUtils.lerp(cur, targetOpacity, 0.2);
-            mesh.material.transparent = mesh.material.opacity < 0.99;
-            mesh.material.depthWrite = !isOccluding;
-            mesh.visible = mesh.material.opacity > 0.02;
+            // Ha a kamera a fal külső oldalán van (> 10mm), akkor a fal a szoba belseje
+            // és a kamera között áll, kitakarva a látványt -> TELJESEN ELTŰNIK!
+            // Ha a kamera mögötte / belső oldalán van, akkor háttérfal -> LÁTHATÓ MARAD!
+            const shouldHide = distFromPlane > 10;
+
+            mesh.visible = !shouldHide;
+            if (!shouldHide) {
+                mesh.material.opacity = 1.0;
+                mesh.material.transparent = false;
+                mesh.material.depthWrite = true;
+            }
         });
     }
 
@@ -657,6 +729,17 @@ class RoomManager {
             btnToggleRoom.classList.toggle('btn-primary', this.enabled);
         }
 
+        const btnToolbar2D = document.getElementById('btn-toolbar-2d-floorplan');
+        if (btnToolbar2D) {
+            btnToolbar2D.classList.toggle('active', this.is2DMode);
+            btnToolbar2D.classList.toggle('btn-primary', this.is2DMode);
+        }
+
+        const label = document.getElementById('current-view-mode-label');
+        if (label) {
+            label.textContent = this.is2DMode ? '👁️ Nézet: 📐 2D Alaprajz' : '👁️ Nézet: 📐 3D Perspektíva';
+        }
+
         const bb = this.getBoundingBox();
         const inpW = document.getElementById('room-input-width');
         const inpD = document.getElementById('room-input-depth');
@@ -683,10 +766,21 @@ class RoomManager {
 
             this.raycaster.setFromCamera(this.mousePos, cam);
             const hits = this.raycaster.intersectObjects(this.handlesGroup.children, true);
+            // 1. Először a zöld ➕ gombot keressük, hogy semmi se takarhassa ki!
             for (const hit of hits) {
                 let cur = hit.object;
                 while (cur && cur !== this.handlesGroup) {
-                    if (cur.userData && (cur.userData.isRoomHandle || cur.userData.isRoomDimensionBadge)) {
+                    if (cur.userData && cur.userData.handleType === 'add_wall') {
+                        return cur;
+                    }
+                    cur = cur.parent;
+                }
+            }
+            // 2. Másodszor a sarokpontokat és falgizmókat
+            for (const hit of hits) {
+                let cur = hit.object;
+                while (cur && cur !== this.handlesGroup) {
+                    if (cur.userData && cur.userData.isRoomHandle && cur.userData.handleType) {
                         return cur;
                     }
                     cur = cur.parent;
@@ -719,35 +813,18 @@ class RoomManager {
 
             const uData = handle.userData;
 
-            // 1. Kattintás a ➕ GOMBRA: új fal kihúzása!
+            // 1. Kattintás a ➕ GOMBRA: új falrész azonnali kihúzása (MÉRETMEGADÁS NÉLKÜL!)
             if (uData.handleType === 'add_wall') {
                 e.stopPropagation();
                 e.preventDefault();
                 this.extrudeWallSegment(uData.wallIndex);
                 if (window.app && window.app.showToast) {
-                    window.app.showToast('➕ Új falszakasz kihúzva! A sarokpontok szabadon méretezhetők.', 'success');
+                    window.app.showToast('➕ Új falrész sikeresen kihúzva! A sarkok szabadon mozgathatók.', 'success');
                 }
                 return;
             }
 
-            // 2. Kattintás a méretcímkére: pontos mm megadás
-            if (uData.isRoomDimensionBadge) {
-                e.stopPropagation();
-                e.preventDefault();
-                const wallIdx = uData.wallIndex;
-                const mesh = this.wallMeshes[wallIdx];
-                const currentLen = mesh ? Math.round(mesh.userData.wallLength) : 3000;
-                const inputVal = prompt(`Falszakasz hossza (mm):`, currentLen);
-                if (inputVal !== null) {
-                    const num = parseInt(inputVal, 10);
-                    if (!isNaN(num) && num >= 500 && num <= 20000) {
-                        this.setWallLength(wallIdx, num);
-                    }
-                }
-                return;
-            }
-
-            // 3. SAROKPONT VAGY FAL MEGFOGÁSA ÉS HÚZÁSA
+            // 2. SAROKPONT VAGY FAL MEGFOGÁSA ÉS HÚZÁSA
             if (uData.isRoomHandle) {
                 e.stopPropagation();
                 e.preventDefault();
@@ -863,6 +940,35 @@ class RoomManager {
         p2.z = Math.round(p1.z + dz * ratio);
 
         this.buildRoom();
+    }
+
+    /**
+     * Szoba befoglaló méreteinek beállítása (arányos átméretezés)
+     */
+    setDimensions(width, depth, height) {
+        if (Number.isFinite(height) && height >= 1500 && height <= 5000) {
+            this.height = Math.round(height);
+        }
+        const bb = this.getBoundingBox();
+        const curW = bb.width || 4000;
+        const curD = bb.depth || 3000;
+
+        const targetW = (Number.isFinite(width) && width >= 1000) ? Math.round(width) : curW;
+        const targetD = (Number.isFinite(depth) && depth >= 1000) ? Math.round(depth) : curD;
+
+        const scaleX = targetW / curW;
+        const scaleZ = targetD / curD;
+
+        const midX = (bb.minX + bb.maxX) / 2;
+        const midZ = (bb.minZ + bb.maxZ) / 2;
+
+        this.vertices.forEach(v => {
+            v.x = Math.round(midX + (v.x - midX) * scaleX);
+            v.z = Math.round(midZ + (v.z - midZ) * scaleZ);
+        });
+
+        this.buildRoom();
+        this.updateUIState();
     }
 }
 

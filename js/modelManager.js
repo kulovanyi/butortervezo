@@ -772,7 +772,8 @@ export const ModelManager = {
                     rotZ: 0,
                     glbFile: element.fileName,
                     glbPath: modelUrl,
-                    movableParts: []
+                    movableParts: [],
+                    partsList: (typeof PartsManager !== 'undefined' && PartsManager.getPartsForElement) ? PartsManager.getPartsForElement(element) : null
                 };
 
                 // 9. Ajtók, fiókok és munkalapok beazonosítása és előkészítése

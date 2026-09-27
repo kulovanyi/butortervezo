@@ -14,6 +14,8 @@ import { KitchenCorpusGenerator } from './kitchenCorpusGenerator.js';
 import { ModelManager } from './modelManager.js';
 import { AuthManager } from './authManager.js';
 import { ObjExporter } from './objExporter.js';
+import { PartsManager } from './partsManager.js';
+import { PriceManager } from './priceManager.js';
 
 /**
  * 3D Élőkép és Előnézet kezelő a Konyha Korpusz Varázsló jobb oldalán
@@ -454,6 +456,8 @@ class FurnitureApp {
         this.kitchenElements = [];
         this.expandedCategories = new Set(['cat_kitchen']);
         this.lastSelectedBaseCorpus = null;
+        this.currentEditingPartsElement = null;
+        this.currentPartsData = null;
 
         this.init();
     }
@@ -500,6 +504,9 @@ class FurnitureApp {
 
         // 5. UI Események feliratkozása & PBR Szerkesztő
         this.initPBRMaterialEditor();
+        PriceManager.init();
+        this.initPriceManagerEvents();
+        this.initPartsModalEvents();
         this.bindUIEvents();
         this.renderTextureGrid();
         this.renderCatalogUI();
@@ -632,6 +639,11 @@ class FurnitureApp {
         const btnRoomApplyDims = document.getElementById('btn-room-apply-dims');
         const btnCloseRoomHud = document.getElementById('btn-close-room-hud');
 
+        const btnReturn3D = document.getElementById('btn-return-3d');
+        const btnRoomHudReturn3D = document.getElementById('btn-room-hud-return-3d');
+        const btnRoomLShape = document.getElementById('btn-room-l-shape');
+        const btnRoomResetRect = document.getElementById('btn-room-reset-rect');
+
         if (window.roomManager) {
             window.roomManager.onDimensionsChanged = (w, d, h) => {
                 if (roomInputW) roomInputW.value = Math.round(w);
@@ -650,14 +662,13 @@ class FurnitureApp {
                     btnToggleRoom.classList.add('active');
                     btnToggleRoom.classList.add('btn-primary');
                     if (roomHud) roomHud.style.display = 'block';
-                    if (roomInputW) roomInputW.value = window.roomManager.width;
-                    if (roomInputD) roomInputD.value = window.roomManager.depth;
-                    if (roomInputH) roomInputH.value = window.roomManager.height;
+                    window.roomManager.updateUIState();
                     this.showToast('🏠 Alap szoba bekapcsolva: a közeli falak átlátszóak, a bútorok a falhoz tapadnak!', 'success');
                 } else {
                     btnToggleRoom.classList.remove('active');
                     btnToggleRoom.classList.remove('btn-primary');
                     if (roomHud) roomHud.style.display = 'none';
+                    if (btnReturn3D) btnReturn3D.style.display = 'none';
                     this.showToast('🏠 Szoba kikapcsolva.', 'info');
                 }
             });
@@ -675,7 +686,7 @@ class FurnitureApp {
             const d = parseInt(roomInputD?.value, 10);
             const h = parseInt(roomInputH?.value, 10);
             window.roomManager.setDimensions(w, d, h);
-            this.showToast(`📐 Szoba méretei beállítva: ${window.roomManager.width} × ${window.roomManager.depth} × ${window.roomManager.height} mm`, 'info');
+            this.showToast(`📐 Szoba méretei beállítva: ${Math.round(w)} × ${Math.round(d)} × ${Math.round(h)} mm`, 'info');
         };
 
         if (btnRoomApplyDims) {
@@ -690,14 +701,66 @@ class FurnitureApp {
             }
         });
 
+        // 2D Szobatervező mód megnyitása (felülnézet, árnyékok nélkül)
+        const open2DMode = () => {
+            if (window.roomManager) {
+                window.roomManager.enter2DDesignMode();
+                const label = document.getElementById('current-view-mode-label');
+                if (label) label.textContent = '👁️ Nézet: 📐 2D Alaprajz';
+                this.showToast('📐 2D Szobatervező aktív: mozgasd a falakat, sarkokat, vagy kattints a zöld ➕ gombokra új fal kihúzásához!', 'info');
+            }
+        };
+
         if (btnRoomTopView) {
-            btnRoomTopView.addEventListener('click', () => {
-                if (this.scene3D) {
-                    this.scene3D.setCameraView('top');
-                    const label = document.getElementById('current-view-mode-label');
-                    if (label) label.textContent = '👁️ Nézet: ⬜ Felülnézet';
-                    if (roomHud) roomHud.style.display = 'block';
-                    this.showToast('📐 Felülnézet aktív: a sarokpontok és falak egérrel szabadon méretezhetők!', 'info');
+            btnRoomTopView.addEventListener('click', open2DMode);
+        }
+
+        const btnToolbar2D = document.getElementById('btn-toolbar-2d-floorplan');
+        if (btnToolbar2D) {
+            btnToolbar2D.addEventListener('click', () => {
+                if (window.roomManager) {
+                    if (window.roomManager.is2DMode) {
+                        doReturnTo3D();
+                    } else {
+                        open2DMode();
+                    }
+                }
+            });
+        }
+
+        // Visszatérés 3D perspektivikus nézetbe
+        const doReturnTo3D = () => {
+            if (window.roomManager) {
+                window.roomManager.returnTo3D();
+                const label = document.getElementById('current-view-mode-label');
+                if (label) label.textContent = '👁️ Nézet: 📐 3D Tér';
+                this.showToast('🧊 Visszatértél a 3D nézetbe: a szoba árnyékai és bútorai újra aktívak!', 'success');
+            }
+        };
+
+        if (btnReturn3D) {
+            btnReturn3D.addEventListener('click', doReturnTo3D);
+        }
+        if (btnRoomHudReturn3D) {
+            btnRoomHudReturn3D.addEventListener('click', doReturnTo3D);
+        }
+
+        // Gyors L-Alakú szoba sablon
+        if (btnRoomLShape) {
+            btnRoomLShape.addEventListener('click', () => {
+                if (window.roomManager) {
+                    window.roomManager.createLShapeRoom();
+                    this.showToast('➕ L-Alakú szoba létrehozva! A sarkok szabadon húzhatók.', 'success');
+                }
+            });
+        }
+
+        // Téglalapra visszaállítás
+        if (btnRoomResetRect) {
+            btnRoomResetRect.addEventListener('click', () => {
+                if (window.roomManager) {
+                    window.roomManager.resetToRectangle();
+                    this.showToast('🔄 Szoba visszaállítva 4000 × 3000 mm téglalapra.', 'info');
                 }
             });
         }
@@ -1104,7 +1167,21 @@ class FurnitureApp {
                 btn.classList.add('active');
 
                 const viewKey = btn.getAttribute('data-view');
-                this.scene3D.setCameraView(viewKey);
+
+                if (viewKey === 'top') {
+                    // 2D Alaprajznál azonnal ugorjon felülnézetbe szerkesztőmódba!
+                    if (window.roomManager) {
+                        window.roomManager.enter2DDesignMode();
+                    } else {
+                        this.scene3D.setCameraView('top');
+                    }
+                } else {
+                    // Más nézeteknél (front, right, iso) visszatérés a 3D szobához
+                    if (window.roomManager && window.roomManager.is2DMode) {
+                        window.roomManager.returnTo3D();
+                    }
+                    this.scene3D.setCameraView(viewKey);
+                }
 
                 if (currentViewLabel && viewTitles[viewKey]) {
                     currentViewLabel.textContent = viewTitles[viewKey];
@@ -3483,12 +3560,25 @@ class FurnitureApp {
                                 </div>
                             </div>
                             <div class="card-actions" style="display:flex; gap:6px; align-items:center; justify-content:flex-end; margin-top:auto;">
+                                <button class="btn btn-sm btn-element-parts" style="padding:4px 8px; font-size:11px; line-height:1; background:rgba(56, 189, 248, 0.15); color:#38bdf8; border:1px solid rgba(56, 189, 248, 0.35); border-radius:4px; display:inline-flex; align-items:center; gap:3px;" title="Alkatrész- és vasalatlista megtekintése / szerkesztése">
+                                    <span>🔩</span>
+                                    <span>Alkatrészek</span>
+                                </button>
                                 <button class="btn btn-sm btn-primary btn-add-element-scene" style="padding:4px 10px; font-size:14px; line-height:1; background:linear-gradient(135deg, #8b5cf6, #7c3aed); border-color:#7c3aed;" title="3D Modell elhelyezése a munkatérben">
                                     ➡️
                                 </button>
                             </div>
                         </div>
                     `;
+
+                    // Alkatrészlista megnyitása kattintásra
+                    const partsBtn = card.querySelector('.btn-element-parts');
+                    if (partsBtn) {
+                        partsBtn.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            this.openElementPartsModal(elem);
+                        });
+                    }
 
                     // Hozzáadás a 3D színtérhez kattintásra
                     const addBtn = card.querySelector('.btn-add-element-scene');
@@ -3636,6 +3726,10 @@ class FurnitureApp {
                                     <div style="font-size:11px; color:#38bdf8; font-weight:500;">📏 ${dimW}×${dimH}×${dimD} mm</div>
                                 </div>
                                 <div class="card-actions" style="display:flex; gap:6px; align-items:center; justify-content:flex-end; margin-top:auto;">
+                                    <button class="btn btn-sm btn-element-parts" style="padding:4px 8px; font-size:11px; line-height:1; background:rgba(56, 189, 248, 0.15); color:#38bdf8; border:1px solid rgba(56, 189, 248, 0.35); border-radius:4px; display:inline-flex; align-items:center; gap:3px;" title="Alkatrész- és vasalatlista megtekintése / szerkesztése">
+                                        <span>🔩</span>
+                                        <span>Alkatrészek</span>
+                                    </button>
                                     <button class="btn btn-sm btn-primary btn-add-scene" style="padding:4px 10px; font-size:14px; line-height:1;" title="Hozzáadás a jelenethez">
                                         ➡️
                                     </button>
@@ -3643,6 +3737,15 @@ class FurnitureApp {
                                 </div>
                             </div>
                         `;
+
+                        // Alkatrészlista megnyitása kattintásra
+                        const partsBtn = card.querySelector('.btn-element-parts');
+                        if (partsBtn) {
+                            partsBtn.addEventListener('click', (e) => {
+                                e.stopPropagation();
+                                this.openElementPartsModal(item);
+                            });
+                        }
 
                         card.style.cursor = 'pointer';
                         card.title = `Kattints a(z) ${item.name} hozzáadásához a jelenethez`;
@@ -4672,6 +4775,893 @@ class FurnitureApp {
             <span>Hulladék: <strong>${(100 - currentSheet.efficiency).toFixed(1)}%</strong></span>
             <span>Összesített kihozatal: <strong style="color:var(--accent);">${data.overallEfficiency}%</strong></span>
         `;
+    }
+
+    // ==========================================
+    // KÖZPONTI ÁRLISTA ÉS SZÍNEK KEZELŐJE
+    // ==========================================
+
+    initPriceManagerEvents() {
+        const btnOpenPrice = document.getElementById('btn-open-price-manager');
+        if (btnOpenPrice) {
+            btnOpenPrice.addEventListener('click', () => {
+                this.openPriceManagerModal();
+            });
+        }
+
+        // Fülváltás az Árlista ablakban
+        document.querySelectorAll('#modal-price-manager .btn-price-tab').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const targetTab = btn.getAttribute('data-price-tab');
+                document.querySelectorAll('#modal-price-manager .btn-price-tab').forEach(b => {
+                    b.classList.remove('active');
+                    b.style.opacity = '0.8';
+                });
+                btn.classList.add('active');
+                btn.style.opacity = '1';
+
+                document.querySelectorAll('#modal-price-manager .price-pane').forEach(p => p.style.display = 'none');
+                const targetPane = document.getElementById(`pane-price-${targetTab}`);
+                if (targetPane) targetPane.style.display = 'flex';
+            });
+        });
+
+        // 1. Új Szín felvétel toggle & submit
+        const btnToggleAddColor = document.getElementById('btn-toggle-add-color-form');
+        const boxAddColor = document.getElementById('box-add-price-color');
+        if (btnToggleAddColor && boxAddColor) {
+            btnToggleAddColor.addEventListener('click', () => {
+                const isHidden = boxAddColor.style.display === 'none' || !boxAddColor.style.display;
+                boxAddColor.style.display = isHidden ? 'flex' : 'none';
+            });
+        }
+
+        const btnSubmitAddColor = document.getElementById('btn-submit-add-color');
+        if (btnSubmitAddColor) {
+            btnSubmitAddColor.addEventListener('click', () => {
+                const nameInput = document.getElementById('new-color-name');
+                const idInput = document.getElementById('new-color-id');
+                const catSelect = document.getElementById('new-color-cat');
+                const typeSelect = document.getElementById('new-color-type');
+                const hexInput = document.getElementById('new-color-hex');
+
+                const name = nameInput ? nameInput.value.trim() : '';
+                if (!name) {
+                    this.showToast('Kérjük, add meg a szín nevét!', 'warning');
+                    return;
+                }
+                let id = idInput ? idInput.value.trim() : '';
+                if (!id) {
+                    id = 'custom_' + name.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 20) + '_' + Math.floor(Math.random() * 1000);
+                } else {
+                    id = id.toLowerCase().replace(/[^a-z0-9_]/g, '_');
+                }
+                const category = parseInt(catSelect ? catSelect.value : '2', 10) || 2;
+                const type = typeSelect ? typeSelect.value : 'front';
+                const color = hexInput ? hexInput.value : '#c5b9a8';
+
+                PriceManager.addColor({ id, name, category, type, color });
+                if (!MaterialManager.textures[id]) {
+                    MaterialManager.textures[id] = {
+                        name: name,
+                        category: type === 'worktop' ? 'worktop' : 'wood',
+                        color: color,
+                        type: 'wood'
+                    };
+                    if (this.renderTextureGrid) this.renderTextureGrid();
+                }
+
+                if (nameInput) nameInput.value = '';
+                if (idInput) idInput.value = '';
+                if (boxAddColor) boxAddColor.style.display = 'none';
+                this.renderPriceColorsTable();
+                this.showToast(`✅ "${name}" sikeresen hozzáadva az árlistához!`, 'success');
+            });
+        }
+
+        // 2. Új Vasalat felvétel toggle & submit
+        const btnToggleAddHw = document.getElementById('btn-toggle-add-hw-form');
+        const boxAddHw = document.getElementById('box-add-price-hw');
+        if (btnToggleAddHw && boxAddHw) {
+            btnToggleAddHw.addEventListener('click', () => {
+                const isHidden = boxAddHw.style.display === 'none' || !boxAddHw.style.display;
+                boxAddHw.style.display = isHidden ? 'flex' : 'none';
+            });
+        }
+
+        const btnSubmitAddHw = document.getElementById('btn-submit-add-hw');
+        if (btnSubmitAddHw) {
+            btnSubmitAddHw.addEventListener('click', () => {
+                const nameInput = document.getElementById('new-hw-name');
+                const unitInput = document.getElementById('new-hw-unit');
+                const priceInput = document.getElementById('new-hw-price');
+
+                const name = nameInput ? nameInput.value.trim() : '';
+                if (!name) {
+                    this.showToast('Kérjük, add meg a vasalat megnevezését!', 'warning');
+                    return;
+                }
+                const unit = unitInput ? unitInput.value.trim() || 'db' : 'db';
+                const price = parseInt(priceInput ? priceInput.value : '0', 10);
+                if (isNaN(price) || price < 0) {
+                    this.showToast('Kérjük, érvényes egységárat adj meg!', 'warning');
+                    return;
+                }
+
+                PriceManager.addPart(name, price, unit);
+                if (nameInput) nameInput.value = '';
+                if (priceInput) priceInput.value = '';
+                if (boxAddHw) boxAddHw.style.display = 'none';
+                this.renderPriceHardwareTable();
+                this.showToast(`✅ "${name}" sikeresen hozzáadva a vasalatokhoz!`, 'success');
+            });
+        }
+
+        // 3. Export CSV gomb
+        const btnExportCsv = document.getElementById('btn-export-price-csv');
+        if (btnExportCsv) {
+            btnExportCsv.addEventListener('click', () => {
+                try {
+                    const csvText = PriceManager.exportToCSV(MaterialManager.textures);
+                    const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    const dateStr = new Date().toISOString().slice(0, 10);
+                    a.download = `arlista_butortervezo_${dateStr}.csv`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                    this.showToast('📊 Árlista sikeresen exportálva (.CSV / Excel)!', 'success');
+                } catch (err) {
+                    console.error('Export hiba:', err);
+                    this.showToast('Hiba az exportálás során.', 'error');
+                }
+            });
+        }
+
+        // 4. Import CSV gomb és fájlkezelő
+        const btnTriggerImport = document.getElementById('btn-trigger-import-csv');
+        const inputImport = document.getElementById('input-import-price-csv');
+        if (btnTriggerImport && inputImport) {
+            btnTriggerImport.addEventListener('click', () => {
+                inputImport.value = '';
+                inputImport.click();
+            });
+
+            inputImport.addEventListener('change', (e) => {
+                const file = e.target.files && e.target.files[0];
+                if (!file) return;
+
+                const reader = new FileReader();
+                reader.onload = (evt) => {
+                    try {
+                        const text = evt.target.result;
+                        const result = PriceManager.importFromCSV(text, (newColorId, newColorName) => {
+                            if (!MaterialManager.textures[newColorId]) {
+                                MaterialManager.textures[newColorId] = {
+                                    name: newColorName,
+                                    category: 'wood',
+                                    color: '#94a3b8',
+                                    type: 'wood'
+                                };
+                            }
+                        });
+
+                        if (result.success) {
+                            this.populatePriceManagerForm();
+                            this.renderPriceColorsTable();
+                            this.renderPriceHardwareTable();
+                            if (this.renderTextureGrid) this.renderTextureGrid();
+                            if (this.currentEditingPartsElement) {
+                                this.renderPartsTable();
+                                this.renderBoardsTable();
+                            }
+
+                            const statusEl = document.getElementById('price-import-status');
+                            if (statusEl) {
+                                statusEl.style.display = 'block';
+                                statusEl.innerHTML = `<strong>✅ Sikeres importálás!</strong><br>• <strong>${result.updatedCount}</strong> meglévő tétel frissítve.<br>• <strong>${result.addedCount}</strong> új tétel (új szín vagy új vasalat) automatikusan hozzáadva a rendszerhez!`;
+                            }
+                            this.showToast(`✅ Import kész! ${result.updatedCount} frissítve, ${result.addedCount} új hozzáadva!`, 'success');
+                        } else {
+                            this.showToast('Nem sikerült az importálás: ' + (result.message || 'Hiba'), 'error');
+                        }
+                    } catch (err) {
+                        console.error('Import hiba:', err);
+                        this.showToast('Hiba történt a fájl feldolgozása során.', 'error');
+                    }
+                };
+                reader.readAsText(file, 'utf-8');
+            });
+        }
+
+        // Mentés gomb az Árlistában
+        const btnSavePrices = document.getElementById('btn-save-prices');
+        if (btnSavePrices) {
+            btnSavePrices.addEventListener('click', () => {
+                const cfg = PriceManager.getConfig();
+
+                // 1. Kategória m² árak
+                const cat1 = parseInt(document.getElementById('price-input-cat1')?.value, 10);
+                const cat2 = parseInt(document.getElementById('price-input-cat2')?.value, 10);
+                const cat3 = parseInt(document.getElementById('price-input-cat3')?.value, 10);
+                if (!isNaN(cat1) && cat1 >= 0) cfg.categories[1].sqmPrice = cat1;
+                if (!isNaN(cat2) && cat2 >= 0) cfg.categories[2].sqmPrice = cat2;
+                if (!isNaN(cat3) && cat3 >= 0) cfg.categories[3].sqmPrice = cat3;
+
+                // 2. Munkalap, hátfal, élzárás
+                const wt = parseInt(document.getElementById('price-input-worktop')?.value, 10);
+                const bk = parseInt(document.getElementById('price-input-backpanel')?.value, 10);
+                const ed = parseInt(document.getElementById('price-input-edge')?.value, 10);
+                if (!isNaN(wt) && wt >= 0) cfg.worktop.perMeter = wt;
+                if (!isNaN(bk) && bk >= 0) cfg.backPanel.sqmPrice = bk;
+                if (!isNaN(ed) && ed >= 0) cfg.edgeBanding.perMeter = ed;
+
+                // 3. Vasalat egységárak szinkronizálása
+                document.querySelectorAll('#price-hardware-table-body tr').forEach(row => {
+                    const pName = row.getAttribute('data-part-name');
+                    const inp = row.querySelector('.price-hw-input');
+                    if (pName && inp) {
+                        const val = parseInt(inp.value, 10);
+                        if (!isNaN(val) && val >= 0) {
+                            cfg.partPrices[pName] = val;
+                        }
+                    }
+                });
+
+                PriceManager.saveConfig(cfg);
+
+                // Ha nyitva van az alkatrész/bútorlap ablak, frissítsük az árakat
+                if (this.currentEditingPartsElement) {
+                    this.renderPartsTable();
+                    this.renderBoardsTable();
+                }
+
+                this.closeModal('modal-price-manager');
+                this.showToast('💰 Központi Árlista sikeresen elmentve!', 'success');
+            });
+        }
+
+        // Alapértelmezett árak visszaállítása gomb
+        const btnResetPrices = document.getElementById('btn-reset-prices');
+        if (btnResetPrices) {
+            btnResetPrices.addEventListener('click', () => {
+                if (confirm('Biztosan visszaállítod az összes gyári alapértelmezett árat és színkategóriát?')) {
+                    PriceManager.resetToDefaults();
+                    this.populatePriceManagerForm();
+                    this.renderPriceColorsTable();
+                    this.renderPriceHardwareTable();
+                    this.showToast('Gyári árak sikeresen visszaállítva.', 'info');
+                }
+            });
+        }
+    }
+
+    openPriceManagerModal() {
+        this.populatePriceManagerForm();
+        this.renderPriceColorsTable();
+        this.renderPriceHardwareTable();
+        this.openModal('modal-price-manager');
+    }
+
+    populatePriceManagerForm() {
+        const cfg = PriceManager.getConfig();
+        const setVal = (id, val) => {
+            const el = document.getElementById(id);
+            if (el) el.value = val !== undefined ? val : 0;
+        };
+
+        setVal('price-input-cat1', cfg.categories[1]?.sqmPrice || 6500);
+        setVal('price-input-cat2', cfg.categories[2]?.sqmPrice || 9800);
+        setVal('price-input-cat3', cfg.categories[3]?.sqmPrice || 14500);
+        setVal('price-input-worktop', cfg.worktop?.perMeter || 18000);
+        setVal('price-input-backpanel', cfg.backPanel?.sqmPrice || 2800);
+        setVal('price-input-edge', cfg.edgeBanding?.perMeter || 450);
+    }
+
+    renderPriceColorsTable() {
+        const tbody = document.getElementById('price-colors-table-body');
+        if (!tbody) return;
+        tbody.innerHTML = '';
+
+        const cfg = PriceManager.getConfig();
+        const textures = MaterialManager.textures || {};
+        const texKeys = Object.keys(textures);
+
+        if (texKeys.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" style="padding:16px; text-align:center; color:var(--text-muted);">Nincsenek betöltött textúrák.</td></tr>';
+            return;
+        }
+
+        texKeys.forEach(tKey => {
+            const tex = textures[tKey];
+            if (!tex) return;
+
+            const isWorktop = (tex.category === 'worktop' || tKey.startsWith('wt_'));
+            const isBack = (tKey === 'white_matte');
+            const typeLabel = isWorktop ? '🪵 Munkalap' : (isBack ? '📄 Hátfal / Uni' : '🚪 Front / Bútorlap');
+
+            const currentCat = PriceManager.getColorCategory(tKey);
+            const appliedPrice = isWorktop 
+                ? `${cfg.worktop.perMeter.toLocaleString('hu-HU')} Ft/fm` 
+                : `${(cfg.categories[currentCat]?.sqmPrice || 9800).toLocaleString('hu-HU')} Ft/m²`;
+
+            const tr = document.createElement('tr');
+            tr.style.borderBottom = '1px solid rgba(255,255,255,0.06)';
+
+            tr.innerHTML = `
+                <td style="padding:8px 12px; display:flex; align-items:center; gap:8px;">
+                    <div style="width:24px; height:24px; border-radius:3px; background:${tex.color || '#334155'}; border:1px solid rgba(255,255,255,0.2); overflow:hidden; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                        ${tex.dataUrl ? `<img src="${tex.dataUrl}" style="width:100%; height:100%; object-fit:cover;">` : ''}
+                    </div>
+                    <div>
+                        <strong style="color:var(--text-primary); font-size:12px;">${tex.name || tKey}</strong>
+                        <span style="font-size:10px; color:var(--text-muted); display:block;">ID: ${tKey}</span>
+                    </div>
+                </td>
+                <td style="padding:8px 12px; font-size:11px; color:#94a3b8;">${typeLabel}</td>
+                <td style="padding:8px 12px; text-align:center;">
+                    <div style="display:inline-flex; gap:4px;">
+                        <button type="button" class="btn btn-sm btn-color-cat ${currentCat === 1 ? 'btn-primary' : ''}" data-color="${tKey}" data-cat="1" style="padding:3px 8px; font-size:10px; font-weight:700;">1. Kat</button>
+                        <button type="button" class="btn btn-sm btn-color-cat ${currentCat === 2 ? 'btn-primary' : ''}" data-color="${tKey}" data-cat="2" style="padding:3px 8px; font-size:10px; font-weight:700;">2. Kat</button>
+                        <button type="button" class="btn btn-sm btn-color-cat ${currentCat === 3 ? 'btn-primary' : ''}" data-color="${tKey}" data-cat="3" style="padding:3px 8px; font-size:10px; font-weight:700;">3. Kat</button>
+                    </div>
+                </td>
+                <td class="color-applied-price" style="padding:8px 12px; text-align:right; font-weight:700; color:#10b981; font-size:12px;">
+                    ${appliedPrice}
+                </td>
+                <td style="padding:8px 12px; text-align:center;">
+                    <button type="button" class="btn btn-sm btn-delete-price-color" data-color="${tKey}" style="color:#ef4444; border-color:rgba(239,68,68,0.3); padding:2px 8px; font-size:11px;" title="Szín törlése az árlistából">
+                        🗑️
+                    </button>
+                </td>
+            `;
+
+            tr.querySelectorAll('.btn-color-cat').forEach(b => {
+                b.addEventListener('click', () => {
+                    const catNum = parseInt(b.getAttribute('data-cat'), 10);
+                    PriceManager.setColorCategory(tKey, catNum);
+                    tr.querySelectorAll('.btn-color-cat').forEach(btn => btn.classList.remove('btn-primary'));
+                    b.classList.add('btn-primary');
+                    const updatedPrice = isWorktop
+                        ? `${PriceManager.getConfig().worktop.perMeter.toLocaleString('hu-HU')} Ft/fm`
+                        : `${(PriceManager.getConfig().categories[catNum]?.sqmPrice || 9800).toLocaleString('hu-HU')} Ft/m²`;
+                    const priceCell = tr.querySelector('.color-applied-price');
+                    if (priceCell) priceCell.textContent = updatedPrice;
+                });
+            });
+
+            tr.querySelectorAll('.btn-delete-price-color').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const colKey = btn.getAttribute('data-color');
+                    const colName = (textures[colKey]?.name || colKey);
+                    if (confirm(`Biztosan törölni szeretnéd a(z) "${colName}" színt az árlistából?`)) {
+                        PriceManager.removeColor(colKey);
+                        this.renderPriceColorsTable();
+                        this.showToast(`"${colName}" törölve az árlistából.`, 'info');
+                    }
+                });
+            });
+
+            tbody.appendChild(tr);
+        });
+    }
+
+    renderPriceHardwareTable() {
+        const tbody = document.getElementById('price-hardware-table-body');
+        if (!tbody) return;
+        tbody.innerHTML = '';
+
+        const cfg = PriceManager.getConfig();
+        const partPrices = cfg.partPrices || {};
+
+        for (const [pName, price] of Object.entries(partPrices)) {
+            if (pName === 'default_part') continue;
+
+            let unit = 'db';
+            const lower = pName.toLowerCase();
+            if (lower.includes('sín') || lower.includes('függesztő')) unit = 'pár';
+            else if (lower.includes('ragasztó')) unit = 'tubus';
+            else if (lower.includes('dübel') || lower.includes('készlet')) unit = 'készlet';
+            if (cfg.partUnits && cfg.partUnits[pName]) unit = cfg.partUnits[pName];
+
+            const tr = document.createElement('tr');
+            tr.setAttribute('data-part-name', pName);
+            tr.style.borderBottom = '1px solid rgba(255,255,255,0.06)';
+
+            tr.innerHTML = `
+                <td style="padding:8px 12px; font-weight:600; color:var(--text-primary); font-size:12px;">${pName}</td>
+                <td style="padding:8px 12px; font-size:11px; color:var(--text-muted);">${unit}</td>
+                <td style="padding:6px 12px; text-align:right;">
+                    <div style="display:inline-flex; align-items:center; gap:6px;">
+                        <input type="number" class="form-control form-control-sm price-hw-input" value="${price}" min="0" step="5" style="width:90px; text-align:right; font-weight:700; color:#38bdf8;">
+                        <span style="font-size:11px; color:var(--text-muted);">Ft / ${unit}</span>
+                    </div>
+                </td>
+                <td style="padding:6px 12px; text-align:center;">
+                    <button type="button" class="btn btn-sm btn-delete-price-hw" data-part="${pName}" style="color:#ef4444; border-color:rgba(239,68,68,0.3); padding:2px 8px; font-size:11px;" title="Vasalat törlése">
+                        🗑️
+                    </button>
+                </td>
+            `;
+
+            tr.querySelectorAll('.btn-delete-price-hw').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const partKey = btn.getAttribute('data-part');
+                    if (confirm(`Biztosan törölni szeretnéd a(z) "${partKey}" tételt a vasalatok közül?`)) {
+                        PriceManager.removePart(partKey);
+                        this.renderPriceHardwareTable();
+                        this.showToast(`"${partKey}" törölve a vasalatok közül.`, 'info');
+                    }
+                });
+            });
+
+            tbody.appendChild(tr);
+        }
+    }
+
+    // ==========================================
+    // ALKATRÉSZ- ÉS BÚTORLAPLISTA METÓDUSOK (PARTS)
+    // ==========================================
+
+    initPartsModalEvents() {
+        // Fülváltás az Alkatrészek ablakban (Vasalatok vs Bútorlapok & Munkalap)
+        document.querySelectorAll('#modal-element-parts .btn-parts-tab').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const targetTab = btn.getAttribute('data-parts-tab');
+                document.querySelectorAll('#modal-element-parts .btn-parts-tab').forEach(b => {
+                    b.classList.remove('active');
+                    b.style.opacity = '0.8';
+                });
+                btn.classList.add('active');
+                btn.style.opacity = '1';
+
+                const paneHw = document.getElementById('pane-parts-hardware');
+                const paneBoards = document.getElementById('pane-parts-boards');
+
+                if (targetTab === 'boards') {
+                    if (paneHw) paneHw.style.display = 'none';
+                    if (paneBoards) paneBoards.style.display = 'flex';
+                    this.renderBoardsTable();
+                } else {
+                    if (paneBoards) paneBoards.style.display = 'none';
+                    if (paneHw) paneHw.style.display = 'flex';
+                }
+            });
+        });
+
+        // 1. Összeépítési mód váltó gombok (Konfirmátor csavar vs. Tiplis vs. Excenteres)
+        document.querySelectorAll('#modal-element-parts .btn-joint-preset').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const jointType = btn.getAttribute('data-joint');
+                if (!this.currentPartsData) return;
+                this.syncPartsDataFromDOM();
+                this.currentPartsData.jointType = jointType;
+                const isTall = (this.currentPartsData.isTall || (this.currentEditingPartsElement && this.currentEditingPartsElement.category === 'tall_cabinet'));
+                PartsManager.applyJointTypeToItems(this.currentPartsData.items, jointType, isTall);
+                this.renderPartsTable();
+                const modeName = jointType === 'dowel' ? '🪵 Tiplis (Fa köldökcsap)' : (jointType === 'minifix' ? '⚙️ Excenteres (Minifix)' : '🔩 Konfirmátor csavaros');
+                this.showToast(`Kötéstípus átváltva: ${modeName}`, 'info');
+            });
+        });
+
+        // 2. Új tétel hozzáadása gomb
+        const btnAddRow = document.getElementById('btn-add-part-row');
+        if (btnAddRow) {
+            btnAddRow.addEventListener('click', () => {
+                if (!this.currentPartsData || !this.currentPartsData.items) return;
+                this.syncPartsDataFromDOM();
+                const newId = `part_custom_${Date.now()}`;
+                this.currentPartsData.items.push({
+                    id: newId,
+                    name: 'Új szerelvény / alkatrész',
+                    category: 'other',
+                    qty: 1,
+                    unit: 'db',
+                    note: '',
+                    removable: true
+                });
+                this.renderPartsTable();
+                setTimeout(() => {
+                    const rows = document.querySelectorAll('#parts-table-body tr');
+                    if (rows.length > 0) {
+                        const lastRow = rows[rows.length - 1];
+                        const nameInput = lastRow.querySelector('.part-name-input');
+                        if (nameInput) {
+                            nameInput.focus();
+                            nameInput.select();
+                        }
+                    }
+                }, 50);
+            });
+        }
+
+        // 3. Alaphelyzetbe állítás gomb
+        const btnResetParts = document.getElementById('btn-reset-parts');
+        if (btnResetParts) {
+            btnResetParts.addEventListener('click', () => {
+                if (!this.currentEditingPartsElement) return;
+                if (confirm('Biztosan visszaállítod az eredeti alapértelmezett vasalatkalkulációt erre az elemre? Minden egyedi módosítás törlődik.')) {
+                    this.currentPartsData = PartsManager.resetPartsForElement(this.currentEditingPartsElement);
+                    this.renderPartsTable();
+                    this.renderBoardsTable();
+                    this.showToast('Alkatrészlista sikeresen visszaállítva az alapértékekre.', 'success');
+                }
+            });
+        }
+
+        // 4. Mentés gomb
+        const btnSaveParts = document.getElementById('btn-save-parts');
+        if (btnSaveParts) {
+            btnSaveParts.addEventListener('click', () => {
+                if (!this.currentEditingPartsElement || !this.currentPartsData) return;
+                this.syncPartsDataFromDOM();
+                PartsManager.savePartsForElement(this.currentEditingPartsElement, this.currentPartsData);
+
+                // Ha a 3D munkatérben létezik ez a bútor, frissítsük a userData-ját is
+                const targetId = this.currentEditingPartsElement.id || this.currentEditingPartsElement.fileName;
+                if (this.boardManager && this.boardManager.corpora) {
+                    this.boardManager.corpora.forEach(c => {
+                        if (c.userData && (c.userData.id === targetId || c.userData.glbFile === targetId || (c.userData.name && c.userData.name === this.currentEditingPartsElement.name))) {
+                            c.userData.partsList = JSON.parse(JSON.stringify(this.currentPartsData));
+                        }
+                    });
+                }
+
+                this.closeModal('modal-element-parts');
+                this.showToast('✅ Alkatrészlista sikeresen elmentve!', 'success');
+            });
+        }
+    }
+
+    openElementPartsModal(elem) {
+        if (!elem) return;
+        this.currentEditingPartsElement = elem;
+        this.currentPartsData = PartsManager.getPartsForElement(elem);
+
+        // Alapértelmezésben az 1. fül (Vasalatok) aktív
+        document.querySelectorAll('#modal-element-parts .btn-parts-tab').forEach((b, idx) => {
+            if (idx === 0) {
+                b.classList.add('active');
+                b.style.opacity = '1';
+            } else {
+                b.classList.remove('active');
+                b.style.opacity = '0.8';
+            }
+        });
+        const paneHw = document.getElementById('pane-parts-hardware');
+        const paneBoards = document.getElementById('pane-parts-boards');
+        if (paneHw) paneHw.style.display = 'flex';
+        if (paneBoards) paneBoards.style.display = 'none';
+
+        // Infókártya kitöltése
+        const safeName = (elem.name || (elem.fileName ? elem.fileName.replace(/\.(glb|gltf)$/i, '') : '3D Bútorelem')).trim();
+        const elemCat = elem.category || (typeof ModelManager !== 'undefined' && ModelManager.guessCategory ? ModelManager.guessCategory(safeName) : 'base_cabinet');
+        const catLabel = (typeof ModelManager !== 'undefined' && ModelManager.getCategoryLabel ? ModelManager.getCategoryLabel(elemCat) : '3D Modell');
+        const thumbUrl = elem.thumbnail || `thumbnails/${safeName}.png`;
+
+        const nameEl = document.getElementById('parts-elem-name');
+        if (nameEl) nameEl.textContent = elem.name || elem.fileName;
+
+        const catEl = document.getElementById('parts-elem-category');
+        if (catEl) catEl.textContent = catLabel;
+
+        const detailsEl = document.getElementById('parts-elem-details');
+        const dimStr = elem.dimensions ? `📐 ${elem.dimensions.w} × ${elem.dimensions.h} × ${elem.dimensions.d} mm` : '';
+        if (detailsEl) {
+            detailsEl.textContent = `📁 Fájl: ${elem.fileName || 'Katalógus bútor'} ${dimStr ? '| ' + dimStr : ''}`;
+        }
+
+        const thumbEl = document.getElementById('parts-elem-thumb');
+        if (thumbEl) {
+            thumbEl.innerHTML = `
+                <img src="${thumbUrl}" alt="${safeName}" style="width:100%; height:100%; object-fit:contain;" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                <div style="display:none; width:100%; height:100%; align-items:center; justify-content:center; font-size:26px;">🧊</div>
+            `;
+        }
+
+        this.renderPartsTable();
+        this.renderBoardsTable();
+        this.openModal('modal-element-parts');
+    }
+
+    syncPartsDataFromDOM() {
+        if (!this.currentPartsData || !this.currentPartsData.items) return;
+        const rows = document.querySelectorAll('#parts-table-body tr');
+        rows.forEach((row, idx) => {
+            if (idx >= this.currentPartsData.items.length) return;
+            const item = this.currentPartsData.items[idx];
+            const nameInp = row.querySelector('.part-name-input');
+            const catSel = row.querySelector('.part-cat-select');
+            const qtyInp = row.querySelector('.part-qty-input');
+            const unitInp = row.querySelector('.part-unit-input');
+            const noteInp = row.querySelector('.part-note-input');
+
+            if (nameInp) item.name = nameInp.value.trim();
+            if (catSel) item.category = catSel.value;
+            if (qtyInp) item.qty = Math.max(0, parseInt(qtyInp.value, 10) || 0);
+            if (unitInp) item.unit = unitInp.value.trim();
+            if (noteInp) item.note = noteInp.value.trim();
+        });
+    }
+
+    renderPartsTable() {
+        if (!this.currentPartsData) return;
+        const tbody = document.getElementById('parts-table-body');
+        if (!tbody) return;
+
+        // Összeépítési mód gombok stílusa
+        const jointType = this.currentPartsData.jointType || 'screw';
+        document.querySelectorAll('#modal-element-parts .btn-joint-preset').forEach(btn => {
+            const isSelected = (btn.getAttribute('data-joint') === jointType);
+            if (isSelected) {
+                btn.classList.add('btn-primary');
+                btn.style.boxShadow = '0 0 10px rgba(56, 189, 248, 0.4)';
+            } else {
+                btn.classList.remove('btn-primary');
+                btn.style.boxShadow = 'none';
+            }
+        });
+
+        tbody.innerHTML = '';
+        const items = this.currentPartsData.items || [];
+        let totalHardwarePrice = 0;
+
+        if (items.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="8" style="padding:24px; text-align:center; color:var(--text-muted);">
+                        Nincsenek tételek ebben az alkatrészlistában.<br>
+                        Kattints az <strong>➕ Új tétel hozzáadása</strong> vagy a <strong>🔄 Alaphelyzetbe állítás</strong> gombra!
+                    </td>
+                </tr>
+            `;
+            this.updatePartsSummaryBadge(0);
+            return;
+        }
+
+        items.forEach((item, index) => {
+            const tr = document.createElement('tr');
+            tr.style.borderBottom = '1px solid rgba(255,255,255,0.06)';
+            tr.style.background = (index % 2 === 0) ? 'rgba(255,255,255,0.015)' : 'transparent';
+
+            // Kategória opciók
+            let catOptions = '';
+            for (const [catKey, catObj] of Object.entries(PartsManager.CATEGORIES)) {
+                const selected = (item.category === catKey) ? 'selected' : '';
+                catOptions += `<option value="${catKey}" ${selected}>${catObj.icon} ${catObj.name}</option>`;
+            }
+
+            // Központi egységár és tételár lekérése (NEM szerkeszthető itt)
+            const unitPrice = PriceManager.getPartUnitPrice(item.name);
+            const qty = Number(item.qty) || 0;
+            const itemTotalPrice = Math.round(qty * unitPrice);
+            totalHardwarePrice += itemTotalPrice;
+
+            tr.innerHTML = `
+                <td style="padding:6px 8px;">
+                    <input type="text" class="form-control form-control-sm part-name-input" value="${item.name || ''}" placeholder="Tétel neve..." style="padding:4px 8px; font-size:12px; background:rgba(0,0,0,0.3); border:1px solid var(--border-color); color:var(--text-primary); border-radius:4px; width:100%;">
+                </td>
+                <td style="padding:6px 4px;">
+                    <select class="form-control form-control-sm part-cat-select" style="padding:4px 6px; font-size:11px; background:rgba(0,0,0,0.4); border:1px solid var(--border-color); color:#c084fc; border-radius:4px; width:100%;">
+                        ${catOptions}
+                    </select>
+                </td>
+                <td style="padding:6px 4px; text-align:center;">
+                    <div style="display:inline-flex; align-items:center; gap:2px;">
+                        <button type="button" class="btn btn-sm btn-part-minus" style="padding:2px 6px; font-size:11px; line-height:1; background:rgba(255,255,255,0.08); border-color:var(--border-color); border-radius:3px;">−</button>
+                        <input type="number" min="0" step="1" class="form-control form-control-sm part-qty-input" value="${item.qty !== undefined ? item.qty : 1}" style="width:42px; text-align:center; padding:3px 1px; font-weight:700; color:#38bdf8; background:rgba(0,0,0,0.4); border:1px solid var(--border-color); border-radius:3px;">
+                        <button type="button" class="btn btn-sm btn-part-plus" style="padding:2px 6px; font-size:11px; line-height:1; background:rgba(255,255,255,0.08); border-color:var(--border-color); border-radius:3px;">+</button>
+                    </div>
+                </td>
+                <td style="padding:6px 4px;">
+                    <input type="text" class="form-control form-control-sm part-unit-input" value="${item.unit || 'db'}" style="width:42px; text-align:center; padding:3px; font-size:11px; background:rgba(0,0,0,0.3); border:1px solid var(--border-color); color:var(--text-muted); border-radius:4px;">
+                </td>
+                <td style="padding:6px 6px; text-align:right; font-weight:600; color:#38bdf8; font-size:11px; white-space:nowrap;" title="Egységár a központi Árlistából">
+                    ${unitPrice.toLocaleString('hu-HU')} Ft
+                </td>
+                <td class="part-row-total-price" style="padding:6px 6px; text-align:right; font-weight:700; color:#10b981; font-size:12px; white-space:nowrap;">
+                    ${itemTotalPrice.toLocaleString('hu-HU')} Ft
+                </td>
+                <td style="padding:6px 4px;">
+                    <input type="text" class="form-control form-control-sm part-note-input" value="${item.note || ''}" placeholder="Méret..." style="padding:4px 6px; font-size:11px; background:rgba(0,0,0,0.3); border:1px solid var(--border-color); color:var(--text-muted); border-radius:4px; width:100%;">
+                </td>
+                <td style="padding:6px 4px; text-align:center;">
+                    <button type="button" class="btn btn-sm btn-delete-part-row" style="padding:3px 6px; font-size:11px; line-height:1; background:rgba(239, 68, 68, 0.15); color:#ef4444; border:1px solid rgba(239, 68, 68, 0.35); border-radius:4px;" title="Tétel törlése">
+                        🗑️
+                    </button>
+                </td>
+            `;
+
+            // Eseménykezelők
+            const nameInput = tr.querySelector('.part-name-input');
+            nameInput.addEventListener('input', (e) => {
+                item.name = e.target.value;
+                this.renderPartsTable();
+            });
+
+            const catSelect = tr.querySelector('.part-cat-select');
+            catSelect.addEventListener('change', (e) => {
+                item.category = e.target.value;
+                this.updatePartsSummaryBadge(totalHardwarePrice);
+            });
+
+            const qtyInput = tr.querySelector('.part-qty-input');
+            const minusBtn = tr.querySelector('.btn-part-minus');
+            const plusBtn = tr.querySelector('.btn-part-plus');
+
+            minusBtn.addEventListener('click', () => {
+                const current = parseInt(qtyInput.value, 10) || 0;
+                const nextVal = Math.max(0, current - 1);
+                qtyInput.value = nextVal;
+                item.qty = nextVal;
+                this.renderPartsTable();
+            });
+
+            plusBtn.addEventListener('click', () => {
+                const current = parseInt(qtyInput.value, 10) || 0;
+                const nextVal = current + 1;
+                qtyInput.value = nextVal;
+                item.qty = nextVal;
+                this.renderPartsTable();
+            });
+
+            qtyInput.addEventListener('input', (e) => {
+                item.qty = Math.max(0, parseInt(e.target.value, 10) || 0);
+                this.renderPartsTable();
+            });
+
+            const unitInput = tr.querySelector('.part-unit-input');
+            unitInput.addEventListener('input', (e) => {
+                item.unit = e.target.value;
+            });
+
+            const noteInput = tr.querySelector('.part-note-input');
+            noteInput.addEventListener('input', (e) => {
+                item.note = e.target.value;
+            });
+
+            const delBtn = tr.querySelector('.btn-delete-part-row');
+            delBtn.addEventListener('click', () => {
+                this.syncPartsDataFromDOM();
+                items.splice(index, 1);
+                this.renderPartsTable();
+            });
+
+            tbody.appendChild(tr);
+        });
+
+        this.updatePartsSummaryBadge(totalHardwarePrice);
+        this.updateTotalCalculatedPrices();
+    }
+
+    renderBoardsTable() {
+        const tbody = document.getElementById('parts-boards-table-body');
+        if (!tbody) return;
+        tbody.innerHTML = '';
+
+        const boards = PartsManager.getBoardsForElement(this.currentEditingPartsElement, this.boardManager);
+        let totalBoardsPrice = 0;
+        let totalAreaSqm = 0;
+        let totalPieces = 0;
+
+        if (boards.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" style="padding:20px; text-align:center; color:var(--text-muted);">Nincsenek bútorlapok definiálva ehhez az elemhez.</td></tr>';
+            this.updateBoardsSummaryBadge(0, 0, 0);
+            return;
+        }
+
+        boards.forEach((b, idx) => {
+            totalBoardsPrice += b.totalPrice;
+            totalAreaSqm += (b.areaSqm || 0);
+            totalPieces += (b.count || 1);
+
+            const tr = document.createElement('tr');
+            tr.style.borderBottom = '1px solid rgba(255,255,255,0.06)';
+            tr.style.background = (idx % 2 === 0) ? 'rgba(255,255,255,0.015)' : 'transparent';
+
+            // Kategória címke stílus
+            let catColor = '#60a5fa';
+            let catBg = 'rgba(59,130,246,0.15)';
+            if (b.colorCategory === 2) {
+                catColor = '#fbbf24';
+                catBg = 'rgba(245,158,11,0.15)';
+            } else if (b.colorCategory === 3) {
+                catColor = '#c084fc';
+                catBg = 'rgba(168,85,247,0.15)';
+            }
+
+            const catBadge = b.isWorktop
+                ? `<span style="font-size:10px; color:#38bdf8; background:rgba(56,189,248,0.15); border:1px solid rgba(56,189,248,0.3); padding:1px 5px; border-radius:3px;">Munkalap</span>`
+                : (b.isBack 
+                    ? `<span style="font-size:10px; color:#94a3b8; background:rgba(148,163,184,0.15); border:1px solid rgba(148,163,184,0.3); padding:1px 5px; border-radius:3px;">3mm HDF</span>`
+                    : `<span style="font-size:10px; color:${catColor}; background:${catBg}; border:1px solid ${catColor}55; padding:1px 5px; border-radius:3px; font-weight:600;">${b.colorCategory}. Kategória</span>`);
+
+            const dimStr = `${b.length} × ${b.width} × ${b.thickness}`;
+            const qtyMetric = b.isWorktop ? `${(b.length / 1000).toFixed(2)} fm` : `${b.areaSqm.toFixed(2)} m²`;
+            const unitPriceStr = b.isWorktop ? `${b.unitPrice.toLocaleString('hu-HU')} Ft/fm` : `${b.unitPrice.toLocaleString('hu-HU')} Ft/m²`;
+
+            tr.innerHTML = `
+                <td style="padding:8px 10px; font-weight:600; color:var(--text-primary);">
+                    ${b.name}
+                </td>
+                <td style="padding:8px 6px; font-family:monospace; color:#38bdf8; font-size:11px;">
+                    ${dimStr}
+                </td>
+                <td style="padding:8px 6px; font-size:11px;">
+                    <div style="display:flex; align-items:center; gap:6px;">
+                        <span>${b.colorId}</span>
+                        ${catBadge}
+                    </div>
+                </td>
+                <td style="padding:8px 6px; text-align:center; font-weight:700; color:#fff;">
+                    ${b.count} db
+                </td>
+                <td style="padding:8px 6px; text-align:right; color:#94a3b8; font-size:11px;">
+                    ${qtyMetric}
+                </td>
+                <td style="padding:8px 6px; text-align:right; font-weight:600; color:#f59e0b; font-size:11px;">
+                    ${unitPriceStr}
+                </td>
+                <td style="padding:8px 6px; text-align:right; font-weight:700; color:#10b981; font-size:12px;">
+                    ${b.totalPrice.toLocaleString('hu-HU')} Ft
+                </td>
+            `;
+
+            tbody.appendChild(tr);
+        });
+
+        this.updateBoardsSummaryBadge(totalPieces, totalAreaSqm, totalBoardsPrice);
+        this.updateTotalCalculatedPrices();
+    }
+
+    updatePartsSummaryBadge(totalHardwarePrice) {
+        const badge = document.getElementById('parts-summary-badge');
+        if (!badge || !this.currentPartsData) return;
+        const summary = PartsManager.getSummary(this.currentPartsData);
+        badge.innerHTML = `Összesen: <strong>${summary.totalItems} tétel</strong> | <strong>${summary.totalPieces} db</strong> alkatrész (<span style="color:#10b981;">${(totalHardwarePrice || 0).toLocaleString('hu-HU')} Ft</span>)`;
+    }
+
+    updateBoardsSummaryBadge(totalPieces, totalAreaSqm, totalBoardsPrice) {
+        const badge = document.getElementById('boards-summary-badge');
+        if (!badge) return;
+        badge.innerHTML = `Összesen: <strong>${totalPieces} db lap</strong> | <strong>${(totalAreaSqm || 0).toFixed(2)} m²</strong> (<span style="color:#10b981;">${(totalBoardsPrice || 0).toLocaleString('hu-HU')} Ft</span>)`;
+    }
+
+    updateTotalCalculatedPrices() {
+        let hwTotal = 0;
+        if (this.currentPartsData && this.currentPartsData.items) {
+            this.currentPartsData.items.forEach(it => {
+                const uPrice = PriceManager.getPartUnitPrice(it.name);
+                hwTotal += Math.round((Number(it.qty) || 0) * uPrice);
+            });
+        }
+
+        let boardsTotal = 0;
+        if (this.currentEditingPartsElement) {
+            const boards = PartsManager.getBoardsForElement(this.currentEditingPartsElement, this.boardManager);
+            boards.forEach(b => {
+                boardsTotal += (b.totalPrice || 0);
+            });
+        }
+
+        const grandTotal = hwTotal + boardsTotal;
+
+        const headerPriceEl = document.getElementById('header-total-element-price');
+        if (headerPriceEl) headerPriceEl.textContent = `${grandTotal.toLocaleString('hu-HU')} Ft`;
+
+        const footHw = document.getElementById('footer-hw-price');
+        if (footHw) footHw.textContent = `${hwTotal.toLocaleString('hu-HU')} Ft`;
+
+        const footBoards = document.getElementById('footer-boards-price');
+        if (footBoards) footBoards.textContent = `${boardsTotal.toLocaleString('hu-HU')} Ft`;
+
+        const footTotal = document.getElementById('footer-total-price');
+        if (footTotal) footTotal.textContent = `${grandTotal.toLocaleString('hu-HU')} Ft`;
     }
 
     // ==========================================
